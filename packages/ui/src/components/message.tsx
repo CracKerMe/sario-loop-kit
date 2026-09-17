@@ -1,4 +1,4 @@
-import { cn } from "@sario-marking/ui/lib/utils";
+import { cn } from "@loopkit/ui/lib/utils";
 import * as React from "react";
 
 function MessageGroup({ className, ...props }: React.ComponentProps<"div">) {

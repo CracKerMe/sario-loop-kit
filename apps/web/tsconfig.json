@@ -21,7 +21,7 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@sario-marking/ui/*": ["../../packages/ui/src/*"]
+      "@loopkit/ui/*": ["../../packages/ui/src/*"]
     }
   }
 }

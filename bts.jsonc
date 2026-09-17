@@ -10,7 +10,7 @@
   "$schema": "https://r2.better-t-stack.dev/schema.json",
   "version": "3.42.2",
   "createdAt": "2026-09-17T12:45:29.352Z",
-  "reproducibleCommand": "pnpm create better-t-stack@latest sario-marking --frontend tanstack-start --backend hono --runtime node --database postgres --orm drizzle --api none --auth better-auth --payments none --addons evlog husky oxlint turborepo --examples none --db-setup docker --web-deploy none --server-deploy docker --git --package-manager pnpm --no-install",
+  "reproducibleCommand": "pnpm create better-t-stack@latest loopkit --frontend tanstack-start --backend hono --runtime node --database postgres --orm drizzle --api none --auth better-auth --payments none --addons evlog husky oxlint turborepo --examples none --db-setup docker --web-deploy none --server-deploy docker --git --package-manager pnpm --no-install",
   "database": "postgres",
   "orm": "drizzle",
   "backend": "hono",

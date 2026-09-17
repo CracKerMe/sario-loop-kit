@@ -13,8 +13,8 @@
   "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
-    "utils": "@sario-marking/ui/lib/utils",
-    "ui": "@sario-marking/ui/components",
+    "utils": "@loopkit/ui/lib/utils",
+    "ui": "@loopkit/ui/components",
     "lib": "@/lib",
     "hooks": "@/hooks"
   },

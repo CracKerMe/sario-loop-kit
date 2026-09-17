@@ -12,11 +12,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@sario-marking/ui/components",
-    "utils": "@sario-marking/ui/lib/utils",
-    "hooks": "@sario-marking/ui/hooks",
-    "lib": "@sario-marking/ui/lib",
-    "ui": "@sario-marking/ui/components"
+    "components": "@loopkit/ui/components",
+    "utils": "@loopkit/ui/lib/utils",
+    "hooks": "@loopkit/ui/hooks",
+    "lib": "@loopkit/ui/lib",
+    "ui": "@loopkit/ui/components"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

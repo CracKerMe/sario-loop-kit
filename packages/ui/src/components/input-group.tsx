@@ -1,9 +1,9 @@
 "use client";
 
-import { Button } from "@sario-marking/ui/components/button";
-import { Input } from "@sario-marking/ui/components/input";
-import { Textarea } from "@sario-marking/ui/components/textarea";
-import { cn } from "@sario-marking/ui/lib/utils";
+import { Button } from "@loopkit/ui/components/button";
+import { Input } from "@loopkit/ui/components/input";
+import { Textarea } from "@loopkit/ui/components/textarea";
+import { cn } from "@loopkit/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 

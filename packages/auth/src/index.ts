@@ -1,6 +1,6 @@
-import { createDb } from "@sario-marking/db";
-import * as schema from "@sario-marking/db/schema/auth";
-import { env } from "@sario-marking/env/server";
+import { createDb } from "@loopkit/db";
+import * as schema from "@loopkit/db/schema/auth";
+import { env } from "@loopkit/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 

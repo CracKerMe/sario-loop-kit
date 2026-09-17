@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@sario-marking/ui/components/button";
-import { cn } from "@sario-marking/ui/lib/utils";
+import { Button } from "@loopkit/ui/components/button";
+import { cn } from "@loopkit/ui/lib/utils";
 import {
   MessageScroller as MessageScrollerPrimitive,
   useMessageScroller,

@@ -1,7 +1,7 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import { Button } from "@sario-marking/ui/components/button";
-import { cn } from "@sario-marking/ui/lib/utils";
+import { Button } from "@loopkit/ui/components/button";
+import { cn } from "@loopkit/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 

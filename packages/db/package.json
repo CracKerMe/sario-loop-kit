@@ -1,5 +1,5 @@
 {
-  "name": "@sario-marking/db",
+  "name": "@loopkit/db",
   "type": "module",
   "exports": {
     ".": {
@@ -17,14 +17,14 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@sario-marking/env": "workspace:*",
+    "@loopkit/env": "workspace:*",
     "dotenv": "catalog:",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.22.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@sario-marking/config": "workspace:*",
+    "@loopkit/config": "workspace:*",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "catalog:"

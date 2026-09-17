@@ -1,11 +1,11 @@
 {
-  "extends": "@sario-marking/config/tsconfig.base.json",
+  "extends": "@loopkit/config/tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": [],
     "paths": {
-      "@sario-marking/ui/*": ["./src/*"]
+      "@loopkit/ui/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],

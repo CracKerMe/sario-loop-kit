@@ -1,4 +1,4 @@
-import { env } from "@sario-marking/env/server";
+import { env } from "@loopkit/env/server";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import * as schema from "./schema";

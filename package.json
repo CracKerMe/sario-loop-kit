@@ -1,5 +1,5 @@
 {
-  "name": "sario-marking",
+  "name": "loopkit",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -12,10 +12,10 @@
     "check-types": "turbo run check-types",
     "dev:web": "turbo run dev -F web --",
     "dev:server": "turbo run dev -F server --",
-    "db:push": "turbo run db:push -F @sario-marking/db --",
-    "db:studio": "turbo run db:studio -F @sario-marking/db --",
-    "db:generate": "turbo run db:generate -F @sario-marking/db --",
-    "db:migrate": "turbo run db:migrate -F @sario-marking/db --",
+    "db:push": "turbo run db:push -F @loopkit/db --",
+    "db:studio": "turbo run db:studio -F @loopkit/db --",
+    "db:generate": "turbo run db:generate -F @loopkit/db --",
+    "db:migrate": "turbo run db:migrate -F @loopkit/db --",
     "db:start": "docker compose up -d postgres",
     "db:watch": "docker compose up postgres",
     "db:stop": "docker compose stop postgres",
@@ -28,12 +28,12 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@sario-marking/env": "workspace:*",
+    "@loopkit/env": "workspace:*",
     "dotenv": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@sario-marking/config": "workspace:*",
+    "@loopkit/config": "workspace:*",
     "@types/node": "catalog:",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",

@@ -1,5 +1,5 @@
 {
-  "extends": "@sario-marking/config/tsconfig.base.json",
+  "extends": "@loopkit/config/tsconfig.base.json",
   "compilerOptions": {
     "declaration": true,
     "declarationMap": true,

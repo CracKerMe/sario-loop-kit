@@ -1,3 +1,3 @@
 {
-  "extends": "@sario-marking/config/tsconfig.base.json"
+  "extends": "@loopkit/config/tsconfig.base.json"
 }

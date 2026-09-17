@@ -8,8 +8,8 @@
     "dev": "vite dev"
   },
   "dependencies": {
-    "@sario-marking/env": "workspace:*",
-    "@sario-marking/ui": "workspace:*",
+    "@loopkit/env": "workspace:*",
+    "@loopkit/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-form": "^1.33.2",
     "@tanstack/react-query": "^5.101.4",
@@ -28,7 +28,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@sario-marking/config": "workspace:*",
+    "@loopkit/config": "workspace:*",
     "@tanstack/react-router-devtools": "^1.167.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",

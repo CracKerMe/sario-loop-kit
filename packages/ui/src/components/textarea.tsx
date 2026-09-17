@@ -1,4 +1,4 @@
-import { cn } from "@sario-marking/ui/lib/utils";
+import { cn } from "@loopkit/ui/lib/utils";
 import * as React from "react";
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {

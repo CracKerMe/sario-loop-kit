@@ -1,4 +1,4 @@
-import { env } from "@sario-marking/env/web";
+import { env } from "@loopkit/env/web";
 import { createAuthClient } from "better-auth/react";
 
 function getServerUrl(url: string) {

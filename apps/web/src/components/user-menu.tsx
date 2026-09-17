@@ -1,4 +1,4 @@
-import { Button } from "@sario-marking/ui/components/button";
+import { Button } from "@loopkit/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,8 +7,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@sario-marking/ui/components/dropdown-menu";
-import { Skeleton } from "@sario-marking/ui/components/skeleton";
+} from "@loopkit/ui/components/dropdown-menu";
+import { Skeleton } from "@loopkit/ui/components/skeleton";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { authClient } from "@/lib/auth-client";

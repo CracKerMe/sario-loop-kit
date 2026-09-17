@@ -1,6 +1,6 @@
-import { Button } from "@sario-marking/ui/components/button";
-import { Input } from "@sario-marking/ui/components/input";
-import { Label } from "@sario-marking/ui/components/label";
+import { Button } from "@loopkit/ui/components/button";
+import { Input } from "@loopkit/ui/components/input";
+import { Label } from "@loopkit/ui/components/label";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";

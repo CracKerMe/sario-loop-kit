@@ -7,7 +7,7 @@ export default defineConfig({
   },
   modules: [
     evlog({
-      env: { service: "sario-marking-web" },
+      env: { service: "loopkit-web" },
     }),
   ],
 });

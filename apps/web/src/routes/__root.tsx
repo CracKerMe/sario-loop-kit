@@ -1,4 +1,4 @@
-import { Toaster } from "@sario-marking/ui/components/sonner";
+import { Toaster } from "@loopkit/ui/components/sonner";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { createMiddleware } from "@tanstack/react-start";

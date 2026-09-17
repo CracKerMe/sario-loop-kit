@@ -1,4 +1,4 @@
-# sario-marking
+# loopkit
 
 This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Hono, and more.
 
@@ -66,7 +66,7 @@ npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
 Import shared components like this:
 
 ```tsx
-import { Button } from "@sario-marking/ui/components/button";
+import { Button } from "@loopkit/ui/components/button";
 ```
 
 ### Add app-specific blocks
@@ -96,7 +96,7 @@ For more details, see the guide on [Deploying with Docker Compose](https://www.b
 ## Project Structure
 
 ```
-sario-marking/
+loopkit/
 ├── apps/
 │   ├── web/         # Frontend application (React + TanStack Start)
 │   └── server/      # Backend API (Hono)

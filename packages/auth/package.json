@@ -1,5 +1,5 @@
 {
-  "name": "@sario-marking/auth",
+  "name": "@loopkit/auth",
   "type": "module",
   "exports": {
     ".": {
@@ -11,14 +11,14 @@
   },
   "scripts": {},
   "dependencies": {
-    "@sario-marking/db": "workspace:*",
-    "@sario-marking/env": "workspace:*",
+    "@loopkit/db": "workspace:*",
+    "@loopkit/env": "workspace:*",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@sario-marking/config": "workspace:*",
+    "@loopkit/config": "workspace:*",
     "typescript": "catalog:"
   }
 }

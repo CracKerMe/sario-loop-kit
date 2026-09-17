@@ -1,4 +1,4 @@
-import { cn } from "@sario-marking/ui/lib/utils";
+import { cn } from "@loopkit/ui/lib/utils";
 
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (

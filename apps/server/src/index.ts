@@ -1,5 +1,5 @@
-import { auth } from "@sario-marking/auth";
-import { env } from "@sario-marking/env/server";
+import { auth } from "@loopkit/auth";
+import { env } from "@loopkit/env/server";
 import { initLogger } from "evlog";
 import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth";
 import { createFsDrain } from "evlog/fs";
@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 initLogger({
-  env: { service: "sario-marking-server" },
+  env: { service: "loopkit-server" },
 });
 
 const identifyUser = createAuthMiddleware(auth as BetterAuthInstance, {
