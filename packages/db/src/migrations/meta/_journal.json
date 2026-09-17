@@ -15,6 +15,13 @@
       "when": 1789653744428,
       "tag": "0001_stiff_morbius",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789654790400,
+      "tag": "0002_spicy_magdalene",
+      "breakpoints": true
     }
   ]
 }

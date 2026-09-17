@@ -102,24 +102,42 @@ importers:
       '@loopkit/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@loopkit/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@loopkit/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@loopkit/email':
+        specifier: workspace:*
+        version: link:../../packages/email
+      '@loopkit/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@loopkit/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@loopkit/journey':
+        specifier: workspace:*
+        version: link:../../packages/journey
       better-auth:
         specifier: 'catalog:'
         version: 1.7.1(@tanstack/react-start@1.168.51(crossws@0.4.12(srvx@0.11.22))(esbuild@0.28.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(rolldown@1.2.8)(rollup@4.63.1)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@3.2.7(@types/node@26.5.1)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.0))
       dotenv:
         specifier: 'catalog:'
         version: 17.4.2
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0)
       evlog:
         specifier: 'catalog:'
         version: 2.28.1(@tanstack/start-client-core@1.170.29)(express@5.2.1)(hono@4.13.7)(nitro@3.0.260610-beta(chokidar@5.0.0)(dotenv@17.4.2)(drizzle-orm@0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0))(jiti@2.7.0)(lru-cache@11.5.2)(rollup@4.63.1)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(ofetch@2.0.0-alpha.3)(react@19.3.0)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
       hono:
         specifier: ^4.12.32
         version: 4.13.7
+      ts-workflow-engine-lite:
+        specifier: file:../../../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz
+        version: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz(body-parser@2.3.0)(cors@2.8.6)(express@5.2.1)
       zod:
         specifier: 'catalog:'
         version: 4.6.1
@@ -258,6 +276,43 @@ importers:
 
   packages/config: {}
 
+  packages/core:
+    dependencies:
+      '@loopkit/db':
+        specifier: workspace:*
+        version: link:../db
+      '@loopkit/journey':
+        specifier: workspace:*
+        version: link:../journey
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0)
+      ts-workflow-engine-lite:
+        specifier: file:../../../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz
+        version: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz(body-parser@2.3.0)(cors@2.8.6)(express@5.2.1)
+    devDependencies:
+      '@loopkit/config':
+        specifier: workspace:*
+        version: link:../config
+      '@loopkit/engine-storage':
+        specifier: workspace:*
+        version: link:../engine-storage
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.23.1
+      dotenv:
+        specifier: 'catalog:'
+        version: 17.4.2
+      pg:
+        specifier: ^8.22.0
+        version: 8.23.0
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.5.1)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/db:
     dependencies:
       '@loopkit/env':
@@ -325,6 +380,24 @@ importers:
 
   packages/engine:
     dependencies:
+      '@loopkit/db':
+        specifier: workspace:*
+        version: link:../db
+      '@loopkit/email':
+        specifier: workspace:*
+        version: link:../email
+      '@loopkit/engine-storage':
+        specifier: workspace:*
+        version: link:../engine-storage
+      '@loopkit/journey':
+        specifier: workspace:*
+        version: link:../journey
+      '@loopkit/timers':
+        specifier: workspace:*
+        version: link:../timers
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0)
       ts-workflow-engine-lite:
         specifier: file:../../../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz
         version: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz(body-parser@2.3.0)(cors@2.8.6)(express@5.2.1)
@@ -332,9 +405,21 @@ importers:
       '@loopkit/config':
         specifier: workspace:*
         version: link:../config
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.23.1
+      dotenv:
+        specifier: 'catalog:'
+        version: 17.4.2
+      pg:
+        specifier: ^8.22.0
+        version: 8.23.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.5.1)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.0)
 
   packages/engine-storage:
     dependencies:

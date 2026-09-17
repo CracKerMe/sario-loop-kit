@@ -1,5 +1,5 @@
 {
-  "name": "@loopkit/engine",
+  "name": "@loopkit/core",
   "type": "module",
   "exports": {
     ".": {
@@ -15,15 +15,13 @@
   },
   "dependencies": {
     "@loopkit/db": "workspace:*",
-    "@loopkit/email": "workspace:*",
-    "@loopkit/engine-storage": "workspace:*",
     "@loopkit/journey": "workspace:*",
-    "@loopkit/timers": "workspace:*",
     "drizzle-orm": "catalog:",
     "ts-workflow-engine-lite": "^3.1.0"
   },
   "devDependencies": {
     "@loopkit/config": "workspace:*",
+    "@loopkit/engine-storage": "workspace:*",
     "@types/pg": "^8.20.0",
     "dotenv": "catalog:",
     "pg": "^8.22.0",

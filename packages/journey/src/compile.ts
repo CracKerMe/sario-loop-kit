@@ -125,7 +125,19 @@ function compileNode(
             workspaceId: "{{ workspaceId }}",
             contactId: "{{ contactId }}",
             journeyId: "{{ journeyId }}",
+            // journeyRunId is set into instance.context by
+            // startJourneyRun() before engine.start() is called (its
+            // value is known — the journey_run row is inserted first —
+            // see journeys.ts). Combined with this node's own id, which
+            // is a compile-time constant baked in as a literal below
+            // rather than an interpolation marker, (journeyRunId,
+            // nodeId) uniquely identifies one enrollment's visit to this
+            // email node — the engine has no way to expose
+            // instance.instanceId to a notification node's config, so
+            // this is what the channel's idempotency key is built from
+            // instead.
             journeyRunId: "{{ journeyRunId }}",
+            nodeId: node.id,
             templateId: node.data.templateId,
           },
         },

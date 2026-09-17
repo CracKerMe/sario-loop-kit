@@ -28,12 +28,16 @@ export const emailTemplate = pgTable("email_template", {
 });
 
 /**
- * `idempotencyKey = ${instanceId}:${nodeId}` is the correctness lynchpin of
- * the whole email path: the engine retries a failed `notification` node
- * automatically (via retryPolicy/failureNext), and this unique index is
- * what stops a retry from sending a duplicate email. The channel inserts
- * with ON CONFLICT DO NOTHING RETURNING id — no row back means "already
- * sent, no-op".
+ * `idempotencyKey = ${journeyRunId}:${nodeId}` is the correctness
+ * lynchpin of the whole email path: the engine retries a failed
+ * `notification` node automatically (via retryPolicy/failureNext), and
+ * this unique index is what stops a retry from sending a duplicate
+ * email. The channel inserts with ON CONFLICT DO NOTHING RETURNING id —
+ * no row back means "already sent, no-op". Keyed on journeyRunId rather
+ * than instanceId because the engine has no mechanism to expose
+ * instance.instanceId to a notification node's own config — see
+ * @loopkit/email's channel.ts for the full explanation; instanceId
+ * below is populated best-effort where available but is not load-bearing.
  */
 export const emailSend = pgTable(
   "email_send",

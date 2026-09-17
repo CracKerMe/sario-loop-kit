@@ -12,12 +12,18 @@
   "dependencies": {
     "@hono/node-server": "^2.0.12",
     "@loopkit/auth": "workspace:*",
+    "@loopkit/core": "workspace:*",
     "@loopkit/db": "workspace:*",
+    "@loopkit/email": "workspace:*",
+    "@loopkit/engine": "workspace:*",
     "@loopkit/env": "workspace:*",
+    "@loopkit/journey": "workspace:*",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
+    "drizzle-orm": "catalog:",
     "evlog": "catalog:",
     "hono": "^4.12.32",
+    "ts-workflow-engine-lite": "^3.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {

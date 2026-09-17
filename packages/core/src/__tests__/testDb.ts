@@ -6,14 +6,15 @@ const CONNECTION_STRING =
   process.env.TEST_DATABASE_URL ?? "postgresql://postgres:password@localhost:5432/loopkit";
 
 const TABLES = [
-  schema.emailDelivery,
-  schema.emailSend,
-  schema.emailTemplate,
-  schema.contactEvent,
-  schema.contact,
   schema.journeyRun,
   schema.journeyVersion,
   schema.journey,
+  schema.contactEvent,
+  schema.contact,
+  schema.apiKey,
+  schema.wfInstance,
+  schema.wfWorkflow,
+  schema.wfWorkflowMeta,
   schema.workspace,
 ] as const;
 

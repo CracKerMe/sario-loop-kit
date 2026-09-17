@@ -5,6 +5,7 @@ export type {
   SendEmailResult,
   WebhookRequest,
 } from "./provider";
+export { ConsoleEmailProvider } from "./ConsoleEmailProvider";
 export { ResendProvider } from "./ResendProvider";
 export { renderTemplate } from "./render";
 export {

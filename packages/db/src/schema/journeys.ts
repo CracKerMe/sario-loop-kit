@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -99,15 +100,29 @@ export const journeyRun = pgTable(
     status: text("status")
       .$type<"pending" | "running" | "completed" | "failed" | "cancelled" | "exited">()
       .notNull(),
+    /**
+     * Set to `true` at insert time only when the journey's reentry mode
+     * is "once_at_a_time"; left `null` for "once" (gated in application
+     * code, not here) and "always" (never gated — concurrent running
+     * rows for the same contact are the whole point). A partial unique
+     * index can't reach across to journey.reentry to conditionally
+     * apply itself, so this column exists purely to give the index
+     * something per-row to test: `journey_run_active_uidx` only
+     * constrains rows where this is true, so "always" journeys are
+     * structurally exempt rather than needing to pass a status check
+     * that would otherwise apply uniformly to every reentry mode.
+     */
+    activeLock: boolean("active_lock"),
     enteredAt: timestamp("entered_at", { withTimezone: true }).notNull().defaultNow(),
     exitedAt: timestamp("exited_at", { withTimezone: true }),
     exitReason: text("exit_reason"),
   },
   (t) => [
-    // once_at_a_time: at most one RUNNING row per (journey, contact).
+    // once_at_a_time: at most one RUNNING row per (journey, contact),
+    // among rows that opted into the lock via activeLock.
     uniqueIndex("journey_run_active_uidx")
       .on(t.journeyId, t.contactId)
-      .where(sql`${t.status} = 'running'`),
+      .where(sql`${t.activeLock} = true AND ${t.status} = 'running'`),
     index("journey_run_contact_idx").on(t.contactId, t.status),
     index("journey_run_journey_status_idx").on(t.journeyId, t.status),
   ],

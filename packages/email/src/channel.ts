@@ -17,19 +17,30 @@ import { renderTemplate } from "./render";
  * renderMessage) before this channel ever sees them, which is the right
  * layer for small scalars like contactId/firstName; the email BODY does
  * not go through that path (see render.ts's doc comment for why).
+ *
+ * journeyRunId + nodeId — NOT instanceId — form the idempotency basis.
+ * The engine has no mechanism to expose instance.instanceId to a
+ * notification node's config (NotificationChannel.send() only ever
+ * receives the rendered NotificationMessage, and {{}} interpolation only
+ * reaches instance.context, which the engine populates from whatever
+ * engine.start() was called with — instanceId doesn't exist yet at that
+ * point). journeyRunId is known before engine.start() is called (the
+ * journey_run row is inserted first — see @loopkit/core's
+ * startJourneyRun) and is 1:1 with the instance it starts, so
+ * (journeyRunId, nodeId) is an equally valid substitute.
  */
 export interface EmailNodeData {
   workspaceId: string;
   contactId: string;
   templateId: string;
   journeyId?: string;
-  journeyRunId?: string;
-  instanceId: string;
+  journeyRunId: string;
   nodeId: string;
   [key: string]: unknown;
 }
 
 export interface EmailTemplateLookup {
+  subject: string;
   html: string;
   textBody?: string | null;
   fromName?: string | null;
@@ -68,6 +79,26 @@ async function isSuppressed(db: Db, contactId: string): Promise<boolean> {
 }
 
 /**
+ * Loads a contact's email + properties for template rendering. The
+ * compiled email node's config.data only ever carries small,
+ * compile-time-known scalars (contactId, templateId, ...) — a contact's
+ * own properties (firstName, plan, ...) aren't known until send time, so
+ * they're fetched here rather than threaded through {{}} interpolation
+ * (which only has instance.context to draw from, not a live DB read).
+ */
+async function loadContactForRender(
+  db: Db,
+  contactId: string,
+): Promise<{ id: string; email: string; properties: Record<string, unknown> } | null> {
+  const [row] = await db
+    .select({ id: contact.id, email: contact.email, properties: contact.properties })
+    .from(contact)
+    .where(eq(contact.id, contactId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
  * Bridges @loopkit/email into the engine's pluggable NotificationChannel
  * seam. Two deliberate choices baked into `send()`:
  *
@@ -79,7 +110,7 @@ async function isSuppressed(db: Db, contactId: string): Promise<boolean> {
  *   error — letting the engine's own retryPolicy/failureNext/DLQ handle
  *   it. This is "free" retry semantics from the node's own config.
  *
- * Idempotency: `emailSend.idempotencyKey = \`${instanceId}:${nodeId}\``
+ * Idempotency: `emailSend.idempotencyKey = \`${journeyRunId}:${nodeId}\``
  * with a unique index means the engine retrying this node (transient
  * Resend error, a restart resuming mid-retry, ...) inserts a duplicate
  * `email_send` row exactly zero times — `ON CONFLICT DO NOTHING RETURNING
@@ -101,7 +132,7 @@ export function createEmailNotificationChannel(
     async send(message: NotificationMessage): Promise<NotificationResult> {
       const data = message.data as EmailNodeData | undefined;
       if (
-        !data?.instanceId ||
+        !data?.journeyRunId ||
         !data.nodeId ||
         !data.contactId ||
         !data.templateId ||
@@ -110,11 +141,17 @@ export function createEmailNotificationChannel(
         return {
           ok: false,
           channel: "loopkit-email",
-          error: "loopkit-email requires data.{workspaceId,contactId,templateId,instanceId,nodeId}",
+          error:
+            "loopkit-email requires data.{workspaceId,contactId,templateId,journeyRunId,nodeId}",
         };
       }
 
-      const idempotencyKey = `${data.instanceId}:${data.nodeId}`;
+      const idempotencyKey = `${data.journeyRunId}:${data.nodeId}`;
+      // subject is set to a placeholder here and updated once the
+      // template is loaded, below — the journey node's own subject (if
+      // it set one) always wins, and the template's subject is the
+      // fallback the moment a journey author doesn't want a per-node
+      // override, which is by far the common case.
       const inserted = await db
         .insert(emailSend)
         .values({
@@ -123,8 +160,7 @@ export function createEmailNotificationChannel(
           contactId: data.contactId,
           templateId: data.templateId,
           journeyId: data.journeyId ?? null,
-          journeyRunId: data.journeyRunId ?? null,
-          instanceId: data.instanceId,
+          journeyRunId: data.journeyRunId,
           nodeId: data.nodeId,
           toEmail: message.target,
           subject: message.subject ?? "",
@@ -161,17 +197,38 @@ export function createEmailNotificationChannel(
         };
       }
 
-      const renderData = { ...data, contact: { id: data.contactId } };
+      const renderContact = await loadContactForRender(db, data.contactId);
+      // Contact properties (firstName, plan, ...) are spread to the top
+      // level, matching the engine's own convention for instance.context
+      // (see NotificationNodeExecutor.buildTemplateContext) — so
+      // {{firstName}} works the same way in an email template as it
+      // would in a plain notification body, alongside the nested
+      // {{contact.email}} form for when a name collision needs
+      // disambiguating.
+      const renderData = {
+        ...data,
+        ...renderContact?.properties,
+        contact: renderContact ?? { id: data.contactId },
+      };
+      // renderTemplate() HTML-escapes by default — fine for the body,
+      // wrong for a subject line (an escaped "&amp;" would show up
+      // literally in a mail client's subject header, which doesn't
+      // render HTML entities). {{{...}}} (raw, unescaped) is what a
+      // subject template should use for interpolated values.
+      const subjectTemplate = message.subject || template.subject;
+      const subject = renderTemplate(subjectTemplate, renderData);
       const html = renderTemplate(template.html, renderData);
       const text = template.textBody ? renderTemplate(template.textBody, renderData) : undefined;
       const from = template.fromEmail ?? defaultFrom;
+
+      await db.update(emailSend).set({ subject }).where(eq(emailSend.id, sendId));
 
       try {
         const result = await provider.send({
           to: message.target,
           from: template.fromName ? `${template.fromName} <${from}>` : from,
           replyTo: template.replyTo ?? undefined,
-          subject: message.subject ?? "",
+          subject,
           html,
           text,
           headers: { "X-Loopkit-Send-Id": sendId },
