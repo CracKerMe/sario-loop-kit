@@ -1,0 +1,22 @@
+{
+  "name": "@loopkit/engine",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc -b"
+  },
+  "dependencies": {
+    "ts-workflow-engine-lite": "^3.1.0"
+  },
+  "devDependencies": {
+    "@loopkit/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

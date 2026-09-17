@@ -3,6 +3,19 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+# ts-workflow-engine-lite's optional REST-API peers (express, cors, helmet,
+# etc.) are never used here — Loopkit exposes its own Hono API and never
+# imports createWorkflowRouter/startApiServer.
+peerDependencyRules:
+  ignoreMissing:
+    - express
+    - body-parser
+    - cors
+    - express-validator
+    - helmet
+    - morgan
+    - swagger-ui-dist
+    - ws
 catalog:
   dotenv: ^17.4.2
   zod: ^4.4.3
@@ -18,3 +31,9 @@ catalog:
   tailwindcss: ^4.3.3
   "@types/react": ^19.2.17
   "@types/react-dom": ^19.2.3
+  drizzle-orm: ^0.45.2
+# Local-linked ts-workflow-engine-lite build while the storage-injection PR
+# is unreleased upstream. Switch back to a catalog: entry once ^3.1.0 (or
+# later) is published to npm — see /Users/promisex/.claude/plans/https-github-com-crackerme-ts-runit-lit-abstract-abelson.md
+overrides:
+  ts-workflow-engine-lite: "file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz"
