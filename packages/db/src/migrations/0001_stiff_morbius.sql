@@ -1,0 +1,1 @@
+ALTER TABLE "email_delivery" ALTER COLUMN "send_id" DROP NOT NULL;

@@ -81,9 +81,12 @@ export const emailDelivery = pgTable(
   "email_delivery",
   {
     id: text("id").primaryKey(),
-    sendId: text("send_id")
-      .notNull()
-      .references(() => emailSend.id, { onDelete: "cascade" }),
+    // Nullable: a webhook event can arrive for a provider message this
+    // workspace has no email_send record for (e.g. a transactional send
+    // issued outside Loopkit, or one Loopkit sent before this table
+    // existed) — the event is still recorded and deduped, just left
+    // unlinked, rather than the whole webhook call failing.
+    sendId: text("send_id").references(() => emailSend.id, { onDelete: "cascade" }),
     type: text("type")
       .$type<"delivered" | "opened" | "clicked" | "bounced" | "complained" | "delivery_delayed">()
       .notNull(),
