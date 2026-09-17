@@ -1,0 +1,29 @@
+{
+  "name": "@loopkit/engine-storage",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@loopkit/db": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "ts-workflow-engine-lite": "^3.1.0"
+  },
+  "devDependencies": {
+    "@loopkit/config": "workspace:*",
+    "@types/pg": "^8.20.0",
+    "dotenv": "catalog:",
+    "pg": "^8.22.0",
+    "typescript": "catalog:",
+    "vitest": "^3.2.4"
+  }
+}
