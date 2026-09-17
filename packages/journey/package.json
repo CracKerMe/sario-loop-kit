@@ -1,0 +1,23 @@
+{
+  "name": "@loopkit/journey",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@loopkit/config": "workspace:*",
+    "ts-workflow-engine-lite": "^3.1.0",
+    "typescript": "catalog:",
+    "vitest": "^3.2.4"
+  }
+}
