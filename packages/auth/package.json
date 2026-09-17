@@ -1,0 +1,24 @@
+{
+  "name": "@sario-marking/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@sario-marking/db": "workspace:*",
+    "@sario-marking/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@sario-marking/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
