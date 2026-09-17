@@ -355,6 +355,40 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  packages/timers:
+    dependencies:
+      '@loopkit/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0)
+      ts-workflow-engine-lite:
+        specifier: file:../../../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz
+        version: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz(body-parser@2.3.0)(cors@2.8.6)(express@5.2.1)
+    devDependencies:
+      '@loopkit/config':
+        specifier: workspace:*
+        version: link:../config
+      '@loopkit/engine-storage':
+        specifier: workspace:*
+        version: link:../engine-storage
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.23.1
+      dotenv:
+        specifier: 'catalog:'
+        version: 17.4.2
+      pg:
+        specifier: ^8.22.0
+        version: 8.23.0
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.5.1)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/ui:
     dependencies:
       '@base-ui/react':
@@ -4451,7 +4485,7 @@ packages:
     resolution: {integrity: sha512-ztMO++owQnz8c/gIENcM9XfCEzgoGphTv+nKpYNM1bgsdOVC/jRZuEBf6N+mLLDNg68Kl+GgUZfOySaRiG1/Ug==}
 
   ts-workflow-engine-lite@file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz:
-    resolution: {integrity: sha512-MMqN0tM1+8MtFjP46lv5gdHl/JDdziuJWjIziiGnRIYM1h8lKsuQmZQEthAoGSm1urYjSzqVyb5Kk3QxZYeC6A==, tarball: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz}
+    resolution: {integrity: sha512-os96L2NVG5ZWcyOiT/7TemqAFPqwPSieJzWw+Mr+9yo35GUFwSpqspCXuBnSy9biM24gHAvfgXs4ey7QQYllAA==, tarball: file:../ts-runit-lite/ts-workflow-engine-lite-3.1.0.tgz}
     version: 3.1.0
     engines: {node: '>=18.0.0'}
     peerDependencies:
