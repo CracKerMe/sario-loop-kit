@@ -48,6 +48,15 @@ export {
 } from "./extensions";
 
 export {
+  COMMUNITY_EMAIL_TEMPLATES,
+  COMMUNITY_TEMPLATE_CATEGORIES,
+  communityTemplatesByCategory,
+  findCommunityTemplate,
+  type CommunityEmailTemplate,
+  type CommunityTemplateCategory,
+} from "./communityTemplates";
+
+export {
   EMAIL_DOC_PRESETS,
   emptyEmailDoc,
   findEmailDocPreset,

@@ -39,6 +39,41 @@ export interface RenderedEmailDoc {
   mergeTags: string[];
 }
 
+const PREVIEW_MERGE_TAG_VALUES: Record<string, string> = {
+  "contact.email": "alex.morgan@example.com",
+  "contact.firstName": "Alex",
+  "contact.lastName": "Morgan",
+  "contact.plan": "Pro",
+  "contact.id": "contact_demo_123",
+  contactId: "contact_demo_123",
+  workspaceId: "workspace_demo",
+};
+
+/**
+ * A readable, deterministic stand-in for one merge tag in the editor. This is
+ * intentionally only used by `previewEmailDoc`: saved HTML must retain the
+ * token for the recipient-specific render performed at send time.
+ */
+function previewMergeTagValue(path: string): string {
+  const known = PREVIEW_MERGE_TAG_VALUES[path];
+  if (known) return known;
+
+  const field = path.split(".").at(-1) || "value";
+  if (/email$/i.test(field)) return "alex.morgan@example.com";
+  if (/(url|uri)$/i.test(field)) return "https://example.com/demo";
+  if (/name$/i.test(field)) return "Example name";
+  return `Example ${field.replace(/([A-Z])/g, " $1").toLowerCase()}`;
+}
+
+function applyPreviewMergeTagValues(template: string, paths: readonly string[]): string {
+  if (paths.length === 0) return template;
+  const values = new Map(paths.map((path) => [path, previewMergeTagValue(path)]));
+
+  return template.replace(/\{\{\{?\s*([\w.]+)\s*\}\}\}?/g, (match, path: string) => {
+    return values.get(path) ?? match;
+  });
+}
+
 /**
  * The one place a document becomes HTML.
  *
@@ -61,9 +96,18 @@ export function renderTemplateDoc(doc: unknown): RenderedEmailDoc {
   };
 }
 
-/** Live preview for the editor — same pipeline as save, so they cannot diverge. */
+/**
+ * Live preview for the editor. It shares the save renderer, then replaces the
+ * resulting merge tokens with mock values so personalisation is visible before
+ * a real recipient exists.
+ */
 export function previewEmailDoc(doc: unknown): RenderedEmailDoc {
-  return renderTemplateDoc(doc);
+  const rendered = renderTemplateDoc(doc);
+  return {
+    ...rendered,
+    html: applyPreviewMergeTagValues(rendered.html, rendered.mergeTags),
+    textBody: applyPreviewMergeTagValues(rendered.textBody, rendered.mergeTags),
+  };
 }
 
 interface TemplateContent {

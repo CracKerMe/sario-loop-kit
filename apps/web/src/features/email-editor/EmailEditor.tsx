@@ -6,9 +6,16 @@ import {
   type EmailDocIssue,
   type EmailDocJson,
 } from "@loopkit/email-doc";
-import { ArrowLeftIcon, CircleIcon, EyeIcon, SaveIcon, SparklesIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CircleIcon,
+  EyeIcon,
+  GripVerticalIcon,
+  SaveIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, api, type FullEmailTemplateDto } from "@/lib/api";
@@ -17,13 +24,14 @@ import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { Skeleton } from "@loopkit/ui/components/skeleton";
 
-import { BlockPanel } from "./BlockPanel";
 import { Canvas } from "./Canvas";
-import { MergeTagPicker } from "./MergeTagPicker";
 import { PreviewPanel } from "./PreviewPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 import { ValidationPanel } from "./ValidationPanel";
+
+const SIDE_PANEL_DEFAULT = 380;
+const SIDE_PANEL_MIN = 300;
 
 /**
  * `validateEmailDoc` is the contract for local pre-validation, but it is
@@ -72,6 +80,31 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
   const [saving, setSaving] = useState(false);
 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [sidePanelWidth, setSidePanelWidth] = useState(SIDE_PANEL_DEFAULT);
+  const resizing = useRef(false);
+
+  const onResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    resizing.current = true;
+    const shellWidth = shellRef.current?.getBoundingClientRect().width ?? 0;
+    const maxWidth = shellWidth * 0.5;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (!resizing.current || !shellRef.current) return;
+      const rect = shellRef.current.getBoundingClientRect();
+      const next = rect.right - moveEvent.clientX;
+      setSidePanelWidth(Math.min(maxWidth, Math.max(SIDE_PANEL_MIN, next)));
+    };
+    const onUp = () => {
+      resizing.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
 
   useEffect(() => {
     if (!editor) return;
@@ -191,39 +224,10 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
             </Button>
           </div>
         </div>
-        <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] sm:px-5">
-          <div className="grid gap-1.5">
-            <Label htmlFor="tpl-name" className="text-[11px] font-medium text-muted-foreground">
-              Template name
-            </Label>
-            <Input
-              id="tpl-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-9 bg-background/60 text-sm font-medium"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="tpl-subject" className="text-[11px] font-medium text-muted-foreground">
-              Subject line
-            </Label>
-            <Input
-              id="tpl-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="h-9 bg-background/60 text-sm"
-            />
-          </div>
-        </div>
       </header>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[238px_minmax(540px,1fr)_340px]">
-        <aside className="editor-side-panel grid content-start gap-5 xl:sticky xl:top-5">
-          <BlockPanel editor={editor} />
-          <MergeTagPicker editor={editor} />
-        </aside>
-
-        <section className="email-canvas-workspace min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card/70 shadow-[0_22px_60px_-40px_color-mix(in_oklab,var(--foreground)_75%,transparent)]">
+      <div ref={shellRef} className="flex items-start gap-0">
+        <section className="email-canvas-workspace min-w-0 flex-1 overflow-hidden rounded-2xl border border-border/80 bg-card/70 shadow-[0_22px_60px_-40px_color-mix(in_oklab,var(--foreground)_75%,transparent)]">
           <div className="flex items-center justify-between border-b border-border/70 bg-card/70 px-4 py-2.5">
             <div className="flex items-center gap-2 text-xs font-medium">
               <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-primary">
@@ -236,22 +240,62 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
               600px email layout
             </span>
           </div>
-          <div className="border-b border-border/70 bg-muted/30 px-2 py-1.5">
+
+          <div className="grid gap-3 border-b border-border/70 p-4 sm:px-5">
+            <div className="grid gap-1.5">
+              <Label htmlFor="tpl-name" className="text-[11px] font-medium text-muted-foreground">
+                Email title
+              </Label>
+              <Input
+                id="tpl-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-10 bg-background/60 text-base font-semibold"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label
+                htmlFor="tpl-subject"
+                className="text-[11px] font-medium text-muted-foreground"
+              >
+                Subtitle / subject line
+              </Label>
+              <Input
+                id="tpl-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="h-9 bg-background/60 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/70 bg-muted/30 px-2 py-1.5">
             <Toolbar editor={editor} />
+            <PropertiesPanel editor={editor} />
           </div>
           <div className="canvas-stage p-4 sm:p-7">
             <Canvas editor={editor} />
           </div>
-          <div className="border-t border-border/70 px-4 py-2.5 text-[11px] text-muted-foreground">
-            Select a block on the canvas to reveal its properties. Formatting controls apply to
-            selected text.
-          </div>
         </section>
 
-        <aside className="editor-inspector grid content-start gap-4 xl:sticky xl:top-5">
-          <PropertiesPanel editor={editor} />
-          <ValidationPanel issues={allIssues} />
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- pointer drag resize handle */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize preview panel"
+          onPointerDown={onResizeStart}
+          className="group relative mx-2 flex h-full min-h-[400px] w-2 shrink-0 cursor-col-resize items-center justify-center self-stretch"
+        >
+          <div className="h-full w-px bg-border/70 transition-colors group-hover:bg-primary/50" />
+          <GripVerticalIcon className="absolute size-3.5 text-muted-foreground/60 transition-colors group-hover:text-primary" />
+        </div>
+
+        <aside
+          className="editor-inspector grid shrink-0 content-start gap-4 xl:sticky xl:top-5"
+          style={{ width: sidePanelWidth }}
+        >
           <PreviewPanel html={previewHtml} loading={previewLoading} error={previewError} />
+          <ValidationPanel issues={allIssues} />
         </aside>
       </div>
     </div>

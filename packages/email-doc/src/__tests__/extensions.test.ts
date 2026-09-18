@@ -34,7 +34,13 @@ describe("email document schema", () => {
     expect(schema.topNodeType.name).toBe("doc");
     // The marks have to be in the schema or a bold document would be
     // unrenderable *and* unsaveable.
-    expect(Object.keys(schema.marks).sort()).toEqual(["bold", "italic", "link", "underline"]);
+    expect(Object.keys(schema.marks).sort()).toEqual([
+      "bold",
+      "italic",
+      "link",
+      "textStyle",
+      "underline",
+    ]);
   });
 
   it("accepts every shipped preset", () => {
@@ -69,6 +75,10 @@ describe("email document schema", () => {
                   marks: [
                     { type: "link", attrs: { href: "https://example.com" } },
                     { type: "underline" },
+                    {
+                      type: "textStyle",
+                      attrs: { color: "#2563eb", backgroundColor: "#fef3c7" },
+                    },
                   ],
                 },
               ],

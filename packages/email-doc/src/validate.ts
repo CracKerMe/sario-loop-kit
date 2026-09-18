@@ -210,6 +210,21 @@ function walkNode(node: ProseMirrorNode, path: string, depth: number, ctx: WalkC
     const mark = marks[mi]!;
     if (mark.type.name === "link") {
       validateHref(mark.attrs?.href, `${path}.marks.${mi}.attrs.href`, ctx.issues);
+    } else if (mark.type.name === "textStyle") {
+      checkValue(
+        mark.attrs?.color,
+        optionalColorSchema,
+        `${path}.marks.${mi}.attrs.color`,
+        ctx.issues,
+        "text color must be null or #rgb/#rrggbb",
+      );
+      checkValue(
+        mark.attrs?.backgroundColor,
+        optionalColorSchema,
+        `${path}.marks.${mi}.attrs.backgroundColor`,
+        ctx.issues,
+        "text backgroundColor must be null or #rgb/#rrggbb",
+      );
     }
   }
 
@@ -359,7 +374,12 @@ export function validateEmailDoc(doc: unknown): EmailDocValidationResult {
 
   // Serialized size of the document as submitted.
   try {
-    const bytes = Buffer.byteLength(JSON.stringify(doc), "utf8");
+    const serialized = JSON.stringify(doc);
+    if (typeof serialized !== "string") throw new Error("document did not serialize to JSON");
+    // `email-doc` runs in both Node (the API) and the browser (the editor).
+    // Buffer is Node-only; using it here made every browser-side document look
+    // non-serializable and paused the live preview before it could render.
+    const bytes = new TextEncoder().encode(serialized).byteLength;
     if (bytes > EMAIL_DOC_LIMITS.maxDocBytes) {
       issues.push({
         path: "",

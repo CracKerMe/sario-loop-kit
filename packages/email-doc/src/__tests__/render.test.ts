@@ -153,6 +153,25 @@ describe("renderEmailDoc — determinism", () => {
   });
 });
 
+describe("renderEmailDoc — inline colours", () => {
+  it("renders text colour and highlight as email-safe inline styles", () => {
+    const doc = structuredClone(FULL_DOC);
+    const paragraph = doc.content?.[0]?.content?.[1];
+    if (paragraph?.type === "emailParagraph") {
+      paragraph.content = [
+        {
+          type: "text",
+          text: "Highlighted copy",
+          marks: [{ type: "textStyle", attrs: { color: "#2563eb", backgroundColor: "#fef3c7" } }],
+        },
+      ];
+    }
+    const html = renderEmailDoc(doc);
+    expect(html).toContain("color:#2563eb;");
+    expect(html).toContain("background-color:#fef3c7;");
+  });
+});
+
 describe("renderEmailDoc — layout allow-list", () => {
   it("satisfies the allow-list for every preset and the full doc", () => {
     for (const preset of EMAIL_DOC_PRESETS) assertAllowList(renderEmailDoc(preset.doc));

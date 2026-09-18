@@ -1,4 +1,9 @@
-import { EMAIL_DOC_PRESETS, EMAIL_DOC_LIMITS, type EmailDocJson } from "@loopkit/email-doc";
+import {
+  COMMUNITY_EMAIL_TEMPLATES,
+  EMAIL_DOC_PRESETS,
+  EMAIL_DOC_LIMITS,
+  type EmailDocJson,
+} from "@loopkit/email-doc";
 import { workspace } from "@loopkit/db/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -187,6 +192,17 @@ describe("stored email artefact satisfies the layout contract", () => {
     for (const preset of EMAIL_DOC_PRESETS) {
       const { html } = renderTemplateDoc(preset.doc);
       assertLayoutContract(html, `preset:${preset.id}`);
+    }
+  });
+
+  it("holds for every community gallery template", () => {
+    // The gallery is the path most new templates now start from, so its
+    // output is the output most recipients will actually see. It gets the
+    // same adversarial check as the presets rather than only the
+    // renderer-side assertions in @loopkit/email-doc's own suite.
+    for (const template of COMMUNITY_EMAIL_TEMPLATES) {
+      const { html } = renderTemplateDoc(template.doc);
+      assertLayoutContract(html, `community:${template.id}`);
     }
   });
 

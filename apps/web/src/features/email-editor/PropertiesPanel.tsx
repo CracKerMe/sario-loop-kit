@@ -1,15 +1,13 @@
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
-import { MousePointerSquareDashedIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@loopkit/ui/components/card";
+import { Button } from "@loopkit/ui/components/button";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@loopkit/ui/components/empty";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@loopkit/ui/components/dropdown-menu";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { EMAIL_BLOCKS, type EmailBlockType } from "@loopkit/email-doc";
@@ -35,7 +33,9 @@ function AttrControl({
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={`attr-${name}`}>{label}</Label>
+      <Label htmlFor={`attr-${name}`} className="text-[10px] font-medium text-muted-foreground">
+        {label}
+      </Label>
       {kind === "enum" ? (
         <select
           id={`attr-${name}`}
@@ -65,12 +65,26 @@ function AttrControl({
           }}
         />
       ) : kind === "color" ? (
-        <Input
-          id={`attr-${name}`}
-          value={value}
-          placeholder="e.g. #f4f4f5 or transparent"
-          onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            id={`attr-${name}`}
+            type="color"
+            value={/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value) ? value : "#ffffff"}
+            onChange={(e) => onChange(e.target.value)}
+            className="size-8 cursor-pointer rounded border border-input bg-background p-0.5"
+            aria-label={`${label} picker`}
+          />
+          <Input
+            value={value}
+            placeholder="#f4f4f5"
+            onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+          />
+          {value && (
+            <Button type="button" variant="ghost" size="xs" onClick={() => onChange(null)}>
+              Clear
+            </Button>
+          )}
+        </div>
       ) : (
         <Input id={`attr-${name}`} value={value} onChange={(e) => onChange(e.target.value)} />
       )}
@@ -78,7 +92,7 @@ function AttrControl({
   );
 }
 
-function ControlsCard({
+function ControlsMenu({
   title,
   type,
   attrs,
@@ -90,29 +104,37 @@ function ControlsCard({
   onCommit: (name: string, value: unknown) => void;
 }) {
   const controls = getAttrControls(type);
+  if (controls.length === 0) return null;
   return (
-    <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-      <CardHeader className="border-b border-border/70">
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        {controls.map((c) => {
-          const raw = attrs[c.name];
-          const value = raw === null || raw === undefined ? "" : String(raw);
-          return (
-            <AttrControl
-              key={c.name}
-              name={c.name}
-              label={c.label}
-              kind={c.kind}
-              options={c.options}
-              value={value}
-              onChange={(v) => onCommit(c.name, v)}
-            />
-          );
-        })}
-      </CardContent>
-    </Card>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" type="button" className="h-7 gap-1 px-2 text-xs">
+            {title}
+            <ChevronDownIcon className="size-3" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-64 bg-card p-3">
+        <div className="grid gap-3">
+          {controls.map((c) => {
+            const raw = attrs[c.name];
+            const value = raw === null || raw === undefined ? "" : String(raw);
+            return (
+              <AttrControl
+                key={c.name}
+                name={c.name}
+                label={c.label}
+                kind={c.kind}
+                options={c.options}
+                value={value}
+                onChange={(v) => onCommit(c.name, v)}
+              />
+            );
+          })}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -134,40 +156,25 @@ export function PropertiesPanel({ editor }: { editor: Editor }) {
   });
 
   if (!active && !section) {
-    return (
-      <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-        <CardContent className="py-6">
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <MousePointerSquareDashedIcon />
-              </EmptyMedia>
-              <EmptyTitle>Nothing selected</EmptyTitle>
-              <EmptyDescription>Click a block in the canvas to edit its settings.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        </CardContent>
-      </Card>
-    );
+    return null;
   }
 
-  const sectionLabel = "Section";
   const blockLabel = active
     ? (EMAIL_BLOCKS.find((b) => b.type === active.type)?.label ?? active.type)
     : null;
 
   return (
-    <div className="grid content-start gap-4">
+    <div className="flex flex-wrap items-center gap-1.5 border-l border-border/70 pl-2">
       {section && (
-        <ControlsCard
-          title={sectionLabel}
+        <ControlsMenu
+          title="Section"
           type="emailSection"
           attrs={section.attrs}
           onCommit={(name, value) => updateSectionAttrs(editor, { [name]: value })}
         />
       )}
       {active && active.type !== "emailSection" && (
-        <ControlsCard
+        <ControlsMenu
           title={blockLabel ?? active.type}
           type={active.type}
           attrs={active.attrs}

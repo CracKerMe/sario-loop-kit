@@ -155,6 +155,15 @@ function renderText(node: ProseMirrorNode, opts: RenderOptions): string {
       const href = escapeHtml(String(mark.attrs?.href ?? ""));
       open += `<a href="${href}" style="color:${opts.linkColor};text-decoration:underline;">`;
       close = "</a>" + close;
+    } else if (mark.type.name === "textStyle") {
+      const color = isColor(mark.attrs?.color) ? `color:${mark.attrs.color};` : "";
+      const background = isColor(mark.attrs?.backgroundColor)
+        ? `background-color:${mark.attrs.backgroundColor};`
+        : "";
+      if (color || background) {
+        open += `<span style="${color}${background}">`;
+        close = "</span>" + close;
+      }
     }
   }
   return open + escaped + close;

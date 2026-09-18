@@ -55,7 +55,7 @@ export type EmailBlockType =
   | "emailDivider"
   | "emailMergeTag";
 
-export type EmailMarkType = "bold" | "italic" | "underline" | "link";
+export type EmailMarkType = "bold" | "italic" | "underline" | "link" | "textStyle";
 
 /** A ProseMirror mark, as it appears in the stored JSON. */
 export interface EmailMarkJson {
@@ -121,7 +121,7 @@ export const EMAIL_BLOCKS: readonly EmailBlockDefinition[] = [
   {
     type: "emailParagraph",
     label: "Paragraph",
-    description: "Body copy. Supports bold, italic, underline and links.",
+    description: "Body copy. Supports bold, italic, underline, links, text colour and highlights.",
     kind: "block",
     insertable: true,
     attrs: { align: "left" },

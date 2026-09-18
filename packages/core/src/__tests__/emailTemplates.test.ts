@@ -212,6 +212,8 @@ describe("email templates with a visual-editor document", () => {
     const preview = previewEmailDoc(announcement);
     expect(preview.html).toContain('role="presentation"');
     expect(preview.mergeTags).toContain("contact.firstName");
+    expect(preview.html).toContain("Alex");
+    expect(preview.html).not.toContain("{{contact.firstName}}");
     expect(preview.textBody).toContain("Something new just shipped");
   });
 

@@ -197,6 +197,13 @@ describe("validateEmailDoc — value layer", () => {
     expectInvalid(doc);
   });
 
+  it("rejects an invalid inline text colour", () => {
+    const doc = baseDoc();
+    const text = doc.content?.[0]?.content?.[0]?.content?.[0];
+    if (text?.type === "text") text.marks = [{ type: "textStyle", attrs: { color: "red" } }];
+    expectInvalid(doc);
+  });
+
   it("rejects an invalid color (divider color)", () => {
     const doc = baseDoc();
     (doc.content![0]!.content as unknown[]).push({

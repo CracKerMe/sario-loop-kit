@@ -1,4 +1,4 @@
-import { Node, getSchema, type Extensions } from "@tiptap/core";
+import { Mark, Node, getSchema, type Extensions } from "@tiptap/core";
 import { Bold } from "@tiptap/extension-bold";
 import { Document } from "@tiptap/extension-document";
 import { Italic } from "@tiptap/extension-italic";
@@ -439,6 +439,51 @@ const EmailLink = Link.configure({
 });
 
 /**
+ * Inline presentation that remains safe in email clients.  Keeping colour and
+ * highlight in one mark means a selected run can carry both values at once,
+ * without introducing browser-only CSS or arbitrary HTML into the document.
+ */
+const EmailTextStyle = Mark.create({
+  name: "textStyle",
+  inclusive: true,
+
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (element: HtmlElementLike) => element.getAttribute("data-text-color"),
+        renderHTML: (attributes: HtmlAttributesLike) =>
+          attributes.color ? { "data-text-color": String(attributes.color) } : {},
+      },
+      backgroundColor: {
+        default: null,
+        parseHTML: (element: HtmlElementLike) => element.getAttribute("data-text-background"),
+        renderHTML: (attributes: HtmlAttributesLike) =>
+          attributes.backgroundColor
+            ? { "data-text-background": String(attributes.backgroundColor) }
+            : {},
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "span[data-text-color], span[data-text-background]" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    const color = HTMLAttributes["data-text-color"];
+    const background = HTMLAttributes["data-text-background"];
+    const style = [
+      color ? `color:${String(color)}` : "",
+      background ? `background-color:${String(background)}` : "",
+    ]
+      .filter(Boolean)
+      .join(";");
+    return ["span", { ...HTMLAttributes, ...(style ? { style } : {}) }, 0];
+  },
+});
+
+/**
  * A fresh extension list. A factory rather than a shared array because a
  * Tiptap extension instance carries configuration state and an editor mutates
  * its own copy; handing the same instances to the server's `getSchema()` and
@@ -460,6 +505,7 @@ export function emailExtensions(): Extensions {
     Italic,
     Underline,
     EmailLink,
+    EmailTextStyle,
   ];
 }
 
@@ -469,7 +515,7 @@ export function emailSchema(): Schema {
 }
 
 /** Marks the editor toolbar may toggle. Nothing else is in the schema. */
-export const EMAIL_MARK_EXTENSIONS = [Bold, Italic, Underline, EmailLink] as const;
+export const EMAIL_MARK_EXTENSIONS = [Bold, Italic, Underline, EmailLink, EmailTextStyle] as const;
 
 export {
   EmailButton,
@@ -481,6 +527,7 @@ export {
   EmailMergeTag,
   EmailParagraph,
   EmailSection,
+  EmailTextStyle,
   BLOCK_GROUP,
 };
 

@@ -2,6 +2,8 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { cn } from "@loopkit/ui/lib/utils";
+import { emptyEmailDoc } from "@loopkit/email-doc";
+import { Link } from "@tanstack/react-router";
 import {
   Background,
   BackgroundVariant,
@@ -27,7 +29,10 @@ import {
   Loader2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  PencilIcon,
+  PlusIcon,
   SearchIcon,
+  SquareArrowOutUpRightIcon,
   Trash2Icon,
 } from "lucide-react";
 import { validateGraph } from "@loopkit/journey";
@@ -46,6 +51,8 @@ import {
   type BuilderNodeType,
 } from "./graph";
 import { NODE_ICONS, createNodeTypes } from "./nodes";
+import { VariablePicker } from "./VariablePicker";
+import { type JourneyVariable, variablesForNode, wrapVariable } from "./variables";
 
 export type BuilderMeta = {
   dirty: boolean;
@@ -110,12 +117,110 @@ function InspectorField({
   );
 }
 
+function VariablesReference({ variables }: { variables: JourneyVariable[] }) {
+  const [open, setOpen] = useState(false);
+  const groups: { group: JourneyVariable["group"]; items: JourneyVariable[] }[] = (
+    ["Contact", "Journey", "Event"] as const
+  )
+    .map((group) => ({ group, items: variables.filter((v) => v.group === group) }))
+    .filter((g) => g.items.length > 0);
+
+  return (
+    <div className="rounded-lg border border-border bg-card/50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-2.5 py-2 text-[11px] font-medium text-muted-foreground"
+      >
+        <span>Variables available here ({variables.length})</span>
+        <span className="text-[10px]">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="grid gap-2 border-t border-border/70 p-2.5">
+          {groups.map(({ group, items }) => (
+            <div key={group}>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {group}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {items.map((v) => (
+                  <code
+                    key={v.path}
+                    className="rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]"
+                  >
+                    {wrapVariable(v.path)}
+                  </code>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InputWithVariables({
+  value,
+  onChange,
+  placeholder,
+  variables,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  variables: JourneyVariable[];
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex items-center gap-1.5">
+      <Input
+        ref={ref}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <VariablePicker variables={variables} targetRef={ref} value={value} onChange={onChange} />
+    </div>
+  );
+}
+
+function TextareaWithVariables({
+  value,
+  onChange,
+  placeholder,
+  variables,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  variables: JourneyVariable[];
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  return (
+    <div className="grid gap-1.5">
+      <textarea
+        ref={ref}
+        className={textareaClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <div>
+        <VariablePicker variables={variables} targetRef={ref} value={value} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
 function SplitRoutesEditor({
   routes,
   onChange,
+  variables,
 }: {
   routes: { name: string; expression: string }[];
   onChange: (routes: { name: string; expression: string }[]) => void;
+  variables: JourneyVariable[];
 }) {
   return (
     <div className="grid gap-2">
@@ -143,12 +248,12 @@ function SplitRoutesEditor({
               <Trash2Icon className="size-3" />
             </Button>
           </div>
-          <textarea
-            className={textareaClass}
+          <TextareaWithVariables
+            variables={variables}
             value={route.expression}
-            onChange={(e) => {
+            onChange={(v) => {
               const next = [...routes];
-              next[i] = { ...route, expression: e.target.value };
+              next[i] = { ...route, expression: v };
               onChange(next);
             }}
             placeholder='{{ contact.plan }} == "pro"'
@@ -269,8 +374,21 @@ export function JourneyBuilder({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("lk-journey-inspector-width"));
+    return Number.isFinite(saved) && saved >= 280 && saved <= 720 ? saved : 280;
+  });
+  const inspectorResizing = useRef(false);
+  const [newTemplateOpen, setNewTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateSubject, setNewTemplateSubject] = useState("");
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
+  const nodeVariables = useMemo(
+    () => variablesForNode(selected?.id, nodes, edges),
+    [selected?.id, nodes, edges],
+  );
   const dirty = useMemo(() => {
     // Unsaved journeys always need a create call.
     if (!journeyId) return true;
@@ -449,6 +567,29 @@ export function JourneyBuilder({
     }
   };
 
+  const createTemplateForSelected = async () => {
+    if (!newTemplateName.trim()) return;
+    setCreatingTemplate(true);
+    try {
+      const { template } = await api.createTemplateFromDoc({
+        name: newTemplateName.trim(),
+        subject: newTemplateSubject.trim() || newTemplateName.trim(),
+        doc: emptyEmailDoc(),
+      });
+      const { templates: refreshed } = await api.templates();
+      setTemplates(refreshed);
+      updateSelectedData({ templateId: template.id });
+      setNewTemplateOpen(false);
+      setNewTemplateName("");
+      setNewTemplateSubject("");
+      toast.success("Template created");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create template");
+    } finally {
+      setCreatingTemplate(false);
+    }
+  };
+
   const save = async (publish: boolean) => {
     if (publish) {
       const missingTemplate = nodes.filter(
@@ -539,6 +680,33 @@ export function JourneyBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, graph, name, journeyId]);
 
+  const startInspectorResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      inspectorResizing.current = true;
+      const startX = e.clientX;
+      const startWidth = inspectorWidth;
+      const onMove = (moveEvent: MouseEvent) => {
+        if (!inspectorResizing.current) return;
+        const next = Math.min(720, Math.max(280, startWidth - (moveEvent.clientX - startX)));
+        setInspectorWidth(next);
+      };
+      const onUp = () => {
+        inspectorResizing.current = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        setInspectorWidth((w) => {
+          localStorage.setItem("lk-journey-inspector-width", String(w));
+          return w;
+        });
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [inspectorWidth],
+  );
+
   const paletteItems = (Object.keys(NODE_META) as BuilderNodeType[])
     .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
     .filter((t) => {
@@ -558,7 +726,10 @@ export function JourneyBuilder({
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[auto_minmax(0,1fr)_280px]">
+    <div
+      className="grid h-full min-h-0"
+      style={{ gridTemplateColumns: `auto minmax(0,1fr) ${inspectorWidth}px` }}
+    >
       {/* Palette */}
       <aside
         className={cn(
@@ -825,7 +996,14 @@ export function JourneyBuilder({
       </div>
 
       {/* Inspector */}
-      <aside className="flex min-h-0 flex-col overflow-hidden border-l border-border bg-muted/10">
+      <aside className="relative flex min-h-0 flex-col overflow-hidden border-l border-border bg-muted/10">
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize inspector panel"
+          onMouseDown={startInspectorResize}
+          className="absolute inset-y-0 left-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-primary/30 active:bg-primary/50"
+        />
         <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5">
           {selected ? (
             <>
@@ -862,6 +1040,7 @@ export function JourneyBuilder({
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {selected ? (
             <div className="grid gap-3">
+              <VariablesReference variables={nodeVariables} />
               {selected.type === "email" && (
                 <>
                   <InspectorField label="Template">
@@ -893,36 +1072,64 @@ export function JourneyBuilder({
                       >
                         <EyeIcon className="size-3.5" />
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        className="shrink-0"
+                        aria-label="Create new template"
+                        onClick={() => setNewTemplateOpen(true)}
+                      >
+                        <PlusIcon className="size-3.5" />
+                      </Button>
                     </div>
+                    {(selected.data as { templateId?: string }).templateId && (
+                      <Link
+                        to="/templates/$templateId"
+                        params={{
+                          templateId: String((selected.data as { templateId?: string }).templateId),
+                        }}
+                        target="_blank"
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                      >
+                        <PencilIcon className="size-3" aria-hidden="true" />
+                        Edit HTML / content
+                        <SquareArrowOutUpRightIcon className="size-2.5" aria-hidden="true" />
+                      </Link>
+                    )}
                   </InspectorField>
                   <InspectorField
                     label="Subject override"
                     hint="Leave empty to use the template subject."
                   >
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { subject?: string }).subject ?? "")}
-                      onChange={(e) => updateSelectedData({ subject: e.target.value })}
+                      onChange={(v) => updateSelectedData({ subject: v })}
                       placeholder="Optional"
                     />
                   </InspectorField>
                   <InspectorField label="Preheader">
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { preheader?: string }).preheader ?? "")}
-                      onChange={(e) => updateSelectedData({ preheader: e.target.value })}
+                      onChange={(v) => updateSelectedData({ preheader: v })}
                       placeholder="Inbox preview text"
                     />
                   </InspectorField>
                   <InspectorField label="From name override">
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { fromName?: string }).fromName ?? "")}
-                      onChange={(e) => updateSelectedData({ fromName: e.target.value })}
+                      onChange={(v) => updateSelectedData({ fromName: v })}
                       placeholder="Optional"
                     />
                   </InspectorField>
                   <InspectorField label="Reply-To override">
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { replyTo?: string }).replyTo ?? "")}
-                      onChange={(e) => updateSelectedData({ replyTo: e.target.value })}
+                      onChange={(v) => updateSelectedData({ replyTo: v })}
                       placeholder="Optional"
                     />
                   </InspectorField>
@@ -1083,10 +1290,10 @@ export function JourneyBuilder({
                   label="Expression"
                   hint='Example: {{ contact.plan }} == "pro" · Functions: includes, startsWith, now(), length…'
                 >
-                  <textarea
-                    className={textareaClass}
+                  <TextareaWithVariables
+                    variables={nodeVariables}
                     value={String((selected.data as { expression?: string }).expression ?? "")}
-                    onChange={(e) => updateSelectedData({ expression: e.target.value })}
+                    onChange={(v) => updateSelectedData({ expression: v })}
                   />
                 </InspectorField>
               )}
@@ -1266,9 +1473,10 @@ export function JourneyBuilder({
               {selected.type === "webhook" && (
                 <>
                   <InspectorField label="URL">
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { url?: string }).url ?? "")}
-                      onChange={(e) => updateSelectedData({ url: e.target.value })}
+                      onChange={(v) => updateSelectedData({ url: v })}
                       placeholder="https://…"
                     />
                   </InspectorField>
@@ -1285,17 +1493,20 @@ export function JourneyBuilder({
                       ))}
                     </select>
                   </InspectorField>
-                  <InspectorField label="Body (JSON)">
-                    <textarea
-                      className={textareaClass}
+                  <InspectorField
+                    label="Body (JSON)"
+                    hint="Values may be {{ variable }} placeholders"
+                  >
+                    <TextareaWithVariables
+                      variables={nodeVariables}
                       value={JSON.stringify(
                         (selected.data as { body?: unknown }).body ?? {},
                         null,
                         2,
                       )}
-                      onChange={(e) => {
+                      onChange={(v) => {
                         try {
-                          updateSelectedData({ body: JSON.parse(e.target.value || "{}") });
+                          updateSelectedData({ body: JSON.parse(v || "{}") });
                         } catch {
                           /* keep typing */
                         }
@@ -1303,16 +1514,16 @@ export function JourneyBuilder({
                     />
                   </InspectorField>
                   <InspectorField label="Headers (JSON)">
-                    <textarea
-                      className={textareaClass}
+                    <TextareaWithVariables
+                      variables={nodeVariables}
                       value={JSON.stringify(
                         (selected.data as { headers?: Record<string, string> }).headers ?? {},
                         null,
                         2,
                       )}
-                      onChange={(e) => {
+                      onChange={(v) => {
                         try {
-                          updateSelectedData({ headers: JSON.parse(e.target.value || "{}") });
+                          updateSelectedData({ headers: JSON.parse(v || "{}") });
                         } catch {
                           /* keep typing */
                         }
@@ -1352,19 +1563,20 @@ export function JourneyBuilder({
                     />
                   </InspectorField>
                   <InspectorField label="Subject">
-                    <Input
+                    <InputWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { subject?: string }).subject ?? "")}
-                      onChange={(e) => updateSelectedData({ subject: e.target.value })}
+                      onChange={(v) => updateSelectedData({ subject: v })}
                     />
                   </InspectorField>
                   <InspectorField
                     label="Message"
                     hint="Supports {{ contact.email }} style placeholders"
                   >
-                    <textarea
-                      className={textareaClass}
+                    <TextareaWithVariables
+                      variables={nodeVariables}
                       value={String((selected.data as { message?: string }).message ?? "")}
-                      onChange={(e) => updateSelectedData({ message: e.target.value })}
+                      onChange={(v) => updateSelectedData({ message: v })}
                     />
                   </InspectorField>
                 </>
@@ -1443,6 +1655,7 @@ export function JourneyBuilder({
                       .routes ?? []) as { name: string; expression: string }[]
                   }
                   onChange={(routes) => updateSelectedData({ routes })}
+                  variables={nodeVariables}
                 />
               )}
               {selected.type === "abSplit" && (
@@ -1460,16 +1673,16 @@ export function JourneyBuilder({
                     label="Set properties (JSON)"
                     hint='Values may be literals or single placeholders like "{{ contact.plan }}"'
                   >
-                    <textarea
-                      className={textareaClass}
+                    <TextareaWithVariables
+                      variables={nodeVariables}
                       value={JSON.stringify(
                         (selected.data as { set?: Record<string, unknown> }).set ?? {},
                         null,
                         2,
                       )}
-                      onChange={(e) => {
+                      onChange={(v) => {
                         try {
-                          updateSelectedData({ set: JSON.parse(e.target.value || "{}") });
+                          updateSelectedData({ set: JSON.parse(v || "{}") });
                         } catch {
                           /* keep typing */
                         }
@@ -1662,6 +1875,46 @@ export function JourneyBuilder({
             />
           )}
         </div>
+      </Dialog>
+
+      <Dialog
+        open={newTemplateOpen}
+        onClose={() => setNewTemplateOpen(false)}
+        title="New email template"
+        description="Creates a blank template and assigns it to this node. Add the HTML/content afterward."
+      >
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void createTemplateForSelected();
+          }}
+        >
+          <div className="grid gap-1.5">
+            <Label htmlFor="new-tpl-name">Name</Label>
+            <Input
+              id="new-tpl-name"
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              placeholder="Welcome email"
+              autoFocus
+              required
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="new-tpl-subject">Subject</Label>
+            <Input
+              id="new-tpl-subject"
+              value={newTemplateSubject}
+              onChange={(e) => setNewTemplateSubject(e.target.value)}
+              placeholder="Defaults to the name"
+            />
+          </div>
+          <Button type="submit" disabled={creatingTemplate || !newTemplateName.trim()}>
+            {creatingTemplate && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+            Create template
+          </Button>
+        </form>
       </Dialog>
     </div>
   );

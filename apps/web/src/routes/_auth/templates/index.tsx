@@ -1,14 +1,24 @@
+import type { CommunityEmailTemplate } from "@loopkit/email-doc";
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { Textarea } from "@loopkit/ui/components/textarea";
+import { cn } from "@loopkit/ui/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { FileCodeIcon, Loader2Icon, MailIcon, PencilIcon, PlusIcon } from "lucide-react";
+import {
+  FileCodeIcon,
+  Loader2Icon,
+  MailIcon,
+  PencilIcon,
+  PlusIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
+import { CommunityTemplateGallery } from "@/features/email-editor";
 import { api, type EmailTemplateDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/templates/")({
@@ -100,6 +110,35 @@ function TemplateForm({
   );
 }
 
+function ModeTab({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-xs font-medium transition-colors",
+        active
+          ? "bg-card text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
 function TemplatesPage() {
   const navigate = useNavigate();
   const { new: isNewSearch, edit: editSearch } = Route.useSearch();
@@ -109,6 +148,12 @@ function TemplatesPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<EmailTemplateDto | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Which half of the New template dialog is showing. "community" is the
+  // default because a gallery answers "what should this look like?", which is
+  // the question a blank HTML textarea cannot.
+  const [createMode, setCreateMode] = useState<"community" | "blank">("community");
+  /** Id of the community template currently being created, for its spinner. */
+  const [usingTemplate, setUsingTemplate] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -139,7 +184,36 @@ function TemplatesPage() {
 
   const closeCreate = () => {
     setCreating(false);
+    setCreateMode("community");
     if (isNewSearch === "1") void navigate({ to: "/templates", search: {} });
+  };
+
+  /**
+   * Creates a template from a gallery entry and opens it in the visual editor.
+   *
+   * It goes through `createTemplateFromDoc` (not `createTemplate`) so the new
+   * template is `source: "tiptap"` with a real `doc` — the server renders the
+   * HTML itself, which is what keeps the stored HTML and the document in step.
+   * Landing on the editor rather than the list matters: the user picked a
+   * design in order to edit it, and the copy is finished enough that the next
+   * thing they want is the cursor, not another click.
+   */
+  const useCommunityTemplate = async (template: CommunityEmailTemplate) => {
+    setUsingTemplate(template.id);
+    try {
+      const { template: created } = await api.createTemplateFromDoc({
+        name: template.label,
+        subject: template.subject,
+        doc: template.doc,
+      });
+      toast.success(`Created from “${template.label}”`);
+      closeCreate();
+      await navigate({ to: "/templates/$templateId", params: { templateId: created.id } });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setUsingTemplate(null);
+    }
   };
 
   const closeEdit = () => {
@@ -255,25 +329,51 @@ function TemplatesPage() {
         open={creating}
         onClose={closeCreate}
         title="New template"
-        description="Use {{contact.propertyName}} merge tags to personalize."
+        description={
+          createMode === "community"
+            ? "Start from a ready-made design, or write your own HTML."
+            : "Use {{contact.propertyName}} merge tags to personalize."
+        }
+        className={createMode === "community" ? "max-w-3xl" : undefined}
       >
-        <TemplateForm
-          submitting={submitting}
-          submitLabel="Create template"
-          onSubmit={async (v) => {
-            setSubmitting(true);
-            try {
-              await api.createTemplate(v);
-              toast.success("Template created");
-              closeCreate();
-              await load();
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Create failed");
-            } finally {
-              setSubmitting(false);
-            }
-          }}
-        />
+        <div className="mb-4 inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          <ModeTab
+            active={createMode === "community"}
+            onClick={() => setCreateMode("community")}
+            icon={<SparklesIcon className="size-3.5" />}
+          >
+            Start with a community template
+          </ModeTab>
+          <ModeTab
+            active={createMode === "blank"}
+            onClick={() => setCreateMode("blank")}
+            icon={<FileCodeIcon className="size-3.5" />}
+          >
+            Write HTML
+          </ModeTab>
+        </div>
+
+        {createMode === "community" ? (
+          <CommunityTemplateGallery onUse={useCommunityTemplate} submitting={usingTemplate} />
+        ) : (
+          <TemplateForm
+            submitting={submitting}
+            submitLabel="Create template"
+            onSubmit={async (v) => {
+              setSubmitting(true);
+              try {
+                await api.createTemplate(v);
+                toast.success("Template created");
+                closeCreate();
+                await load();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Create failed");
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+          />
+        )}
       </Dialog>
 
       <Dialog
