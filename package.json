@@ -43,7 +43,7 @@
     "typescript": "catalog:"
   },
   "lint-staged": {
-    "*": [
+    "*.{js,cjs,mjs,jsx,ts,cts,mts,tsx,mtsx,ctsx}": [
       "oxlint",
       "oxfmt --write"
     ]
