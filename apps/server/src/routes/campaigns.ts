@@ -78,7 +78,22 @@ export const campaignsRouter = new Hono<{ Variables: AuthVariables }>();
 campaignsRouter.get("/", async (c) => {
   const { workspaceId } = c.get("auth");
   const campaigns = await listCampaigns(db, workspaceId);
-  return c.json({ campaigns, total: campaigns.length });
+
+  // The campaigns page polls this collection endpoint, rather than each
+  // campaign's detail endpoint. Reconcile live campaigns here as well, or a
+  // send that completed after the drain returned remains displayed as
+  // "in flight" indefinitely.
+  await Promise.all(
+    campaigns
+      .filter((campaign) => campaign.status === "sending" || campaign.status === "queued")
+      .map(async (campaign) => {
+        await reconcileCampaign(campaign.id);
+        await finalizeCampaign(db, campaign.id, 0);
+      }),
+  );
+
+  const refreshedCampaigns = await listCampaigns(db, workspaceId);
+  return c.json({ campaigns: refreshedCampaigns, total: refreshedCampaigns.length });
 });
 
 campaignsRouter.post("/", async (c) => {

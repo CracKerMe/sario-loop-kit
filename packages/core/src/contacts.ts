@@ -91,6 +91,26 @@ export async function getContactById(
   return row ?? null;
 }
 
+/**
+ * Replaces the editable property bag for one contact. Unlike `upsertContact`,
+ * which deliberately merges partial ingestion updates, the dashboard needs a
+ * complete replacement so an operator can remove a custom property as well
+ * as add or change one.
+ */
+export async function replaceContactProperties(
+  db: Db,
+  workspaceId: string,
+  contactId: string,
+  properties: Record<string, unknown>,
+): Promise<Contact | null> {
+  const [row] = await db
+    .update(contact)
+    .set({ properties, updatedAt: new Date() })
+    .where(and(eq(contact.workspaceId, workspaceId), eq(contact.id, contactId)))
+    .returning();
+  return row ?? null;
+}
+
 export async function unsubscribeContact(
   db: Db,
   workspaceId: string,

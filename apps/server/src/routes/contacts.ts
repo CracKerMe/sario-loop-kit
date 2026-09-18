@@ -7,6 +7,7 @@ import {
   isValidEmail,
   listContacts,
   recordContactEvent,
+  replaceContactProperties,
   unsubscribeContact,
   upsertContact,
   type ContactImportRow,
@@ -24,6 +25,10 @@ const upsertContactSchema = z.object({
   email: z.string().email(),
   userId: z.string().optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
+});
+
+const replacePropertiesSchema = z.object({
+  properties: z.record(z.string().min(1).max(100), z.unknown()),
 });
 
 const eventSchema = z.object({
@@ -235,6 +240,23 @@ contactsRouter.get("/:id", async (c) => {
     .limit(50);
 
   return c.json({ contact: contactRow, events });
+});
+
+/** Dashboard-only full replacement: permits deleting individual custom keys. */
+contactsRouter.patch("/:id/properties", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = replacePropertiesSchema.safeParse(await c.req.json());
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const contactRow = await replaceContactProperties(
+    db,
+    workspaceId,
+    c.req.param("id"),
+    parsed.data.properties,
+  );
+  if (!contactRow) return c.json({ error: "not_found" }, 404);
+  return c.json({ contact: contactRow });
 });
 
 contactsRouter.post("/:id/unsubscribe", async (c) => {

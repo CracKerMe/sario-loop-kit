@@ -330,6 +330,11 @@ export const api = {
   },
   contact: (id: string) =>
     request<{ contact: ContactDto; events: ContactEventDto[] }>(`/v1/contacts/${id}`),
+  replaceContactProperties: (id: string, properties: Record<string, unknown>) =>
+    request<{ contact: ContactDto }>(`/v1/contacts/${id}/properties`, {
+      method: "PATCH",
+      body: JSON.stringify({ properties }),
+    }),
   createContact: (input: {
     email: string;
     userId?: string;

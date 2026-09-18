@@ -24,6 +24,7 @@ export {
   getContactById,
   listContacts,
   recordContactEvent,
+  replaceContactProperties,
   resubscribeContact,
   unsubscribeContact,
   upsertContact,

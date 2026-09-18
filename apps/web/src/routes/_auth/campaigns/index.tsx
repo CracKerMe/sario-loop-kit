@@ -1,7 +1,7 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   CopyIcon,
   Loader2Icon,
@@ -39,6 +39,7 @@ export const Route = createFileRoute("/_auth/campaigns/")({
 const POLL_MS = 2000;
 
 function CampaignsPage() {
+  const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<CampaignDto[]>([]);
   const [templates, setTemplates] = useState<EmailTemplateDto[]>([]);
   const [audiences, setAudiences] = useState<AudienceWithCountsDto[]>([]);
@@ -108,11 +109,7 @@ function CampaignsPage() {
         title="Campaigns"
         description="One-off broadcasts to a saved audience"
         actions={
-          <Button
-            size="sm"
-            disabled={templates.length === 0 || audiences.length === 0}
-            onClick={() => setCreating(true)}
-          >
+          <Button size="sm" onClick={() => setCreating(true)}>
             <PlusIcon data-icon="inline-start" />
             New campaign
           </Button>
@@ -122,11 +119,27 @@ function CampaignsPage() {
       {templates.length === 0 && (
         <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           A campaign needs an email template and an audience. Create a template first.
+          <Button
+            size="xs"
+            variant="link"
+            className="ml-1 h-auto px-0"
+            onClick={() => void navigate({ to: "/templates", search: { new: "1" } })}
+          >
+            Create template
+          </Button>
         </div>
       )}
       {templates.length > 0 && audiences.length === 0 && (
         <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           A campaign needs an audience. Create one to define who receives it.
+          <Button
+            size="xs"
+            variant="link"
+            className="ml-1 h-auto px-0"
+            onClick={() => void navigate({ to: "/audiences" })}
+          >
+            Create audience
+          </Button>
         </div>
       )}
 
@@ -154,6 +167,10 @@ function CampaignsPage() {
             A campaign sends one email to everyone in an audience. Recipients are resolved once, at
             launch, so editing the audience later cannot change who received it.
           </p>
+          <Button size="sm" className="mt-4" onClick={() => setCreating(true)}>
+            <PlusIcon data-icon="inline-start" />
+            New campaign
+          </Button>
         </div>
       )}
 
@@ -306,104 +323,140 @@ function CampaignsPage() {
         title="New campaign"
         description="Recipients are resolved from the audience when you launch."
       >
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setSubmitting(true);
-            try {
-              await api.createCampaign({
-                name,
-                templateId,
-                audienceId,
-                subject: subject.trim() || undefined,
-                preheader: preheader.trim() || undefined,
-              });
-              toast.success("Campaign created");
-              setCreating(false);
-              setName("");
-              setSubject("");
-              setPreheader("");
-              await load();
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Create failed");
-            } finally {
-              setSubmitting(false);
-            }
-          }}
-        >
-          <div className="grid gap-1.5">
-            <Label htmlFor="camp-name">Name</Label>
-            <Input
-              id="camp-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="September product update"
-              required
-            />
+        {templates.length === 0 || audiences.length === 0 ? (
+          <div className="grid gap-3">
+            <p className="text-sm text-muted-foreground">
+              Create an email template and a saved audience before setting up this campaign.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {templates.length === 0 && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setCreating(false);
+                    void navigate({ to: "/templates", search: { new: "1" } });
+                  }}
+                >
+                  Create template
+                </Button>
+              )}
+              {audiences.length === 0 && (
+                <Button
+                  type="button"
+                  variant={templates.length === 0 ? "outline" : "default"}
+                  onClick={() => {
+                    setCreating(false);
+                    void navigate({ to: "/audiences" });
+                  }}
+                >
+                  Create audience
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="camp-template">Template</Label>
-            <select
-              id="camp-template"
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-              required
+        ) : (
+          <form
+            className="grid gap-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setSubmitting(true);
+              try {
+                await api.createCampaign({
+                  name,
+                  templateId,
+                  audienceId,
+                  subject: subject.trim() || undefined,
+                  preheader: preheader.trim() || undefined,
+                });
+                toast.success("Campaign created");
+                setCreating(false);
+                setName("");
+                setSubject("");
+                setPreheader("");
+                await load();
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Create failed");
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+          >
+            <div className="grid gap-1.5">
+              <Label htmlFor="camp-name">Name</Label>
+              <Input
+                id="camp-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="September product update"
+                required
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="camp-template">Template</Label>
+              <select
+                id="camp-template"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                required
+              >
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="camp-audience">Audience</Label>
+              <select
+                id="camp-audience"
+                value={audienceId}
+                onChange={(e) => setAudienceId(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                required
+              >
+                {audiences.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} — {a.sendableCount.toLocaleString()} mailable
+                  </option>
+                ))}
+              </select>
+              {selectedAudience && (
+                <p className="text-[11px] text-muted-foreground">
+                  {selectedAudience.memberCount.toLocaleString()} match ·{" "}
+                  {selectedAudience.sendableCount.toLocaleString()} can receive mail. The gap is
+                  unsubscribed and suppressed contacts, which are excluded at launch.
+                </p>
+              )}
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="camp-subject">Subject override (optional)</Label>
+              <Input
+                id="camp-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Leave blank to use the template subject"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="camp-preheader">Preheader (optional)</Label>
+              <Input
+                id="camp-preheader"
+                value={preheader}
+                onChange={(e) => setPreheader(e.target.value)}
+                placeholder="Shown next to the subject in most inboxes"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={submitting || !name.trim() || !templateId || !audienceId}
             >
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="camp-audience">Audience</Label>
-            <select
-              id="camp-audience"
-              value={audienceId}
-              onChange={(e) => setAudienceId(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-              required
-            >
-              {audiences.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} — {a.sendableCount.toLocaleString()} mailable
-                </option>
-              ))}
-            </select>
-            {selectedAudience && (
-              <p className="text-[11px] text-muted-foreground">
-                {selectedAudience.memberCount.toLocaleString()} match ·{" "}
-                {selectedAudience.sendableCount.toLocaleString()} can receive mail. The gap is
-                unsubscribed and suppressed contacts, which are excluded at launch.
-              </p>
-            )}
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="camp-subject">Subject override (optional)</Label>
-            <Input
-              id="camp-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Leave blank to use the template subject"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="camp-preheader">Preheader (optional)</Label>
-            <Input
-              id="camp-preheader"
-              value={preheader}
-              onChange={(e) => setPreheader(e.target.value)}
-              placeholder="Shown next to the subject in most inboxes"
-            />
-          </div>
-          <Button type="submit" disabled={submitting || !name.trim() || !templateId || !audienceId}>
-            {submitting && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
-            Create campaign
-          </Button>
-        </form>
+              {submitting && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+              Create campaign
+            </Button>
+          </form>
+        )}
       </Dialog>
     </div>
   );

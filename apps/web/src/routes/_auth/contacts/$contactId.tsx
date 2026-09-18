@@ -1,16 +1,29 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@loopkit/ui/components/card";
+import { Input } from "@loopkit/ui/components/input";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, CalendarDaysIcon, MailIcon, UserRoundIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BanIcon,
+  CalendarDaysIcon,
+  MailIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+  UserRoundIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import { Dialog } from "@/components/dialog";
 import { api, type ContactDto, type ContactEventDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/contacts/$contactId")({
   component: ContactDetailPage,
 });
+
+const DEFAULT_PROPERTY_KEYS = ["firstName", "lastName", "userGroup", "source"] as const;
 
 function ContactDetailPage() {
   const { contactId } = Route.useParams();
@@ -19,6 +32,9 @@ function ContactDetailPage() {
   const [events, setEvents] = useState<ContactEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editingProperties, setEditingProperties] = useState(false);
+  const [propertyDraft, setPropertyDraft] = useState<[string, string][]>([]);
+  const [savingProperties, setSavingProperties] = useState(false);
 
   const load = async () => {
     try {
@@ -45,6 +61,53 @@ function ContactDetailPage() {
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Unsubscribe failed");
+    }
+  };
+
+  const beginPropertyEdit = () => {
+    const properties = contact?.properties ?? {};
+    setPropertyDraft([
+      ...Object.entries(properties).map(
+        ([key, value]) =>
+          [key, typeof value === "string" ? value : JSON.stringify(value)] as [string, string],
+      ),
+      ...DEFAULT_PROPERTY_KEYS.filter((key) => !Object.hasOwn(properties, key)).map(
+        (key) => [key, ""] as [string, string],
+      ),
+    ]);
+    setEditingProperties(true);
+  };
+
+  const saveProperties = async () => {
+    if (!contact) return;
+    const properties: Record<string, unknown> = {};
+    for (const [rawKey, rawValue] of propertyDraft) {
+      const key = rawKey.trim();
+      if (!key) continue;
+      if (Object.hasOwn(properties, key)) {
+        toast.error(`Duplicate property: ${key}`);
+        return;
+      }
+      const value = rawValue.trim();
+      if (!value) continue;
+      try {
+        properties[key] = /^(?:[["{]|true$|false$|null$|-?\d)/.test(value)
+          ? JSON.parse(value)
+          : rawValue;
+      } catch {
+        properties[key] = rawValue;
+      }
+    }
+    setSavingProperties(true);
+    try {
+      const result = await api.replaceContactProperties(contact.id, properties);
+      setContact(result.contact);
+      setEditingProperties(false);
+      toast.success("Properties saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save properties");
+    } finally {
+      setSavingProperties(false);
     }
   };
 
@@ -109,6 +172,10 @@ function ContactDetailPage() {
             <CardTitle className="flex items-center gap-2">
               <UserRoundIcon className="size-4 text-primary" aria-hidden="true" />
               Properties
+              <Button className="ml-auto" variant="ghost" size="xs" onClick={beginPropertyEdit}>
+                <PencilIcon data-icon="inline-start" />
+                Edit
+              </Button>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -175,6 +242,86 @@ function ContactDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={editingProperties}
+        onClose={() => setEditingProperties(false)}
+        title="Manage contact properties"
+        description="Default fields use firstName, lastName, userGroup, and source. Add any additional custom fields you need."
+      >
+        <div className="grid gap-3">
+          {propertyDraft.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No properties yet. Add a default or custom field.
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              {propertyDraft.map(([key, value], index) => (
+                <div
+                  key={`${key}-${index}`}
+                  className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto] gap-2"
+                >
+                  <Input
+                    value={key}
+                    onChange={(event) =>
+                      setPropertyDraft((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? [event.target.value, item[1]] : item,
+                        ),
+                      )
+                    }
+                    aria-label={`Property ${index + 1} name`}
+                    placeholder="Property name"
+                  />
+                  <Input
+                    value={value}
+                    onChange={(event) =>
+                      setPropertyDraft((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? [item[0], event.target.value] : item,
+                        ),
+                      )
+                    }
+                    aria-label={`${key || "Property"} value`}
+                    placeholder="Value"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove ${key || "property"}`}
+                    onClick={() =>
+                      setPropertyDraft((current) => current.filter((_, i) => i !== index))
+                    }
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            onClick={() => setPropertyDraft((current) => [...current, ["", ""]])}
+          >
+            <PlusIcon data-icon="inline-start" />
+            Add property
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Values that look like JSON (numbers, booleans, objects, or arrays) keep their type.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditingProperties(false)}>
+              Cancel
+            </Button>
+            <Button disabled={savingProperties} onClick={() => void saveProperties()}>
+              {savingProperties ? "Saving…" : "Save properties"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

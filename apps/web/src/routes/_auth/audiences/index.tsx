@@ -1,8 +1,18 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
-import { FilterIcon, Loader2Icon, PencilIcon, PlusIcon, Trash2Icon, UsersIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  DownloadIcon,
+  EyeIcon,
+  FilterIcon,
+  Loader2Icon,
+  PencilIcon,
+  PlusIcon,
+  SearchIcon,
+  Trash2Icon,
+  UsersIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
@@ -15,7 +25,7 @@ import {
   type GroupMode,
   type Row,
 } from "@/features/audiences/filter";
-import { api, type AudienceWithCountsDto } from "@/lib/api";
+import { api, type AudienceWithCountsDto, type ContactDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/audiences/")({
   component: AudiencesPage,
@@ -25,6 +35,11 @@ function AudiencesPage() {
   const [audiences, setAudiences] = useState<AudienceWithCountsDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [viewing, setViewing] = useState<AudienceWithCountsDto | null>(null);
+  const [members, setMembers] = useState<ContactDto[]>([]);
+  const [memberTotal, setMemberTotal] = useState(0);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AudienceWithCountsDto | null>(null);
@@ -51,6 +66,50 @@ function AudiencesPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  const visibleAudiences = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return audiences;
+    return audiences.filter((audience) =>
+      `${audience.name} ${audience.summary}`.toLowerCase().includes(needle),
+    );
+  }, [audiences, query]);
+
+  const openMembers = async (audience: AudienceWithCountsDto) => {
+    setViewing(audience);
+    setLoadingMembers(true);
+    try {
+      const result = await api.audienceContacts(audience.id, { limit: 100 });
+      setMembers(result.contacts);
+      setMemberTotal(result.total);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load audience members");
+      setMembers([]);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const exportMembers = () => {
+    if (!viewing || !members.length) return;
+    const fields = Array.from(new Set(members.flatMap((member) => Object.keys(member.properties))));
+    const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const body = [
+      ["email", "subscribed", ...fields].map(quote).join(","),
+      ...members.map((member) =>
+        [member.email, member.subscribed, ...fields.map((field) => member.properties[field])]
+          .map(quote)
+          .join(","),
+      ),
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${viewing.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-") || "audience"}-members.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast.success("Audience members exported");
+  };
 
   const resetForm = () => {
     setName("");
@@ -137,6 +196,19 @@ function AudiencesPage() {
         }
       />
 
+      {!loading && audiences.length > 0 && (
+        <div className="relative mb-4 max-w-md">
+          <SearchIcon className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search audiences or rules…"
+            className="h-9 pl-9"
+            aria-label="Search audiences"
+          />
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
@@ -168,9 +240,9 @@ function AudiencesPage() {
         </div>
       )}
 
-      {!loading && audiences.length > 0 && (
+      {!loading && visibleAudiences.length > 0 && (
         <div className="grid gap-3">
-          {audiences.map((audience) => {
+          {visibleAudiences.map((audience) => {
             const excluded = audience.memberCount - audience.sendableCount;
             return (
               <div
@@ -209,6 +281,14 @@ function AudiencesPage() {
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    aria-label={`View ${audience.name} members`}
+                    onClick={() => void openMembers(audience)}
+                  >
+                    <EyeIcon className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label={`Edit ${audience.name}`}
                     onClick={() => openEdit(audience)}
                   >
@@ -226,6 +306,12 @@ function AudiencesPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!loading && audiences.length > 0 && visibleAudiences.length === 0 && (
+        <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
+          No saved audiences match “{query}”.
         </div>
       )}
 
@@ -295,6 +381,61 @@ function AudiencesPage() {
             </Button>
           </form>
         )}
+      </Dialog>
+
+      <Dialog
+        open={viewing !== null}
+        onClose={() => setViewing(null)}
+        title={viewing ? `${viewing.name} members` : "Audience members"}
+        description={
+          viewing
+            ? `${memberTotal.toLocaleString()} mailable contacts match this audience.`
+            : undefined
+        }
+        className="max-w-2xl"
+      >
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              Showing the first 100 contacts eligible to receive mail.
+            </span>
+            <Button size="xs" variant="outline" disabled={!members.length} onClick={exportMembers}>
+              <DownloadIcon data-icon="inline-start" />
+              Export shown
+            </Button>
+          </div>
+          {loadingMembers ? (
+            <div className="grid place-items-center py-12 text-muted-foreground">
+              <Loader2Icon className="size-5 animate-spin" />
+            </div>
+          ) : members.length > 0 ? (
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-border">
+              {members.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2.5 text-sm last:border-0"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{member.email}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {Object.entries(member.properties)
+                        .slice(0, 2)
+                        .map(([key, value]) => `${key}: ${String(value)}`)
+                        .join(" · ") || "No custom fields"}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                    Mailable
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+              No mailable contacts currently match this audience.
+            </div>
+          )}
+        </div>
       </Dialog>
     </div>
   );
