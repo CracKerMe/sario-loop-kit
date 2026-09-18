@@ -212,6 +212,13 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
           },
         };
       }
+      if (op === "parallel") {
+        return { id, type: "parallel", data: {} };
+      }
+      if (op === "join") {
+        const mode = config.mode === "any" ? "any" : "all";
+        return { id, type: "join", data: { mode } };
+      }
       // exit / unknown action
       if (op !== undefined) {
         warnings.push(
@@ -225,6 +232,17 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
         type: "exit",
         data: { reason: typeof config.reason === "string" ? config.reason : undefined },
       };
+    }
+
+    case "subworkflow": {
+      const subId = typeof node.subworkflowId === "string" ? node.subworkflowId : "";
+      const journeyId = subId.startsWith("journey-") ? subId.slice("journey-".length) : "";
+      if (!journeyId) {
+        warnings.push(
+          `node ${id}: subworkflow id "${subId}" is not a journey workflow id; imported as a subJourney node with an empty reference`,
+        );
+      }
+      return { id, type: "subJourney", data: { journeyId } };
     }
 
     default: {
@@ -312,8 +330,16 @@ function edgesForNode(
     return out;
   }
 
-  // action nodes with conditionalNext (abSplit / timeWindow)
+  // action nodes with conditionalNext (abSplit / timeWindow / join)
   if (node.conditionalNext?.length) {
+    if (decompiled.type === "join") {
+      // The gate's single conditional entry IS the post-join edge — no handle.
+      return node.conditionalNext.map((branch) => ({
+        id: `${id}-${branch.target}`,
+        source: id,
+        target: branch.target,
+      }));
+    }
     for (const branch of node.conditionalNext) {
       const handle = inferHandleFromCondition(branch.condition, decompiled);
       out.push({

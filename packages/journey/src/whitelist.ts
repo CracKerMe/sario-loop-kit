@@ -4,6 +4,7 @@ const ALLOWED_TYPES: ReadonlySet<JourneyNode["type"]> = new Set([
   "trigger",
   "delay",
   "email",
+  "sendCampaign",
   "branch",
   "split",
   "filter",
@@ -16,6 +17,9 @@ const ALLOWED_TYPES: ReadonlySet<JourneyNode["type"]> = new Set([
   "score",
   "goal",
   "notify",
+  "parallel",
+  "join",
+  "subJourney",
 ]);
 
 /**

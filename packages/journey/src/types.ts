@@ -121,6 +121,28 @@ export interface JourneyGoalData {
   properties?: Record<string, unknown>;
 }
 
+export interface JourneySendCampaignData {
+  /** The campaign whose email composition this node sends. */
+  campaignId: string;
+  /**
+   * Snapshot of the campaign's template/subject/etc., taken from the
+   * campaign row the moment this journey was last published — compile()
+   * bakes this into the engine definition the same way an `email` node
+   * bakes in its own inline data, so re-registering the SAME published
+   * version at boot never needs a fresh DB lookup. Editing the campaign
+   * afterward does not retroactively change an already-published journey;
+   * republishing re-snapshots it. Empty until the first publish (the
+   * builder only has `campaignId` before then).
+   */
+  snapshot?: {
+    templateId: string;
+    subject?: string;
+    preheader?: string;
+    fromName?: string;
+    replyTo?: string;
+  };
+}
+
 export interface JourneyNotifyData {
   /** HTTP endpoint (Slack/Discord/飞书 incoming webhook, Zapier, internal API…). */
   url: string;
@@ -132,10 +154,30 @@ export interface JourneyNotifyData {
   payload?: Record<string, unknown>;
 }
 
+/** No per-node config — branches are simply the node's outgoing edges. */
+export interface JourneyParallelData {
+  label?: string;
+}
+
+export interface JourneyJoinData {
+  /**
+   * "all" (default): continue once every branch feeding the join has
+   * completed. "any": continue as soon as the first branch arrives; later
+   * arrivals are consumed and skipped (the post-join path never re-runs).
+   */
+  mode?: "all" | "any";
+}
+
+export interface JourneySubJourneyData {
+  /** The referenced (child) journey. Must be published at parent publish time. */
+  journeyId: string;
+}
+
 export type JourneyNode =
   | (JourneyNodeBase & { type: "trigger"; data: { trigger: JourneyTrigger } })
   | (JourneyNodeBase & { type: "delay"; data: JourneyDelayData })
   | (JourneyNodeBase & { type: "email"; data: JourneyEmailData })
+  | (JourneyNodeBase & { type: "sendCampaign"; data: JourneySendCampaignData })
   | (JourneyNodeBase & { type: "branch"; data: { expression: string } })
   | (JourneyNodeBase & { type: "split"; data: { routes: JourneySplitRoute[] } })
   | (JourneyNodeBase & { type: "filter"; data: { expression: string } })
@@ -147,7 +189,10 @@ export type JourneyNode =
   | (JourneyNodeBase & { type: "updateContact"; data: JourneyUpdateContactData })
   | (JourneyNodeBase & { type: "score"; data: JourneyScoreData })
   | (JourneyNodeBase & { type: "goal"; data: JourneyGoalData })
-  | (JourneyNodeBase & { type: "notify"; data: JourneyNotifyData });
+  | (JourneyNodeBase & { type: "notify"; data: JourneyNotifyData })
+  | (JourneyNodeBase & { type: "parallel"; data: JourneyParallelData })
+  | (JourneyNodeBase & { type: "join"; data: JourneyJoinData })
+  | (JourneyNodeBase & { type: "subJourney"; data: JourneySubJourneyData });
 
 export type JourneyNodeNonTrigger = Exclude<JourneyNode, { type: "trigger" }>;
 

@@ -65,6 +65,12 @@ export {
   type JourneyRunMigrationResult,
 } from "./journeyMigration";
 export {
+  assertSubJourneyReferences,
+  MAX_SUBJOURNEY_DEPTH,
+  SubJourneyReferenceError,
+  subJourneyNodeRefs,
+} from "./subJourneyValidation";
+export {
   compileAudienceWhere,
   compileSegmentFilter,
   describeSegmentFilter,

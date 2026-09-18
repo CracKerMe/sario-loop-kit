@@ -40,7 +40,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
-import { api, type EmailTemplateDto, type JourneyGraphDto, type ValidationResult } from "@/lib/api";
+import {
+  api,
+  type CampaignDto,
+  type EmailTemplateDto,
+  type JourneyDto,
+  type JourneyGraphDto,
+  type ValidationResult,
+} from "@/lib/api";
 import {
   NODE_CATEGORY_LABELS,
   NODE_META,
@@ -370,6 +377,8 @@ export function JourneyBuilder({
   const [selected, setSelected] = useState<Node | null>(null);
   const [validation, setValidation] = useState<ValidationResult>({ valid: true, issues: [] });
   const [templates, setTemplates] = useState<EmailTemplateDto[]>([]);
+  const [campaigns, setCampaigns] = useState<CampaignDto[]>([]);
+  const [journeys, setJourneys] = useState<JourneyDto[]>([]);
   const [contactPropertyKeys, setContactPropertyKeys] = useState<string[]>([]);
   const [status, setStatus] = useState<string>("draft");
   const [saving, setSaving] = useState(false);
@@ -426,6 +435,18 @@ export function JourneyBuilder({
         setTemplates(t.templates);
       } catch {
         // templates optional while editing
+      }
+      try {
+        const { campaigns: loadedCampaigns } = await api.campaigns();
+        setCampaigns(loadedCampaigns);
+      } catch {
+        // sendCampaign node picker just shows an empty list while editing
+      }
+      try {
+        const { journeys: loadedJourneys } = await api.journeys();
+        setJourneys(loadedJourneys);
+      } catch {
+        // subJourney node picker just shows an empty list while editing
       }
       const prefillTemplateId = (prev: Node[]): Node[] =>
         prev.map((n) =>
@@ -1154,6 +1175,109 @@ export function JourneyBuilder({
                       placeholder="Optional"
                     />
                   </InspectorField>
+                </>
+              )}
+              {selected.type === "sendCampaign" && (
+                <>
+                  <InspectorField
+                    label="Campaign"
+                    hint="Sends that campaign's current template/subject to this contact. Republish after editing the campaign to pick up changes."
+                  >
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { campaignId?: string }).campaignId ?? "")}
+                      onChange={(e) => updateSelectedData({ campaignId: e.target.value })}
+                    >
+                      <option value="">Select campaign…</option>
+                      {campaigns.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </InspectorField>
+                  {campaigns.length === 0 && (
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                      No campaigns yet.{" "}
+                      <Link
+                        to="/campaigns"
+                        target="_blank"
+                        className="text-primary hover:underline"
+                      >
+                        Create one
+                      </Link>
+                      , then come back here.
+                    </p>
+                  )}
+                </>
+              )}
+              {selected.type === "subJourney" && (
+                <>
+                  <InspectorField
+                    label="Journey to run"
+                    hint="Runs as its own engine instance with this contact; the sequence advances independently while this journey continues."
+                  >
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { journeyId?: string }).journeyId ?? "")}
+                      onChange={(e) => updateSelectedData({ journeyId: e.target.value })}
+                    >
+                      <option value="">Select journey…</option>
+                      {journeys
+                        .filter((j) => j.id !== journeyId && j.status === "published")
+                        .map((j) => (
+                          <option key={j.id} value={j.id}>
+                            {j.name}
+                            {j.publishedVersion == null ? " (unpublished)" : ""}
+                          </option>
+                        ))}
+                    </select>
+                  </InspectorField>
+                  {journeys.filter((j) => j.id !== journeyId).length === 0 && (
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                      No other journeys yet — publish one (e.g. the “Standard welcome sequence”
+                      template) first, then reference it here.
+                    </p>
+                  )}
+                </>
+              )}
+              {selected.type === "join" && (
+                <>
+                  <InspectorField
+                    label="Mode"
+                    hint="all: continue once every branch has arrived. any: continue as soon as the first branch arrives."
+                  >
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { mode?: string }).mode ?? "all")}
+                      onChange={(e) =>
+                        updateSelectedData({ mode: e.target.value === "any" ? "any" : "all" })
+                      }
+                    >
+                      <option value="all">all — wait for every branch</option>
+                      <option value="any">any — first branch wins</option>
+                    </select>
+                  </InspectorField>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Connect the last node of each parallel branch into this node. With mode “all”,
+                    every branch path must reach the join — an early exit would deadlock it.
+                  </p>
+                </>
+              )}
+              {selected.type === "parallel" && (
+                <>
+                  <InspectorField label="Label">
+                    <Input
+                      value={String((selected.data as { label?: string }).label ?? "")}
+                      onChange={(e) => updateSelectedData({ label: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </InspectorField>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Every edge out of this node starts a branch. Reconnect the branches’ last nodes
+                    into a Join node to continue after convergence. Note: a branch that waits (Delay
+                    / Wait Event) postpones its sibling branches until it wakes.
+                  </p>
                 </>
               )}
               {selected.type === "delay" && (

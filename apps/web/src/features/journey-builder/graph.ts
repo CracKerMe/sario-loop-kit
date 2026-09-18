@@ -1,5 +1,8 @@
 import type { JourneyEdgeDto, JourneyGraphDto, JourneyNodeDto } from "@/lib/api";
-import { welcomeAbScoreHoursGraph as welcomeAbScoreHoursPreset } from "@loopkit/journey/presets";
+import {
+  standardWelcomeSequenceGraph as standardWelcomeSequencePreset,
+  welcomeAbScoreHoursGraph as welcomeAbScoreHoursPreset,
+} from "@loopkit/journey/presets";
 import type { JourneyEdge, JourneyGraph, JourneyNode } from "@loopkit/journey/types";
 import type { Edge, Node } from "@xyflow/react";
 
@@ -33,6 +36,13 @@ export const NODE_META: Record<
     label: "Email",
     color: "#34d399",
     description: "Send a templated email",
+    handles: "single",
+    category: "channel",
+  },
+  sendCampaign: {
+    label: "Send Campaign",
+    color: "#22d3ee",
+    description: "Send an existing campaign's email",
     handles: "single",
     category: "channel",
   },
@@ -120,6 +130,27 @@ export const NODE_META: Record<
     handles: "none",
     category: "flow",
   },
+  parallel: {
+    label: "Parallel",
+    color: "#6366f1",
+    description: "Fan out into concurrent branches",
+    handles: "single",
+    category: "logic",
+  },
+  join: {
+    label: "Join",
+    color: "#84cc16",
+    description: "Wait for parallel branches to converge",
+    handles: "single",
+    category: "logic",
+  },
+  subJourney: {
+    label: "Sub-Journey",
+    color: "#7c3aed",
+    description: "Run another published journey",
+    handles: "single",
+    category: "flow",
+  },
 };
 
 export const NODE_CATEGORY_LABELS: Record<string, string> = {
@@ -138,6 +169,8 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
       return { mode: "duration", ms: 5 * 60_000, value: 5, unit: "minutes" };
     case "email":
       return { templateId: "", subject: "", preheader: "", fromName: "", replyTo: "" };
+    case "sendCampaign":
+      return { campaignId: "" };
     case "notify":
       return {
         url: "",
@@ -184,6 +217,12 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
       return { name: "activated", value: 1 };
     case "exit":
       return { reason: "completed" };
+    case "parallel":
+      return { label: "" };
+    case "join":
+      return { mode: "all" };
+    case "subJourney":
+      return { journeyId: "" };
   }
 }
 
@@ -276,7 +315,15 @@ export function welcomeAbScoreHoursGraph(): JourneyGraphDto {
   return welcomeAbScoreHoursPreset() as unknown as JourneyGraphDto;
 }
 
-export type JourneyTemplateId = "blank-welcome" | "marketing-ab-score-hours";
+/** The reusable "standard welcome sequence" child journey (see presets). */
+export function standardWelcomeSequenceGraph(): JourneyGraphDto {
+  return standardWelcomeSequencePreset() as unknown as JourneyGraphDto;
+}
+
+export type JourneyTemplateId =
+  | "blank-welcome"
+  | "marketing-ab-score-hours"
+  | "standard-welcome-sequence";
 
 export interface JourneyTemplate {
   id: JourneyTemplateId;
@@ -297,6 +344,12 @@ export const JOURNEY_TEMPLATES: JourneyTemplate[] = [
     name: "Welcome + A/B + Score + Hours",
     description: "Full marketing sample: experiment split, lead score, business-hours gate, goal",
     build: welcomeAbScoreHoursGraph,
+  },
+  {
+    id: "standard-welcome-sequence",
+    name: "Standard welcome sequence",
+    description: "Reusable subJourney child: welcome → lifecycle tag → tips → activation goal",
+    build: standardWelcomeSequenceGraph,
   },
 ];
 

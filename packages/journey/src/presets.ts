@@ -181,3 +181,79 @@ export function welcomeAbScoreHoursGraph(): JourneyGraph {
     ],
   };
 }
+
+/**
+ * "Standard welcome sequence" — the canonical REUSABLE sub-journey.
+ *
+ * Publish this graph as its own journey (e.g. "Standard welcome sequence"),
+ * then reference it from any other journey via a subJourney node. It runs
+ * as its own engine instance per contact (fire-and-forget from the parent),
+ * so it advances independently of whatever the parent does after the
+ * subJourney node.
+ */
+export function standardWelcomeSequenceGraph(): JourneyGraph {
+  return {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        position: { x: 300, y: 20 },
+        data: { trigger: { kind: "contact_created" } },
+      },
+      {
+        id: "email_welcome",
+        type: "email",
+        position: { x: 300, y: 140 },
+        data: {
+          templateId: "welcome-template",
+          subject: "Welcome aboard",
+          preheader: "Here's what to do first",
+        },
+      },
+      {
+        id: "update_onboarding",
+        type: "updateContact",
+        position: { x: 300, y: 260 },
+        data: { set: { lifecycle: "onboarding" }, addTags: ["welcome-sequence"], removeTags: [] },
+      },
+      {
+        id: "delay_1d",
+        type: "delay",
+        position: { x: 300, y: 380 },
+        data: { mode: "duration", ms: 86_400_000, value: 1, unit: "days" },
+      },
+      {
+        id: "email_tips",
+        type: "email",
+        position: { x: 300, y: 500 },
+        data: {
+          templateId: "tips-template",
+          subject: "Getting started tips",
+          preheader: "Three things power users do on day one",
+        },
+      },
+      {
+        id: "delay_3d",
+        type: "delay",
+        position: { x: 300, y: 620 },
+        data: { mode: "duration", ms: 3 * 86_400_000, value: 3, unit: "days" },
+      },
+      {
+        id: "goal_activated",
+        type: "goal",
+        position: { x: 300, y: 740 },
+        data: { name: "activated", value: 1 },
+      },
+      { id: "exit", type: "exit", position: { x: 300, y: 860 }, data: { reason: "welcome-done" } },
+    ],
+    edges: [
+      { id: "e_t_welcome", source: "trigger", target: "email_welcome" },
+      { id: "e_welcome_update", source: "email_welcome", target: "update_onboarding" },
+      { id: "e_update_delay", source: "update_onboarding", target: "delay_1d" },
+      { id: "e_delay_tips", source: "delay_1d", target: "email_tips" },
+      { id: "e_tips_delay", source: "email_tips", target: "delay_3d" },
+      { id: "e_delay_goal", source: "delay_3d", target: "goal_activated" },
+      { id: "e_goal_exit", source: "goal_activated", target: "exit" },
+    ],
+  };
+}

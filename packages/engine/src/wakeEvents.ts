@@ -1,6 +1,6 @@
 import type { Db } from "@loopkit/db";
 import { journeyRun } from "@loopkit/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { EventBus } from "ts-workflow-engine-lite";
 
 import type { EventWaitIndex } from "./eventWaitIndex";
@@ -23,6 +23,15 @@ export interface WakeEventInput {
  * Cross-checks the wait index against journey_run rows for this contact:
  * waking an unrelated instance that happens to wait on the same event type
  * would deliver the wrong contact's event data into that journey.
+ *
+ * SubJourney children (P2.4) run as their OWN engine instances linked via
+ * wf_instance.parent_instance_id — they have no journey_run row of their
+ * own, so the journey_run set below misses them. The recursive CTE in
+ * descendantInstanceIds() pulls the descendant tree of the contact's run
+ * instances (depth is bounded by the engine's MAX_SUBWORKFLOW_DEPTH of 10;
+ * the LIMIT guards against pathological graphs). A child's context carries
+ * the same contactId (mapped in by compile()), so a child waiting on
+ * "order.placed" is exactly as entitled to the wake as its parent.
  */
 export async function wakeWaitingInstancesForContactEvent(
   db: Db,
@@ -40,7 +49,11 @@ export async function wakeWaitingInstancesForContactEvent(
     .where(and(eq(journeyRun.contactId, input.contactId), eq(journeyRun.status, "running")));
   if (runs.length === 0) return 0;
 
-  const contactInstances = new Set(runs.map((r) => r.instanceId));
+  const runInstanceIds = runs.map((r) => r.instanceId);
+  const contactInstances = new Set(runInstanceIds);
+  for (const descendantId of await descendantInstanceIds(db, runInstanceIds)) {
+    contactInstances.add(descendantId);
+  }
   const targets = candidates.filter((id) => contactInstances.has(id));
   if (targets.length === 0) return 0;
 
@@ -55,6 +68,32 @@ export async function wakeWaitingInstancesForContactEvent(
     });
   }
   return targets.length;
+}
+
+/**
+ * All engine sub-workflow instances descending from the given run instances
+ * (one parent_instance_id hop per subJourney nesting level, recursive).
+ * Raw db.execute() returns snake_case column names — read .instance_id.
+ */
+async function descendantInstanceIds(db: Db, roots: string[]): Promise<string[]> {
+  if (roots.length === 0) return [];
+  const rootList = sql.join(
+    roots.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const result = await db.execute<{ instance_id: string }>(sql`
+    WITH RECURSIVE tree AS (
+      SELECT i.instance_id
+      FROM wf_instance i
+      WHERE i.parent_instance_id IN (${rootList})
+      UNION ALL
+      SELECT c.instance_id
+      FROM wf_instance c
+      JOIN tree t ON c.parent_instance_id = t.instance_id
+    )
+    SELECT instance_id FROM tree LIMIT 1000
+  `);
+  return result.rows.map((r) => r.instance_id);
 }
 
 /** Loads contact for a set of instanceIds via journey_run (debug helper). */

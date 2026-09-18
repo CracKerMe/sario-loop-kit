@@ -236,6 +236,18 @@ function walkNode(
         next: nextTargets.slice(0, 1),
       };
 
+    case "sendCampaign":
+      warnings.push(
+        `node '${node.id}': campaign email not rendered during dry-run (uses the campaign's own template preview instead)`,
+      );
+      return {
+        nodeId: node.id,
+        type: "sendCampaign",
+        description: `send campaign ${node.data.campaignId}`,
+        detail: { campaignId: node.data.campaignId },
+        next: nextTargets.slice(0, 1),
+      };
+
     case "branch":
     case "filter": {
       const expression = node.data.expression;
@@ -411,6 +423,41 @@ function walkNode(
           subject: node.data.subject ?? null,
           message: node.data.message,
         },
+        next: nextTargets.slice(0, 1),
+      };
+
+    case "parallel":
+      return {
+        nodeId: node.id,
+        type: "parallel",
+        description: `fan out into ${Math.max(nextTargets.length, 0)} concurrent branches`,
+        detail: { branches: nextTargets },
+        next: nextTargets,
+      };
+
+    case "join": {
+      const mode = node.data.mode ?? "all";
+      warnings.push(
+        `node '${node.id}': dry-run follows a single path and cannot simulate sibling branches; assumes the join gate (mode ${mode}) opens`,
+      );
+      return {
+        nodeId: node.id,
+        type: "join",
+        description: `wait for parallel branches to converge (mode ${mode})`,
+        detail: { mode },
+        next: nextTargets.slice(0, 1),
+      };
+    }
+
+    case "subJourney":
+      warnings.push(
+        `node '${node.id}': sub-journey ${node.data.journeyId} runs as its own engine instance; its nodes are not walked here`,
+      );
+      return {
+        nodeId: node.id,
+        type: "subJourney",
+        description: `start sub-journey ${node.data.journeyId} (runs concurrently)`,
+        detail: { journeyId: node.data.journeyId },
         next: nextTargets.slice(0, 1),
       };
 

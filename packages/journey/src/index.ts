@@ -1,6 +1,7 @@
 export {
   compile,
   CompileError,
+  compileJoinGateAction,
   delayDataToMs,
   hashString,
   isInTimeWindow,
@@ -15,7 +16,7 @@ export {
   type DryRunStep,
 } from "./dryRun";
 export { decompile, type DecompileResult } from "./decompile";
-export { welcomeAbScoreHoursGraph } from "./presets";
+export { standardWelcomeSequenceGraph, welcomeAbScoreHoursGraph } from "./presets";
 export { validateGraph, type ValidationIssue, type ValidationResult } from "./validate";
 export { assertWhitelistedGraph, JOURNEY_NODE_TYPES } from "./whitelist";
 export type {
@@ -28,13 +29,16 @@ export type {
   JourneyEmailData,
   JourneyGoalData,
   JourneyGraph,
+  JourneyJoinData,
   JourneyNode,
   JourneyNodeBase,
   JourneyNodeNonTrigger,
   JourneyNotifyData,
+  JourneyParallelData,
   JourneyRuntimeContext,
   JourneyScoreData,
   JourneySplitRoute,
+  JourneySubJourneyData,
   JourneyTimeWindowData,
   JourneyTrigger,
   JourneyUpdateContactData,

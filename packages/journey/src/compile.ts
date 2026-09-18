@@ -35,6 +35,9 @@ export interface CompileOptions {
  *   trigger       -> not a node; becomes startNode via the first edge out of it
  *   delay         -> wait (config.externalTimer.enabled: true, durable: true)
  *   email         -> notification (channel: "loopkit-email")
+ *   sendCampaign  -> notification (channel: "loopkit-email"), using a
+ *                    snapshot of the referenced campaign's composition
+ *                    taken at publish time (see JourneySendCampaignData)
  *   branch        -> condition (config.trueBranch/falseBranch)
  *   split         -> router (config.routes)
  *   filter        -> condition, false branch may be empty (journey ends)
@@ -48,6 +51,11 @@ export interface CompileOptions {
  *   score         -> action (injected runtime handler)
  *   goal          -> action (injected runtime handler)
  *   notify        -> http (team webhook / Slack incoming URL)
+ *   parallel      -> action (marker) + fan-out `next` (one entry per branch)
+ *   join          -> action (arrival gate on state output presence; see
+ *                    compileJoinGateAction) + conditionalNext
+ *   subJourney    -> subworkflow (fire-and-forget; child context mapped from
+ *                    the parent run — see the subJourney case)
  */
 export function compile(graph: JourneyGraph, options: CompileOptions): CompileResult {
   const warnings: string[] = [];
@@ -78,6 +86,14 @@ export function compile(graph: JourneyGraph, options: CompileOptions): CompileRe
 
   const nodes: Record<string, TaskNode> = {};
 
+  const incoming = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.source === edge.target) continue;
+    const list = incoming.get(edge.target) ?? [];
+    if (!list.includes(edge.source)) list.push(edge.source);
+    incoming.set(edge.target, list);
+  }
+
   for (const node of graph.nodes) {
     if (node.type === "trigger") continue; // not an engine node
     const edges = outgoing.get(node.id) ?? [];
@@ -86,7 +102,7 @@ export function compile(graph: JourneyGraph, options: CompileOptions): CompileRe
         warnings.push(`node ${node.id} has an edge to unknown node ${edge.target}`);
       }
     }
-    const compiled = compileNode(node, edges, warnings, options);
+    const compiled = compileNode(node, edges, incoming.get(node.id) ?? [], warnings, options);
     nodes[node.id] = compiled;
   }
 
@@ -102,6 +118,56 @@ export function compile(graph: JourneyGraph, options: CompileOptions): CompileRe
 }
 
 export class CompileError extends Error {}
+
+/**
+ * The join gate's action closure. Exported for unit tests.
+ *
+ * Flag lifecycle (all synchronous, evaluated by handleRouting right after
+ * the action returns, before any other node in the batch runs):
+ *   - not ready      → `__joinGo_<id> = false` → no conditionalNext match →
+ *                      the arriving branch path ends here;
+ *   - gate opens     → `__joinDone_<id> = true`, `__joinGo_<id> = true` →
+ *                      routes to the post-join node;
+ *   - already done   → `__joinGo_<id> = false` → late arrivals are consumed
+ *                      (mode "any" / redundant arrivals never re-run the
+ *                      post-join path).
+ *
+ * Known engine-level caveat: two branch wakes that interleave INSIDE the
+ * join node's own execution window can both observe the pre-open state or
+ * clobber the other's flag (the instance context is shared mutable state —
+ * the same limitation any concurrent wake has on this engine). The dominant
+ * flows — same-batch convergence and well-separated arrivals — are exact.
+ */
+export function compileJoinGateAction(
+  joinNodeId: string,
+  mode: "all" | "any",
+  waitFor: string[],
+): (instance: {
+  context?: Record<string, unknown>;
+  state?: { nodes?: Record<string, { output?: unknown } | undefined> } | null;
+}) => Promise<Record<string, unknown>> {
+  const doneKey = `__joinDone_${joinNodeId}`;
+  const goKey = `__joinGo_${joinNodeId}`;
+  return async (instance) => {
+    const nodes = instance.state?.nodes ?? {};
+    const ctx = (instance.context ?? {}) as Record<string, unknown>;
+    const arrived = waitFor.filter(
+      (nid) => (nodes[nid] as { output?: unknown } | undefined)?.output !== undefined,
+    );
+    const need = mode === "any" ? 1 : waitFor.length;
+    if (ctx[doneKey] === true) {
+      ctx[goKey] = false;
+      return { join: "consumed", arrived: arrived.length, of: waitFor.length };
+    }
+    if (arrived.length >= need) {
+      ctx[doneKey] = true;
+      ctx[goKey] = true;
+      return { join: "proceed", arrived: arrived.length, of: waitFor.length };
+    }
+    ctx[goKey] = false;
+    return { join: "wait", arrived: arrived.length, of: waitFor.length };
+  };
+}
 
 type NonTriggerJourneyNode = Exclude<JourneyNode, { type: "trigger" }>;
 type EdgeRef = { target: string; sourceHandle?: string };
@@ -145,6 +211,7 @@ export function isInTimeWindow(data: JourneyTimeWindowData, now = new Date()): b
 function compileNode(
   node: NonTriggerJourneyNode,
   edges: EdgeRef[],
+  incomingSources: string[],
   warnings: string[],
   options: CompileOptions,
 ): TaskNode {
@@ -204,6 +271,44 @@ function compileNode(
             fromName: d.fromName,
             replyTo: d.replyTo,
             utm: d.utm,
+          },
+        },
+        next: target ? [target] : [],
+      };
+    }
+
+    case "sendCampaign": {
+      const target = requireSingleTarget(node, edges, warnings);
+      const d = node.data;
+      if (!d.snapshot) {
+        warnings.push(
+          `node ${node.id} (sendCampaign): campaign ${d.campaignId} has no resolved snapshot — publish again once the campaign exists`,
+        );
+        return {
+          ...base,
+          type: "action",
+          action: async () => ({ ok: false }),
+          next: target ? [target] : [],
+        };
+      }
+      return {
+        ...base,
+        type: "notification",
+        config: {
+          channel: "loopkit-email",
+          target: "{{ contact.email }}",
+          subject: d.snapshot.subject,
+          template: `template:${d.snapshot.templateId}`,
+          data: {
+            workspaceId: "{{ workspaceId }}",
+            contactId: "{{ contactId }}",
+            journeyId: "{{ journeyId }}",
+            journeyRunId: "{{ journeyRunId }}",
+            nodeId: node.id,
+            templateId: d.snapshot.templateId,
+            preheader: d.snapshot.preheader,
+            fromName: d.snapshot.fromName,
+            replyTo: d.snapshot.replyTo,
           },
         },
         next: target ? [target] : [],
@@ -472,6 +577,124 @@ function compileNode(
             ...d.payload,
           },
         },
+        next: target ? [target] : [],
+      };
+    }
+
+    case "parallel": {
+      // Fan-out: the engine advances ALL entries of a node's `next` array as
+      // one concurrent batch (ExecutionOrchestrator batch loop), so parallel
+      // is a marker action whose next carries every outgoing edge. Branches
+      // execute in batch order; a branch that PARKS (delay/waitEvent) does
+      // not resolve its executeNode promise until it completes, which
+      // postpones its batch siblings — wait-free branches converge at the
+      // join instantly, parked branches converge when they wake. The
+      // journey's `join` node gates convergence across those cases — see
+      // compileJoinGateAction.
+      if (edges.length < 2) {
+        warnings.push(`parallel node ${node.id} has fewer than two outgoing edges`);
+      }
+      return {
+        ...base,
+        type: "action",
+        config: { journeyOp: "parallel", branches: edges.length },
+        action: async () => ({ started: true, branches: edges.length }),
+        next: edges.map((e) => e.target),
+      };
+    }
+
+    case "join": {
+      // Arrival-gate barrier compiled as an ACTION, not the engine's native
+      // `join` node. Reason: the engine's batch orchestrator collapses all
+      // same-batch arrivals into one join execution, and a native join with
+      // mode "all" THROWS when reached before every branch has output —
+      // which is exactly what happens when a branch tail is a wait/event
+      // node that completes in a later batch. The gate below re-derives
+      // arrival from `instance.state` output presence instead, so it is
+      // idempotent across any arrival interleaving:
+      //   - all branches arrive in one batch → one execution, gate opens
+      //     (dedupe collapses the arrivals, the count still sees them all);
+      //   - branches arrive in different batches → premature executions
+      //     set __joinGo false and route nowhere (their branch path ends;
+      //     the still-running branches keep the instance alive), and the
+      //     LAST arrival opens the gate;
+      //   - mode "any" opens on the first arrival; the __joinDone latch
+      //     consumes later arrivals so the post-join path never re-runs.
+      const outgoingEdges = edges;
+      if (outgoingEdges.length === 0) {
+        warnings.push(
+          `join node ${node.id} has no outgoing edge; the post-join path is unreachable`,
+        );
+      }
+      if (outgoingEdges.length > 1) {
+        warnings.push(`join node ${node.id} has multiple outgoing edges; using the first`);
+      }
+      const postJoinTarget = outgoingEdges[0]?.target;
+      const mode = node.data.mode ?? "all";
+      // waitFor = the branch TAIL nodes that feed the join. Every engine
+      // node type writes `state.nodes[id].output` on completion (actions,
+      // notifications, waits, event wakes), so output presence is the
+      // arrival signal.
+      const waitFor = incomingSources;
+      if (waitFor.length < 2) {
+        warnings.push(
+          `join node ${node.id} has fewer than two incoming branches; the gate opens on the first arrival`,
+        );
+      }
+      return {
+        ...base,
+        type: "action",
+        config: { journeyOp: "join", mode, waitFor },
+        action: compileJoinGateAction(node.id, mode, waitFor),
+        // Routing reads the flag the action just wrote (same executeNode,
+        // before any await) — see compileJoinGateAction for the flag
+        // lifecycle. No `next`: a not-yet-ready arrival simply ends its
+        // branch path.
+        ...(postJoinTarget
+          ? {
+              conditionalNext: [
+                { condition: `__joinGo_${node.id} == true`, target: postJoinTarget },
+              ],
+            }
+          : {}),
+        next: [],
+      };
+    }
+
+    case "subJourney": {
+      // Compiles to the engine's native `subworkflow` node. The child runs
+      // as its OWN engine instance (wf_instance.parentInstanceId links back
+      // to this run). waitForCompletion stays false — the hook-based wait
+      // is an in-memory promise that dies on process restart (the parent
+      // would then re-execute this node and spawn a duplicate child), and
+      // marketing children live for days. Product semantics: the child
+      // sequence advances independently; the parent continues immediately.
+      // Email idempotency (`${journeyRunId}:${nodeId}` with the PARENT's
+      // runId mapped into the child context) absorbs the tiny crash-window
+      // duplicate-child-start for email nodes.
+      const target = requireSingleTarget(node, edges, warnings);
+      if (!node.data.journeyId) {
+        warnings.push(`subJourney node ${node.id} has no journey selected`);
+      }
+      return {
+        ...base,
+        type: "subworkflow",
+        // The engine workflow id scheme for journeys is `journey-<id>`
+        // (core's createJourneyDraft). The child resolves at RUN time via
+        // the registry / persisted-definition hydration, so it picks up the
+        // child journey's currently active (latest published) version.
+        subworkflowId: `journey-${node.data.journeyId}`,
+        subworkflowInput: {
+          contactId: "contactId",
+          workspaceId: "workspaceId",
+          contact: "contact",
+          // The email channel's idempotency run key — the PARENT's run id
+          // keeps child sends unique per parent run + child node id.
+          journeyRunId: "journeyRunId",
+          // Static per node: child emails/notify attribute to the child journey.
+          journeyId: `$literal:${node.data.journeyId}`,
+        },
+        waitForCompletion: false,
         next: target ? [target] : [],
       };
     }

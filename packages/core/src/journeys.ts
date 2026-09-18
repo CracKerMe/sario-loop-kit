@@ -4,7 +4,62 @@ import { assertWhitelistedGraph, compile, type JourneyGraph } from "@loopkit/jou
 import { and, desc, eq } from "drizzle-orm";
 import type { WorkflowEngine } from "ts-workflow-engine-lite";
 
+import { getCampaign } from "./campaigns";
 import { createJourneyCompileActions } from "./journeyActions";
+import { assertSubJourneyReferences } from "./subJourneyValidation";
+
+/**
+ * Freezes each `sendCampaign` node's `data.snapshot` to the referenced
+ * campaign's CURRENT template/subject/etc., mutating a copy of the graph.
+ * Runs immediately before compile() at publish time — see
+ * JourneySendCampaignData for why this is a snapshot rather than a live
+ * per-run lookup. A campaign that no longer exists (deleted, or never
+ * existed) is left without a snapshot; compile() then emits a warning and
+ * an inert node instead of failing the whole publish.
+ */
+async function snapshotCampaignNodes(
+  db: Db,
+  workspaceId: string,
+  graph: JourneyGraph,
+): Promise<JourneyGraph> {
+  const campaignIds = new Set(
+    graph.nodes
+      .filter(
+        (n): n is Extract<JourneyGraph["nodes"][number], { type: "sendCampaign" }> =>
+          n.type === "sendCampaign",
+      )
+      .map((n) => n.data.campaignId),
+  );
+  if (campaignIds.size === 0) return graph;
+
+  const lookups = new Map(
+    await Promise.all(
+      [...campaignIds].map(async (id) => [id, await getCampaign(db, workspaceId, id)] as const),
+    ),
+  );
+
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) => {
+      if (n.type !== "sendCampaign") return n;
+      const found = lookups.get(n.data.campaignId);
+      if (!found || !found.templateId) return n;
+      return {
+        ...n,
+        data: {
+          campaignId: n.data.campaignId,
+          snapshot: {
+            templateId: found.templateId,
+            subject: found.subject ?? undefined,
+            preheader: found.preheader ?? undefined,
+            fromName: found.fromName ?? undefined,
+            replyTo: found.replyTo ?? undefined,
+          },
+        },
+      };
+    }),
+  };
+}
 
 export interface CreateJourneyInput {
   workspaceId: string;
@@ -72,8 +127,16 @@ export async function publishJourney(
     .limit(1);
   if (!latestVersion) throw new Error(`journey ${journeyId} has no version to publish`);
 
-  const graph = latestVersion.graph as JourneyGraph;
-  assertWhitelistedGraph(graph);
+  const rawGraph = latestVersion.graph as JourneyGraph;
+  assertWhitelistedGraph(rawGraph);
+  // subJourney nodes resolve their child at RUN time — without this gate a
+  // missing/unpublished/cyclic child would only explode on the first
+  // contact's run (or burn engine instances up to the depth cap). Fail the
+  // publish loudly instead; the route maps this to a 400.
+  await assertSubJourneyReferences(db, workspaceId, journeyId);
+  // Freeze any sendCampaign node's referenced campaign composition into the
+  // graph BEFORE compiling — see snapshotCampaignNodes' doc comment.
+  const graph = await snapshotCampaignNodes(db, workspaceId, rawGraph);
   // The engine version string IS the journey_version integer. Registering
   // every publish under its own version is what pins in-flight instances to
   // the definition they started on (engine.execute resolves the workflow by
@@ -93,7 +156,7 @@ export async function publishJourney(
   await engine.register(definition, { setActive: true });
   await db
     .update(journeyVersion)
-    .set({ compiled: definition, publishedAt: new Date() })
+    .set({ graph, compiled: definition, publishedAt: new Date() })
     .where(
       and(
         eq(journeyVersion.journeyId, journeyId),

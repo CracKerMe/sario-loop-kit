@@ -5,10 +5,14 @@ import {
   FilterIcon,
   FlagIcon,
   GitBranchIcon,
+  GitForkIcon,
+  LayersIcon,
   LogOutIcon,
   MailIcon,
   MegaphoneIcon,
+  MergeIcon,
   PercentIcon,
+  SendIcon,
   SplitIcon,
   TagIcon,
   TimerIcon,
@@ -25,6 +29,7 @@ export const NODE_ICONS: Record<BuilderNodeType, LucideIcon> = {
   trigger: ZapIcon,
   delay: ClockIcon,
   email: MailIcon,
+  sendCampaign: SendIcon,
   notify: MegaphoneIcon,
   branch: GitBranchIcon,
   split: SplitIcon,
@@ -37,6 +42,9 @@ export const NODE_ICONS: Record<BuilderNodeType, LucideIcon> = {
   score: TrendingUpIcon,
   goal: FlagIcon,
   exit: LogOutIcon,
+  parallel: GitForkIcon,
+  join: MergeIcon,
+  subJourney: LayersIcon,
 };
 
 function summary(type: BuilderNodeType, data: Record<string, unknown>): string {
@@ -67,6 +75,8 @@ function summary(type: BuilderNodeType, data: Record<string, unknown>): string {
     }
     case "email":
       return String(data.subject || data.templateId || "No template");
+    case "sendCampaign":
+      return String(data.campaignId || "No campaign selected");
     case "notify":
       return String(data.subject || data.message || "team alert").slice(0, 36);
     case "branch":
@@ -110,6 +120,12 @@ function summary(type: BuilderNodeType, data: Record<string, unknown>): string {
       return String(data.name || "goal");
     case "exit":
       return String(data.reason || "end of journey");
+    case "parallel":
+      return String(data.label || "concurrent branches");
+    case "join":
+      return `mode ${String(data.mode || "all")}`;
+    case "subJourney":
+      return String(data.journeyId || "no journey selected");
     default:
       return "";
   }
@@ -301,6 +317,9 @@ export function createNodeTypes(onDelete?: (id: string) => void) {
     score: Comp,
     goal: Comp,
     exit: Comp,
+    parallel: Comp,
+    join: Comp,
+    subJourney: Comp,
   };
 }
 
