@@ -1,15 +1,22 @@
 import { createDb, type Db } from "@loopkit/db";
 import * as schema from "@loopkit/db/schema";
+import { resolveTestConnectionString } from "@loopkit/db/testSupport";
 import { getTableName, sql } from "drizzle-orm";
 
-const CONNECTION_STRING =
-  process.env.TEST_DATABASE_URL ?? "postgresql://postgres:password@localhost:5432/loopkit";
+const CONNECTION_STRING = resolveTestConnectionString("core");
 
 const TABLES = [
+  schema.campaignRecipient,
+  schema.campaign,
+  schema.audience,
+  schema.emailDelivery,
+  schema.emailSend,
+  schema.emailTemplate,
   schema.journeyRun,
   schema.journeyVersion,
   schema.journey,
   schema.contactEvent,
+  schema.suppression,
   schema.contact,
   schema.apiKey,
   schema.wfInstance,

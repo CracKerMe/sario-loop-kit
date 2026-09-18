@@ -14,6 +14,15 @@
  *     by spying on adapter.schedule() — not the engine's in-process
  *     setTimeout fallback, which would produce no timer row at all and
  *     evaporate on restart with no error.
+ *
+ * Timeouts here are deliberately generous (60s on waitForCompletion,
+ * 90s per test). The assertions are about durability semantics, not
+ * latency, and the poller's own wait is only 2s — but this file shares
+ * one Postgres with every other package's tests, so under `pnpm -r test`
+ * (all packages' vitest workers running concurrently) the poller's next
+ * query can be starved for many seconds. A 10s inner timeout failed
+ * intermittently for exactly that reason while passing reliably in
+ * isolation.
  */
 import { and, eq, isNull } from "drizzle-orm";
 import { timer } from "@loopkit/db/schema";
@@ -116,14 +125,14 @@ describe("durable external-timer wait: restart-across-deadline", () => {
       expect(row.triggerAt.getTime()).toBeLessThan(before + 2000 + 2000);
 
       poller.start();
-      const instance = await ctx.engine.waitForCompletion(instanceId, { timeoutMs: 10_000 });
+      const instance = await ctx.engine.waitForCompletion(instanceId, { timeoutMs: 60_000 });
       expect(instance.status).toBe("completed");
     } finally {
       poller.stop();
       ctx.engine.destroy();
       await destroyContainer(ctx.container);
     }
-  }, 20_000);
+  }, 90_000);
 
   it("survives a full process restart mid-wait, completing at the original deadline with no duplicate timer row", async () => {
     // --- "process 1": start the instance, let it enter the wait, then
@@ -170,7 +179,7 @@ describe("durable external-timer wait: restart-across-deadline", () => {
       expect(rows[0]!.triggerAt.getTime()).toBe(originalTriggerAt.getTime());
 
       second.poller.start();
-      const instance = await second.ctx.engine.waitForCompletion(instanceId, { timeoutMs: 10_000 });
+      const instance = await second.ctx.engine.waitForCompletion(instanceId, { timeoutMs: 60_000 });
       expect(instance.status).toBe("completed");
 
       // waitForCompletion() returns the moment InstanceManager's in-memory
@@ -191,7 +200,7 @@ describe("durable external-timer wait: restart-across-deadline", () => {
       second.ctx.engine.destroy();
       await destroyContainer(second.ctx.container);
     }
-  }, 20_000);
+  }, 90_000);
 
   it("cancelling a pending timer stops it from ever emitting", async () => {
     const { ctx, poller, adapter } = await bootstrapWithPoller();

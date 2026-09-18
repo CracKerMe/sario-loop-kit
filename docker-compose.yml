@@ -1,11 +1,21 @@
 name: loopkit
 
 services:
+  # ⚠️ SINGLE INSTANCE ONLY. Never `--scale server=2`, never `deploy.replicas`
+  # > 1, never a multi-replica orchestrator. The workflow engine's event bus,
+  # timer ownership, leases, idempotency keys and Cron scheduling are all
+  # process-local, so a second instance would double-fire waits and
+  # double-send email. apps/server enforces this with a Postgres advisory
+  # lock and exits non-zero if another instance holds it. See README
+  # "Deployment: one API server per database".
   server:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
     init: true
+    # Explicit, and deliberately not parameterized/overridable.
+    deploy:
+      replicas: 1
     ports:
       - "3000:3000"
     env_file:

@@ -1,4 +1,6 @@
+import { addSuppression } from "@loopkit/core";
 import {
+  campaign,
   contact,
   emailSend,
   emailTemplate,
@@ -189,12 +191,217 @@ describe("createEmailNotificationChannel", () => {
     });
 
     expect(result.ok).toBe(true); // suppression is NOT an engine failure — no DLQ noise
-    expect(result.detail).toBe("suppressed");
+    expect(result.detail).toBe("unsubscribed");
     expect(provider.sends).toHaveLength(0);
 
     const [row] = await db.select().from(emailSend).where(eq(emailSend.journeyRunId, "run-1"));
     expect(row?.status).toBe("failed");
     expect(row?.error).toBe("contact unsubscribed");
+  });
+
+  /**
+   * P1.1's stated verification gate: "对已进抑制表的地址发信，断言零发送".
+   *
+   * Note the contact here is still `subscribed = true` — that is the whole
+   * point. Address-level suppression has to hold independently of the
+   * contact's own opt-out flag, because it is what survives the contact row
+   * being deleted and re-imported.
+   */
+  it("never sends to a suppressed address, even when the contact is still subscribed", async () => {
+    await addSuppression(db, {
+      workspaceId: "ws-1",
+      email: "sam@example.com",
+      reason: "hard_bounce",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData(),
+    });
+
+    expect(result.ok).toBe(true); // a deliberate non-send is not a failure
+    expect(result.detail).toBe("suppressed");
+    expect(provider.sends).toHaveLength(0);
+
+    const [row] = await db.select().from(emailSend).where(eq(emailSend.journeyRunId, "run-1"));
+    expect(row?.status).toBe("failed");
+    expect(row?.error).toBe("address suppressed (hard_bounce)");
+  });
+
+  it("matches the suppression case-insensitively and ignores surrounding whitespace", async () => {
+    await addSuppression(db, {
+      workspaceId: "ws-1",
+      email: "  SAM@Example.COM ",
+      reason: "complaint",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData(),
+    });
+
+    expect(result.detail).toBe("suppressed");
+    expect(provider.sends).toHaveLength(0);
+  });
+
+  it("scopes suppression to the workspace that recorded it", async () => {
+    await db.insert(workspace).values({ id: "ws-2", name: "other", slug: "other-ws" });
+    await addSuppression(db, {
+      workspaceId: "ws-2",
+      email: "sam@example.com",
+      reason: "hard_bounce",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData(),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.detail).not.toBe("suppressed");
+    expect(provider.sends).toHaveLength(1);
+  });
+
+  it("sets RFC 8058 one-click List-Unsubscribe headers when a builder is wired", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+      buildUnsubscribe: (payload) => ({
+        oneClickUrl: `https://api.example.com/v1/public/unsubscribe?token=${payload.contactId}`,
+        mailtoUrl: "mailto:unsubscribe@example.com",
+      }),
+    });
+
+    await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData(),
+    });
+
+    const headers = provider.sends[0]?.headers ?? {};
+    expect(headers["List-Unsubscribe"]).toBe(
+      "<https://api.example.com/v1/public/unsubscribe?token=contact-1>, <mailto:unsubscribe@example.com>",
+    );
+    expect(headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+  });
+
+  it("omits List-Unsubscribe entirely when no builder is wired", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData(),
+    });
+
+    const headers = provider.sends[0]?.headers ?? {};
+    // A header pointing at a 404 is worse than no header.
+    expect(headers["List-Unsubscribe"]).toBeUndefined();
+    expect(headers["List-Unsubscribe-Post"]).toBeUndefined();
+    expect(headers["X-Loopkit-Send-Id"]).toBeTruthy();
+  });
+
+  it("keys a campaign send on (campaignId, nodeId) with no journeyRunId present", async () => {
+    // email_send.campaign_id is a real FK, so the campaign must exist —
+    // the same thing the campaign fan-out guarantees before it ever starts
+    // a recipient's instance.
+    await db.insert(campaign).values({
+      id: "campaign-1",
+      workspaceId: "ws-1",
+      name: "September newsletter",
+      templateId: "tpl-1",
+    });
+
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    // A campaign send carries campaignId and the recipient id as nodeId —
+    // there is no journey_run row, and email_send.journey_run_id stays null.
+    const campaignData: EmailNodeData = {
+      workspaceId: "ws-1",
+      contactId: "contact-1",
+      templateId: "tpl-1",
+      campaignId: "campaign-1",
+      nodeId: "recipient-1",
+    };
+    const message = {
+      target: "sam@example.com",
+      subject: "Newsletter",
+      body: "template:tpl-1",
+      data: campaignData,
+    };
+
+    const first = await channel.send(message);
+    const second = await channel.send(message); // a resumed drain, or a replay
+
+    expect(first.ok).toBe(true);
+    expect(first.detail).not.toBe("duplicate-suppressed");
+    expect(second.detail).toBe("duplicate-suppressed");
+    expect(provider.sends).toHaveLength(1);
+
+    const rows = await db.select().from(emailSend).where(eq(emailSend.campaignId, "campaign-1"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.idempotencyKey).toBe("campaign-1:recipient-1");
+    expect(rows[0]?.journeyRunId).toBeNull();
+    expect(rows[0]?.nodeId).toBe("recipient-1");
+  });
+
+  it("rejects a send with neither journeyRunId nor campaignId", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      // No run discriminator → no idempotency basis. A loud config error is
+      // strictly better than a silent duplicate on the retry.
+      data: { workspaceId: "ws-1", contactId: "contact-1", templateId: "tpl-1", nodeId: "node-1" },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("journeyRunId");
+    expect(result.error).toContain("campaignId");
+    expect(provider.sends).toHaveLength(0);
+    const rows = await db.select().from(emailSend);
+    expect(rows).toHaveLength(0);
   });
 
   it("returns ok:false on a provider error, so the engine's retry/DLQ machinery engages", async () => {

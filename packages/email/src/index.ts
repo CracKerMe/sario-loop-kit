@@ -11,10 +11,14 @@ export { renderTemplate } from "./render";
 export {
   appendUtmParams,
   createEmailNotificationChannel,
+  defaultRecipientGate,
   injectPreheader,
-  isContactSuppressed,
   type CreateEmailChannelOptions,
   type EmailNodeData,
   type EmailTemplateLookup,
+  type RecipientGate,
+  type RecipientGateInput,
+  type UnsubscribeLink,
+  type UnsubscribeLinkPayload,
 } from "./channel";
 export { processEmailWebhook, type WebhookContactEvent } from "./webhook";

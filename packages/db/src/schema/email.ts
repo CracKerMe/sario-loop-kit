@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
+import { campaign } from "./campaigns";
 import { contact } from "./contacts";
 import { journey, journeyRun } from "./journeys";
 import { workspace } from "./workspace";
@@ -28,16 +29,23 @@ export const emailTemplate = pgTable("email_template", {
 });
 
 /**
- * `idempotencyKey = ${journeyRunId}:${nodeId}` is the correctness
- * lynchpin of the whole email path: the engine retries a failed
- * `notification` node automatically (via retryPolicy/failureNext), and
- * this unique index is what stops a retry from sending a duplicate
- * email. The channel inserts with ON CONFLICT DO NOTHING RETURNING id —
- * no row back means "already sent, no-op". Keyed on journeyRunId rather
- * than instanceId because the engine has no mechanism to expose
- * instance.instanceId to a notification node's own config — see
- * @loopkit/email's channel.ts for the full explanation; instanceId
- * below is populated best-effort where available but is not load-bearing.
+ * `idempotencyKey` is the correctness lynchpin of the whole email path: the
+ * engine retries a failed `notification` node automatically (via
+ * retryPolicy/failureNext), and this unique index is what stops a retry from
+ * sending a duplicate email. The channel inserts with ON CONFLICT DO NOTHING
+ * RETURNING id — no row back means "already sent, no-op".
+ *
+ * The key is `${runKey}:${nodeId}` where `runKey` is `journeyRunId` for a
+ * journey send and `campaignId` for a campaign send (exactly one is set —
+ * see the channel's doc comment). Keyed on journeyRunId rather than
+ * instanceId because the engine has no mechanism to expose
+ * instance.instanceId to a notification node's own config; `instanceId`
+ * below is populated best-effort where available and is not load-bearing.
+ *
+ * Campaign sends deliberately reuse this same row and index rather than
+ * getting their own table: a campaign recipient's send must be exactly-once
+ * for exactly the same reason a journey node's is, and a second table would
+ * mean a second place for that guarantee to be missing.
  */
 export const emailSend = pgTable(
   "email_send",
@@ -52,6 +60,8 @@ export const emailSend = pgTable(
     templateId: text("template_id"),
     journeyId: text("journey_id").references(() => journey.id),
     journeyRunId: text("journey_run_id").references(() => journeyRun.id),
+    /** Set for campaign sends; mutually exclusive with journeyRunId. */
+    campaignId: text("campaign_id").references(() => campaign.id, { onDelete: "cascade" }),
     instanceId: text("instance_id"),
     nodeId: text("node_id"),
     toEmail: text("to_email").notNull(),
@@ -77,6 +87,7 @@ export const emailSend = pgTable(
       .where(sql`${t.providerMessageId} is not null`),
     index("email_send_journey_idx").on(t.journeyId, t.createdAt.desc()),
     index("email_send_contact_idx").on(t.contactId, t.createdAt.desc()),
+    index("email_send_campaign_idx").on(t.campaignId, t.createdAt.desc()),
   ],
 );
 
@@ -112,6 +123,10 @@ export const emailSendRelations = relations(emailSend, ({ one, many }) => ({
   contact: one(contact, {
     fields: [emailSend.contactId],
     references: [contact.id],
+  }),
+  campaign: one(campaign, {
+    fields: [emailSend.campaignId],
+    references: [campaign.id],
   }),
   deliveries: many(emailDelivery),
 }));

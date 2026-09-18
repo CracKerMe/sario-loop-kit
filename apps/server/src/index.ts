@@ -8,11 +8,17 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { apiKeyMetaBody, apiKeysRouter } from "./routes/apiKeys";
+import { audiencesRouter } from "./routes/audiences";
+import { campaignsRouter } from "./routes/campaigns";
 import { contactsRouter, eventsRouter } from "./routes/contacts";
 import { emailTemplatesRouter } from "./routes/emailTemplates";
 import { journeysRouter, opsRouter, runsRouter } from "./routes/journeys";
+import { publicRouter } from "./routes/public";
+import { suppressionsRouter } from "./routes/suppressions";
 import { webhooksRouter } from "./routes/webhooks";
+import { acquireInstanceLock } from "./instanceLock";
 import { requireAuth, requireScope, type AuthVariables } from "./middleware/auth";
+import { resumeInterruptedCampaigns } from "./campaignRunner";
 import { startEngine, stopEngine } from "./loopkitRuntime";
 
 initLogger({
@@ -119,13 +125,61 @@ app.route("/v1/email-templates", emailTemplatesRouter);
 app.use("/v1/ops/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/ops", opsRouter);
 
+// Compliance: read the suppression list, block an address, or lift a
+// suppression. Session-only — this is the only path that may clear a
+// hard-bounce/complaint block (see routes/suppressions.ts).
+for (const path of ["/v1/suppressions", "/v1/suppressions/*"] as const) {
+  app.use(path, requireAuth({ allow: ["session"] }));
+}
+app.route("/v1/suppressions", suppressionsRouter);
+
+// Campaigns: session-only. A broadcast is not something an ingestion key
+// should be able to trigger.
+for (const path of ["/v1/audiences", "/v1/audiences/*"] as const) {
+  app.use(path, requireAuth({ allow: ["session"] }));
+}
+app.route("/v1/audiences", audiencesRouter);
+for (const path of ["/v1/campaigns", "/v1/campaigns/*"] as const) {
+  app.use(path, requireAuth({ allow: ["session"] }));
+}
+app.route("/v1/campaigns", campaignsRouter);
+
+// Public compliance endpoints — the unsubscribe capability is the signed
+// token in the URL, so these must NOT be behind session/API-key auth.
+app.route("/v1/public", publicRouter);
+
 // Public — verified by the provider's own webhook signature, not session/API-key auth.
 app.route("/v1/webhooks", webhooksRouter);
 
 import { serve } from "@hono/node-server";
 
 async function main() {
+  // Must happen before startEngine(): a second server that booted the
+  // engine would already be polling timers and could fire a wait the first
+  // server is also about to fire. See instanceLock.ts for the full reason.
+  const lock = await acquireInstanceLock({
+    allowMultiInstance: process.env.LOOPKIT_ALLOW_MULTI_INSTANCE === "true",
+  });
+  if (!lock) {
+    console.error(
+      "[loopkit] FATAL: another API server already holds the single-instance lock for this " +
+        "database. Loopkit cannot be scaled horizontally — the workflow engine's timers, event " +
+        "bus, rate limits and Cron scheduling are process-local, so two instances would " +
+        "duplicate sends. Stop the other instance (or point this one at a different database).",
+    );
+    process.exit(1);
+  }
+
   await startEngine();
+
+  // Crash recovery: a campaign interrupted mid-drain still has `pending`
+  // recipient rows, and those rows are the work list — so re-draining them
+  // is a recovery, not a re-send gamble (each send is idempotent on
+  // (campaignId, recipientId)). Runs after startEngine so the workflow
+  // definitions can be re-registered before any instance is started.
+  await resumeInterruptedCampaigns().catch((error) => {
+    console.error("[loopkit] campaign recovery pass failed:", error);
+  });
 
   const server = serve(
     {
@@ -140,6 +194,7 @@ async function main() {
   const shutdown = async () => {
     server.close();
     await stopEngine();
+    await lock.release();
     process.exit(0);
   };
   process.on("SIGTERM", shutdown);

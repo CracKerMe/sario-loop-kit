@@ -8,7 +8,17 @@ const STATUS_STYLES: Record<string, string> = {
   completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
   failed: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300",
   cancelled: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  // Campaign-specific states. `queued` and `sending` both animate: the
+  // difference between "waiting" and "in flight" matters operationally, but
+  // both mean "not finished", which is what the pulse communicates.
+  queued: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  sending: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  pending: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  skipped: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
 };
+
+const PULSING = new Set(["running", "queued", "sending"]);
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   const style = STATUS_STYLES[status] ?? "border-border bg-muted text-muted-foreground";
@@ -21,7 +31,7 @@ export function StatusBadge({ status, className }: { status: string; className?:
       )}
     >
       <span
-        className={cn("size-1.5 rounded-full bg-current", status === "running" && "animate-pulse")}
+        className={cn("size-1.5 rounded-full bg-current", PULSING.has(status) && "animate-pulse")}
         aria-hidden="true"
       />
       {status}

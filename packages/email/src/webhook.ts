@@ -1,3 +1,4 @@
+import { addSuppression } from "@loopkit/core";
 import type { Db } from "@loopkit/db";
 import { contact, contactEvent, emailDelivery, emailSend } from "@loopkit/db/schema";
 import { eq, isNotNull } from "drizzle-orm";
@@ -73,6 +74,7 @@ export async function processEmailWebhook(
         contactId: emailSend.contactId,
         status: emailSend.status,
         workspaceId: emailSend.workspaceId,
+        toEmail: emailSend.toEmail,
       })
       .from(emailSend)
       .where(eq(emailSend.providerMessageId, event.providerMessageId))
@@ -91,6 +93,25 @@ export async function processEmailWebhook(
         .update(contact)
         .set({ subscribed: false, unsubscribedAt: new Date() })
         .where(eq(contact.id, send.contactId));
+
+      // The durable half of this reaction: a workspace-level, address-scoped
+      // suppression. `contact.subscribed = false` alone is not enough — the
+      // contact row is disposable, and a list re-import brings a bounced
+      // address back as a fresh, subscribed contact. The address is what
+      // actually must never receive mail again.
+      //
+      // Idempotent and first-write-wins, so a webhook replay, or a
+      // complaint arriving after an earlier bounce, cannot rewrite the
+      // reason. Neither call throws on a duplicate — this runs inside a
+      // webhook handler where a spurious 500 would make the provider retry.
+      await addSuppression(db, {
+        workspaceId: send.workspaceId,
+        email: send.toEmail,
+        reason: event.type === "complained" ? "complaint" : "hard_bounce",
+        source: provider.name,
+        contactId: send.contactId,
+        providerMessageId: event.providerMessageId,
+      });
     } else if (
       event.type === "delivered" &&
       send.status !== "bounced" &&

@@ -1,5 +1,6 @@
 import type { Db } from "@loopkit/db";
 import { contact, emailSend, emailTemplate } from "@loopkit/db/schema";
+import { getSuppression } from "@loopkit/core";
 import { eq } from "drizzle-orm";
 import type {
   NotificationChannel,
@@ -12,29 +13,41 @@ import { renderTemplate } from "./render";
 
 /**
  * The shape `notification` node's `config.data` must carry for this
- * channel — see the journey compiler's `email` node mapping. These go
- * through the engine's {{}}/${} interpolation (NotificationManager.
- * renderMessage) before this channel ever sees them, which is the right
- * layer for small scalars like contactId/firstName; the email BODY does
- * not go through that path (see render.ts's doc comment for why).
+ * channel — see the journey compiler's `email` node mapping and
+ * @loopkit/engine's campaignWorkflow.ts. These go through the engine's
+ * {{}}/${} interpolation (NotificationManager.renderMessage) before this
+ * channel ever sees them, which is the right layer for small scalars like
+ * contactId/firstName; the email BODY does not go through that path (see
+ * render.ts's doc comment for why).
  *
- * journeyRunId + nodeId — NOT instanceId — form the idempotency basis.
- * The engine has no mechanism to expose instance.instanceId to a
- * notification node's config (NotificationChannel.send() only ever
- * receives the rendered NotificationMessage, and {{}} interpolation only
- * reaches instance.context, which the engine populates from whatever
- * engine.start() was called with — instanceId doesn't exist yet at that
- * point). journeyRunId is known before engine.start() is called (the
- * journey_run row is inserted first — see @loopkit/core's
- * startJourneyRun) and is 1:1 with the instance it starts, so
- * (journeyRunId, nodeId) is an equally valid substitute.
+ * Exactly one of `journeyRunId` / `campaignId` must be present, and it names
+ * the *run* the idempotency key is scoped to:
+ *
+ *  - **journey send** — `journeyRunId`, 1:1 with the engine instance. The
+ *    engine has no mechanism to expose instance.instanceId to a notification
+ *    node's config (NotificationChannel.send() only ever receives the
+ *    rendered NotificationMessage, and {{}} interpolation only reaches
+ *    instance.context, which the engine populates from whatever
+ *    engine.start() was called with — instanceId doesn't exist yet at that
+ *    point). journeyRunId is known before engine.start() is called (the
+ *    journey_run row is inserted first — see @loopkit/core's
+ *    startJourneyRun), so (journeyRunId, nodeId) is an equally valid
+ *    substitute.
+ *  - **campaign send** — `campaignId`. A campaign is one workflow with many
+ *    instances (one per recipient), so the per-recipient discriminator is
+ *    `nodeId`, which the campaign workflow sets to `{{ recipientId }}`.
+ *    The resulting key is therefore `(campaignId, recipientId)`: unique per
+ *    recipient, stable across a resumed or replayed drain, and enforced by
+ *    the same `email_send` unique index the journey path uses.
  */
 export interface EmailNodeData {
   workspaceId: string;
   contactId: string;
   templateId: string;
   journeyId?: string;
-  journeyRunId: string;
+  /** Set for campaign sends; carried into the unsubscribe link for attribution. */
+  campaignId?: string;
+  journeyRunId?: string;
   nodeId: string;
   preheader?: string;
   fromName?: string;
@@ -59,6 +72,53 @@ export interface CreateEmailChannelOptions {
   defaultFrom: string;
   /** Loads a template's rendering inputs. Defaults to a query against email_template. */
   loadTemplate?: (db: Db, templateId: string) => Promise<EmailTemplateLookup | null>;
+  /**
+   * The pre-send compliance gate. Defaults to
+   * `defaultRecipientGate()` — address-level suppression plus the
+   * contact's own opt-out. Injectable so tests (and any future
+   * workspace-level policy) can substitute it, but there is deliberately
+   * no way to disable it by omission: the default is the safe one.
+   */
+  recipientGate?: (db: Db, input: RecipientGateInput) => Promise<RecipientGate>;
+  /**
+   * Builds the RFC 8058 one-click unsubscribe target for a recipient.
+   * Omitted = no `List-Unsubscribe` headers, which is the right default
+   * for deployments that haven't published an unsubscribe endpoint yet
+   * (a header pointing at a 404 is worse than no header). Wired by the
+   * server from @loopkit/core's token helpers + PUBLIC_*_URL env.
+   */
+  buildUnsubscribe?: (payload: UnsubscribeLinkPayload) => UnsubscribeLink | null;
+}
+
+export interface RecipientGateInput {
+  workspaceId: string;
+  contactId: string;
+  email: string;
+}
+
+/**
+ * Why a send was refused. `reason` is a stable machine-readable code; the
+ * message on `email_send.error` is for a human reading the send log.
+ */
+export interface RecipientGate {
+  allowed: boolean;
+  detail?: "suppressed" | "unsubscribed";
+  error?: string;
+}
+
+export interface UnsubscribeLinkPayload {
+  workspaceId: string;
+  contactId: string;
+  email: string;
+  journeyId?: string;
+  campaignId?: string;
+}
+
+export interface UnsubscribeLink {
+  /** The one-click POST target (RFC 8058). */
+  oneClickUrl: string;
+  /** Optional `mailto:` alternative for clients that prefer it. */
+  mailtoUrl?: string;
 }
 
 async function defaultLoadTemplate(
@@ -73,13 +133,45 @@ async function defaultLoadTemplate(
   return row ?? null;
 }
 
-function isSuppressed(db: Db, contactId: string): Promise<boolean> {
-  return db
+/**
+ * The two independent reasons not to send, checked in order of severity:
+ *
+ *  1. **Address-level suppression** (workspace-scoped, permanent). A hard
+ *     bounce or a spam complaint is not an opt-out anyone can reverse, and
+ *     it must hold even after the contact row is deleted and re-imported —
+ *     which is exactly how a dead address normally comes back into a list.
+ *     This check is on the *address*, so it fires whether or not a contact
+ *     row still exists.
+ *  2. **Contact-level opt-out** (`subscribed = false`). The reversible
+ *     preference-centre path.
+ *
+ * Both failure modes are normal business events, not errors: a send that
+ * was deliberately not made must not be retried by the engine or pinned to
+ * the DLQ, so the caller turns either into `ok: true`.
+ */
+export async function defaultRecipientGate(
+  db: Db,
+  input: RecipientGateInput,
+): Promise<RecipientGate> {
+  const blocked = await getSuppression(db, input.workspaceId, input.email);
+  if (blocked) {
+    return {
+      allowed: false,
+      detail: "suppressed",
+      error: `address suppressed (${blocked.reason})`,
+    };
+  }
+
+  const [row] = await db
     .select({ subscribed: contact.subscribed })
     .from(contact)
-    .where(eq(contact.id, contactId))
-    .limit(1)
-    .then((rows) => (rows[0] ? !rows[0].subscribed : false));
+    .where(eq(contact.id, input.contactId))
+    .limit(1);
+  if (row && !row.subscribed) {
+    return { allowed: false, detail: "unsubscribed", error: "contact unsubscribed" };
+  }
+
+  return { allowed: true };
 }
 
 /** Appends utm_* query params to http(s) hrefs found in the HTML body. */
@@ -151,7 +243,14 @@ async function loadContactForRender(
 export function createEmailNotificationChannel(
   options: CreateEmailChannelOptions,
 ): NotificationChannel {
-  const { db, provider, defaultFrom, loadTemplate = defaultLoadTemplate } = options;
+  const {
+    db,
+    provider,
+    defaultFrom,
+    loadTemplate = defaultLoadTemplate,
+    recipientGate = defaultRecipientGate,
+    buildUnsubscribe,
+  } = options;
 
   return {
     name: "loopkit-email",
@@ -162,22 +261,22 @@ export function createEmailNotificationChannel(
 
     async send(message: NotificationMessage): Promise<NotificationResult> {
       const data = message.data as EmailNodeData | undefined;
-      if (
-        !data?.journeyRunId ||
-        !data.nodeId ||
-        !data.contactId ||
-        !data.templateId ||
-        !data.workspaceId
-      ) {
+      // The run discriminator: a journey send carries journeyRunId, a
+      // campaign send carries campaignId, and neither may be missing —
+      // without it there is no idempotency basis and a retry would
+      // double-send. Rejecting up front is the difference between a loud
+      // config error and a silent duplicate.
+      const runKey = data?.campaignId || data?.journeyRunId;
+      if (!runKey || !data?.nodeId || !data.contactId || !data.templateId || !data.workspaceId) {
         return {
           ok: false,
           channel: "loopkit-email",
           error:
-            "loopkit-email requires data.{workspaceId,contactId,templateId,journeyRunId,nodeId}",
+            "loopkit-email requires data.{workspaceId,contactId,templateId,nodeId} plus data.journeyRunId (journey send) or data.campaignId (campaign send)",
         };
       }
 
-      const idempotencyKey = `${data.journeyRunId}:${data.nodeId}`;
+      const idempotencyKey = `${runKey}:${data.nodeId}`;
       // subject is set to a placeholder here and updated once the
       // template is loaded, below — the journey node's own subject (if
       // it set one) always wins, and the template's subject is the
@@ -191,7 +290,8 @@ export function createEmailNotificationChannel(
           contactId: data.contactId,
           templateId: data.templateId,
           journeyId: data.journeyId ?? null,
-          journeyRunId: data.journeyRunId,
+          journeyRunId: data.journeyRunId ?? null,
+          campaignId: data.campaignId ?? null,
           nodeId: data.nodeId,
           toEmail: message.target,
           subject: message.subject ?? "",
@@ -207,12 +307,17 @@ export function createEmailNotificationChannel(
         return { ok: true, channel: "loopkit-email", detail: "duplicate-suppressed" };
       }
 
-      if (await isSuppressed(db, data.contactId)) {
+      const gate = await recipientGate(db, {
+        workspaceId: data.workspaceId,
+        contactId: data.contactId,
+        email: message.target,
+      });
+      if (!gate.allowed) {
         await db
           .update(emailSend)
-          .set({ status: "failed", error: "contact unsubscribed" })
+          .set({ status: "failed", error: gate.error ?? "suppressed" })
           .where(eq(emailSend.id, sendId));
-        return { ok: true, channel: "loopkit-email", detail: "suppressed" };
+        return { ok: true, channel: "loopkit-email", detail: gate.detail ?? "suppressed" };
       }
 
       const template = await loadTemplate(db, data.templateId);
@@ -266,6 +371,28 @@ export function createEmailNotificationChannel(
       await db.update(emailSend).set({ subject }).where(eq(emailSend.id, sendId));
 
       try {
+        // Compliance headers. RFC 8058 one-click requires
+        // `List-Unsubscribe-Post: List-Unsubscribe=One-Click` alongside a
+        // `List-Unsubscribe` with an https target that accepts an empty
+        // POST — Gmail/Yahoo bulk-sender rules (Feb 2024) require this for
+        // marketing mail, and a recipient who can't find one-click
+        // unsubscribe presses "report spam" instead, which is the
+        // deliverability event that actually hurts.
+        const headers: Record<string, string> = { "X-Loopkit-Send-Id": sendId };
+        const unsubscribe = buildUnsubscribe?.({
+          workspaceId: data.workspaceId,
+          contactId: data.contactId,
+          email: message.target,
+          journeyId: data.journeyId,
+          campaignId: typeof data.campaignId === "string" ? data.campaignId : undefined,
+        });
+        if (unsubscribe) {
+          const targets = [`<${unsubscribe.oneClickUrl}>`];
+          if (unsubscribe.mailtoUrl) targets.push(`<${unsubscribe.mailtoUrl}>`);
+          headers["List-Unsubscribe"] = targets.join(", ");
+          headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+        }
+
         const result = await provider.send({
           to: message.target,
           from,
@@ -273,7 +400,7 @@ export function createEmailNotificationChannel(
           subject,
           html,
           text,
-          headers: { "X-Loopkit-Send-Id": sendId },
+          headers,
         });
         await db
           .update(emailSend)
@@ -291,5 +418,3 @@ export function createEmailNotificationChannel(
     },
   };
 }
-
-export { isSuppressed as isContactSuppressed };

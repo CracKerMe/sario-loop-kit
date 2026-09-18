@@ -102,6 +102,25 @@ export async function unsubscribeContact(
     .where(and(eq(contact.workspaceId, workspaceId), eq(contact.id, contactId)));
 }
 
+/**
+ * The reverse of unsubscribeContact — the preference centre's "opt back in"
+ * path. Note what this does NOT do: it does not lift an address-level
+ * suppression. Those are separate decisions with separate consequences (see
+ * @loopkit/core's suppressions.ts), and the caller must clear the
+ * suppression explicitly — which the public endpoint only allows for
+ * reason `unsubscribe`.
+ */
+export async function resubscribeContact(
+  db: Db,
+  workspaceId: string,
+  contactId: string,
+): Promise<void> {
+  await db
+    .update(contact)
+    .set({ subscribed: true, unsubscribedAt: null })
+    .where(and(eq(contact.workspaceId, workspaceId), eq(contact.id, contactId)));
+}
+
 export type ContactStatusFilter = "all" | "subscribed" | "unsubscribed";
 
 export interface ListContactsInput {

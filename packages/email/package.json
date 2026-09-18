@@ -14,6 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@loopkit/core": "workspace:*",
     "@loopkit/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "resend": "^4.6.1",

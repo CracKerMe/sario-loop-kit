@@ -1,9 +1,9 @@
 import { createDb, type Db } from "@loopkit/db";
 import * as schema from "@loopkit/db/schema";
+import { resolveTestConnectionString } from "@loopkit/db/testSupport";
 import { getTableName, sql } from "drizzle-orm";
 
-const CONNECTION_STRING =
-  process.env.TEST_DATABASE_URL ?? "postgresql://postgres:password@localhost:5432/loopkit";
+const CONNECTION_STRING = resolveTestConnectionString("timers");
 
 // wfWorkflow(Meta) must be truncated too — engine.register() persists the
 // definition to storage, and a stale row from a prior test with the same

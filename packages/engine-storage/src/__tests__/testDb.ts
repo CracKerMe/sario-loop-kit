@@ -1,5 +1,6 @@
 import { createDb, type Db } from "@loopkit/db";
 import * as schema from "@loopkit/db/schema";
+import { resolveTestConnectionString } from "@loopkit/db/testSupport";
 import { getTableName, sql } from "drizzle-orm";
 
 // See ./vitest.setup.ts — it loads apps/server/.env before any test module
@@ -7,13 +8,11 @@ import { getTableName, sql } from "drizzle-orm";
 // at import time via @loopkit/env/server.
 
 /**
- * Points at the local loopkit dev database by default (already has the
- * engine tables pushed by `drizzle-kit push` — see the Phase 1 schema
- * commit). Override with TEST_DATABASE_URL to point at a dedicated
- * throwaway database instead.
+ * A dedicated test database (default: loopkit_test), never the app's — see
+ * @loopkit/db's testSupport.ts for why that distinction is enforced rather
+ * than documented. Override with TEST_DATABASE_URL.
  */
-const CONNECTION_STRING =
-  process.env.TEST_DATABASE_URL ?? "postgresql://postgres:password@localhost:5432/loopkit";
+const CONNECTION_STRING = resolveTestConnectionString("engine_storage");
 
 const ENGINE_TABLES = [
   schema.wfInstance,

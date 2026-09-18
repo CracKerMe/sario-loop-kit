@@ -1,4 +1,11 @@
-import { contact, contactEvent, emailDelivery, emailSend, workspace } from "@loopkit/db/schema";
+import {
+  contact,
+  contactEvent,
+  emailDelivery,
+  emailSend,
+  suppression,
+  workspace,
+} from "@loopkit/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -79,6 +86,101 @@ describe("processEmailWebhook", () => {
 
     const [c] = await db.select().from(contact).where(eq(contact.id, "contact-1"));
     expect(c?.subscribed).toBe(false);
+  });
+
+  /**
+   * P1.1's second hook: the contact flag alone is not enough, because the
+   * contact row is disposable — see the suppression table's doc comment.
+   * The address-level row is what survives a delete-and-reimport.
+   */
+  it("records an address-level suppression on a hard bounce", async () => {
+    await seedSend();
+    provider.queueWebhookEvent({
+      providerEventId: "evt-bounce-suppress",
+      providerMessageId: "msg-1",
+      type: "bounced",
+      occurredAt: new Date(),
+      raw: {},
+    });
+
+    await processEmailWebhook(db, provider, { body: "{}", headers: {} });
+
+    const [row] = await db
+      .select()
+      .from(suppression)
+      .where(eq(suppression.email, "sam@example.com"));
+    expect(row?.reason).toBe("hard_bounce");
+    expect(row?.source).toBe("fake"); // the provider that reported it
+    expect(row?.contactId).toBe("contact-1");
+    expect(row?.providerMessageId).toBe("msg-1");
+  });
+
+  it("records a complaint as its own reason, not as a bounce", async () => {
+    await seedSend();
+    provider.queueWebhookEvent({
+      providerEventId: "evt-complaint",
+      providerMessageId: "msg-1",
+      type: "complained",
+      occurredAt: new Date(),
+      raw: {},
+    });
+
+    await processEmailWebhook(db, provider, { body: "{}", headers: {} });
+
+    const [row] = await db
+      .select()
+      .from(suppression)
+      .where(eq(suppression.email, "sam@example.com"));
+    expect(row?.reason).toBe("complaint");
+  });
+
+  it("keeps the first suppression reason across a redelivered hard-fail webhook", async () => {
+    await seedSend();
+    provider.queueWebhookEvent({
+      providerEventId: "evt-first-bounce",
+      providerMessageId: "msg-1",
+      type: "bounced",
+      occurredAt: new Date(),
+      raw: {},
+    });
+    await processEmailWebhook(db, provider, { body: "{}", headers: {} });
+
+    // A different event id, so dedup does not apply — this really does reach
+    // the suppression write a second time (e.g. a second send to the same
+    // address also bouncing). First write must win.
+    provider.queueWebhookEvent({
+      providerEventId: "evt-second-complaint",
+      providerMessageId: "msg-1",
+      type: "complained",
+      occurredAt: new Date(),
+      raw: {},
+    });
+    await processEmailWebhook(db, provider, { body: "{}", headers: {} });
+
+    const rows = await db
+      .select()
+      .from(suppression)
+      .where(eq(suppression.email, "sam@example.com"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.reason).toBe("hard_bounce");
+  });
+
+  it("does not suppress on a soft/transient event", async () => {
+    await seedSend();
+    provider.queueWebhookEvent({
+      providerEventId: "evt-delayed",
+      providerMessageId: "msg-1",
+      type: "delivery_delayed",
+      occurredAt: new Date(),
+      raw: {},
+    });
+
+    await processEmailWebhook(db, provider, { body: "{}", headers: {} });
+
+    // A delay is retried by the provider — suppressing on it would silently
+    // unsubscribe recipients for a temporary routing problem.
+    const rows = await db.select().from(suppression);
+    expect(rows).toHaveLength(0);
   });
 
   it("does not regress a bounced status when a later 'delivered' event arrives out of order", async () => {

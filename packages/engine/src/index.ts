@@ -1,6 +1,14 @@
 export { EventIndexedStorageProvider } from "./eventIndexedStorage";
 export { EventWaitIndex } from "./eventWaitIndex";
 export {
+  buildCampaignWorkflow,
+  CAMPAIGN_SEND_NODE_ID,
+  campaignSendContext,
+  campaignWorkflowId,
+  type CampaignSendContextInput,
+  type CampaignWorkflowInput,
+} from "./campaignWorkflow";
+export {
   createLoopkitEngine,
   type LoopkitEngine,
   type LoopkitEngineOptions,

@@ -1,6 +1,11 @@
 import { createDb, type Db } from "@loopkit/db";
 import { journey as journeyTable, journeyVersion } from "@loopkit/db/schema";
-import { createEmailNotificationChannel, type EmailProvider } from "@loopkit/email";
+import {
+  createEmailNotificationChannel,
+  type EmailProvider,
+  type UnsubscribeLink,
+  type UnsubscribeLinkPayload,
+} from "@loopkit/email";
 import { compile, type JourneyCompileActions, type JourneyGraph } from "@loopkit/journey";
 import { PgTimerAdapter, TimerPoller } from "@loopkit/timers";
 import { and, eq } from "drizzle-orm";
@@ -26,6 +31,13 @@ export interface LoopkitEngineOptions {
    * When omitted those action nodes no-op with a structured error result.
    */
   journeyActions?: JourneyCompileActions;
+  /**
+   * Builds the RFC 8058 one-click unsubscribe link for each recipient.
+   * Injected by the server because it needs the unsubscribe signing secret
+   * and the public origin — neither of which @loopkit/email should know
+   * about. Omitted = no List-Unsubscribe headers.
+   */
+  buildUnsubscribe?: (payload: UnsubscribeLinkPayload) => UnsubscribeLink | null;
 }
 
 export interface LoopkitEngine {
@@ -83,6 +95,7 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
       db,
       provider: options.emailProvider,
       defaultFrom: options.defaultFromEmail,
+      buildUnsubscribe: options.buildUnsubscribe,
     }),
   );
 

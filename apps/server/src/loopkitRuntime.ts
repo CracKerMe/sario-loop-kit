@@ -3,6 +3,8 @@ import { db } from "@loopkit/db";
 import { createLoopkitEngine, type LoopkitEngine } from "@loopkit/engine";
 import { ConsoleEmailProvider, ResendProvider } from "@loopkit/email";
 
+import { buildOneClickLink } from "./unsubscribeLinks";
+
 /**
  * Process-wide engine singleton. Unlike the engine's own bootstrap()
  * (whose global container is silently overwritten by a second call),
@@ -32,6 +34,7 @@ export async function startEngine(): Promise<LoopkitEngine> {
     emailProvider: buildEmailProvider(),
     defaultFromEmail: process.env.DEFAULT_FROM_EMAIL ?? "noreply@loopkit.dev",
     journeyActions: createJourneyCompileActions(db),
+    buildUnsubscribe: buildOneClickLink,
   }).then((engine) => {
     engineInstance = engine;
     return engine;

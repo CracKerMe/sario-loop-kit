@@ -1,12 +1,15 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  FilterIcon,
   HomeIcon,
   KeyRoundIcon,
   MailIcon,
   PlusIcon,
   RouteIcon,
   ScrollTextIcon,
+  SendIcon,
+  ShieldAlertIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -17,7 +20,16 @@ import { ThemeToggle } from "./theme-toggle";
 import UserMenu from "./user-menu";
 
 type NavItem = {
-  to: "/dashboard" | "/contacts" | "/journeys" | "/templates" | "/api-keys" | "/logs";
+  to:
+    | "/dashboard"
+    | "/contacts"
+    | "/audiences"
+    | "/journeys"
+    | "/campaigns"
+    | "/templates"
+    | "/compliance"
+    | "/api-keys"
+    | "/logs";
   label: string;
   icon: LucideIcon;
 };
@@ -29,14 +41,24 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "Audience",
-    items: [{ to: "/contacts", label: "Contacts", icon: UsersIcon }],
+    items: [
+      { to: "/contacts", label: "Contacts", icon: UsersIcon },
+      { to: "/audiences", label: "Audiences", icon: FilterIcon },
+    ],
   },
   {
     label: "Messaging",
     items: [
       { to: "/journeys", label: "Journeys", icon: RouteIcon },
+      { to: "/campaigns", label: "Campaigns", icon: SendIcon },
       { to: "/templates", label: "Templates", icon: MailIcon },
     ],
+  },
+  {
+    // Placed above Developer on purpose: a suppression list is an operational
+    // surface (someone has to read it after a complaint), not a dev tool.
+    label: "Compliance",
+    items: [{ to: "/compliance", label: "Suppressions", icon: ShieldAlertIcon }],
   },
   {
     label: "Developer",

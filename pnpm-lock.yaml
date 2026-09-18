@@ -361,6 +361,9 @@ importers:
 
   packages/email:
     dependencies:
+      '@loopkit/core':
+        specifier: workspace:*
+        version: link:../core
       '@loopkit/db':
         specifier: workspace:*
         version: link:../db

@@ -112,6 +112,149 @@ export type DlqEntryDto = {
   [key: string]: unknown;
 };
 
+/* ------------------------------------------------------------------ */
+/* Segments / audiences                                                */
+/* ------------------------------------------------------------------ */
+
+export type SegmentOperator =
+  | "eq"
+  | "neq"
+  | "contains"
+  | "not_contains"
+  | "starts_with"
+  | "ends_with"
+  | "in"
+  | "not_in"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "exists"
+  | "not_exists";
+
+export type SegmentConditionDto = {
+  kind: "condition";
+  field: string;
+  operator: SegmentOperator;
+  value?: string | number | boolean | null | string[] | number[];
+};
+
+export type SegmentEventConditionDto = {
+  kind: "event";
+  name: string;
+  occurred: boolean;
+  withinDays?: number;
+  minCount?: number;
+};
+
+export type SegmentFilterDto =
+  | SegmentConditionDto
+  | SegmentEventConditionDto
+  | { op: "and" | "or"; children: SegmentFilterDto[] }
+  | { op: "not"; child: SegmentFilterDto };
+
+export type AudienceDto = {
+  id: string;
+  name: string;
+  filter: SegmentFilterDto;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AudienceWithCountsDto = AudienceDto & {
+  /** Everyone matching the filter. */
+  memberCount: number;
+  /** Matching AND mailable (subscribed, not suppressed). */
+  sendableCount: number;
+  summary: string;
+};
+
+/* ------------------------------------------------------------------ */
+/* Campaigns                                                           */
+/* ------------------------------------------------------------------ */
+
+export type CampaignStatusDto =
+  | "draft"
+  | "queued"
+  | "sending"
+  | "sent"
+  | "paused"
+  | "cancelled"
+  | "failed";
+
+export type CampaignDto = {
+  id: string;
+  name: string;
+  status: CampaignStatusDto;
+  templateId: string | null;
+  audienceId: string | null;
+  subject: string | null;
+  preheader: string | null;
+  audienceMemberCount: number | null;
+  audienceSendableCount: number | null;
+  recipientCount: number;
+  queuedCount: number;
+  sentCount: number;
+  skippedCount: number;
+  failedCount: number;
+  launchedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CampaignStatsDto = {
+  recipients: number;
+  pending: number;
+  queued: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  providerAccepted: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  complained: number;
+};
+
+export type CampaignRecipientDto = {
+  id: string;
+  contactId: string;
+  email: string;
+  status: "pending" | "queued" | "sent" | "skipped" | "failed";
+  skipReason: string | null;
+  error: string | null;
+  sentAt: string | null;
+};
+
+/* ------------------------------------------------------------------ */
+/* Compliance                                                          */
+/* ------------------------------------------------------------------ */
+
+export type SuppressionReasonDto = "hard_bounce" | "complaint" | "manual" | "unsubscribe";
+
+export type SuppressionDto = {
+  id: string;
+  email: string;
+  reason: SuppressionReasonDto;
+  source: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+export type SuppressionCountsDto = Record<SuppressionReasonDto, number>;
+
+export type UnsubscribeContextDto = {
+  valid: boolean;
+  email: string;
+  workspaceName: string | null;
+  subscribed: boolean;
+  suppressed: boolean;
+  suppressionReason: SuppressionReasonDto | null;
+  canResubscribe: boolean;
+};
+
 export const api = {
   stats: () => request<{ stats: Record<string, unknown> }>("/v1/ops/stats"),
   dlq: () => request<{ entries: unknown[] }>("/v1/ops/dlq"),
@@ -186,6 +329,133 @@ export const api = {
   rotateApiKey: (id: string) =>
     request<{ apiKey: IssuedApiKeyDto }>(`/v1/api-keys/${id}/rotate`, { method: "POST" }),
   revokeApiKey: (id: string) => request<{ ok: true }>(`/v1/api-keys/${id}`, { method: "DELETE" }),
+
+  /* Audiences ------------------------------------------------------- */
+  audiences: () => request<{ audiences: AudienceWithCountsDto[]; total: number }>("/v1/audiences"),
+  audience: (id: string) =>
+    request<{
+      audience: AudienceDto;
+      memberCount: number;
+      sendableCount: number;
+      contacts: ContactDto[];
+      matching: number;
+    }>(`/v1/audiences/${id}`),
+  createAudience: (input: { name: string; filter: SegmentFilterDto }) =>
+    request<{ audience: AudienceDto; memberCount: number; sendableCount: number }>(
+      "/v1/audiences",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    ),
+  updateAudience: (id: string, input: { name?: string; filter?: SegmentFilterDto }) =>
+    request<{ audience: AudienceWithCountsDto }>(`/v1/audiences/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  deleteAudience: (id: string) =>
+    request<{ ok: true }>(`/v1/audiences/${id}`, { method: "DELETE" }),
+  /** Live "N contacts match" for an unsaved filter. */
+  previewAudience: (filter: SegmentFilterDto) =>
+    request<{ memberCount: number; sendableCount: number }>("/v1/audiences/preview", {
+      method: "POST",
+      body: JSON.stringify({ filter }),
+    }),
+
+  /* Campaigns ------------------------------------------------------- */
+  campaigns: () => request<{ campaigns: CampaignDto[]; total: number }>("/v1/campaigns"),
+  campaign: (id: string) =>
+    request<{ campaign: CampaignDto; stats: CampaignStatsDto }>(`/v1/campaigns/${id}`),
+  createCampaign: (input: {
+    name: string;
+    templateId: string;
+    audienceId: string;
+    subject?: string;
+    preheader?: string;
+  }) =>
+    request<{ campaign: CampaignDto }>("/v1/campaigns", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateCampaign: (
+    id: string,
+    input: { name?: string; templateId?: string; audienceId?: string; subject?: string },
+  ) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  deleteCampaign: (id: string) =>
+    request<{ ok: true }>(`/v1/campaigns/${id}`, { method: "DELETE" }),
+  duplicateCampaign: (id: string, name?: string) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify(name ? { name } : {}),
+    }),
+  /** Resolve + materialize the audience, then start draining. */
+  launchCampaign: (id: string) =>
+    request<{ campaign: CampaignDto; recipients: number; excludedUnsendable: number }>(
+      `/v1/campaigns/${id}/launch`,
+      { method: "POST" },
+    ),
+  resumeCampaign: (id: string) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/resume`, { method: "POST" }),
+  pauseCampaign: (id: string) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/pause`, { method: "POST" }),
+  cancelCampaign: (id: string) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/cancel`, { method: "POST" }),
+  campaignRecipients: (id: string, params: { status?: string; page?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.status) search.set("status", params.status);
+    if (params.page) search.set("page", String(params.page));
+    const query = search.toString();
+    return request<{ recipients: CampaignRecipientDto[]; total: number }>(
+      `/v1/campaigns/${id}/recipients${query ? `?${query}` : ""}`,
+    );
+  },
+
+  /* Compliance ------------------------------------------------------ */
+  suppressions: (params: { query?: string; reason?: string; page?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.query) search.set("query", params.query);
+    if (params.reason) search.set("reason", params.reason);
+    if (params.page) search.set("page", String(params.page));
+    const query = search.toString();
+    return request<{
+      suppressions: SuppressionDto[];
+      total: number;
+      counts: SuppressionCountsDto;
+    }>(`/v1/suppressions${query ? `?${query}` : ""}`);
+  },
+  addSuppression: (input: { email: string; reason?: "manual" | "unsubscribe"; note?: string }) =>
+    request<{ suppression: SuppressionDto | null; created: boolean }>("/v1/suppressions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  importSuppressions: (addresses: string, note?: string) =>
+    request<{
+      submitted: number;
+      added: number;
+      alreadyPresent: number;
+      skipped: number;
+    }>("/v1/suppressions/import", {
+      method: "POST",
+      body: JSON.stringify({ addresses, note }),
+    }),
+  removeSuppression: (id: string) =>
+    request<{ ok: true }>(`/v1/suppressions/${id}`, { method: "DELETE" }),
+
+  /* Public (no session — the signed token is the capability) -------- */
+  unsubscribeContext: (token: string) =>
+    request<UnsubscribeContextDto>(`/v1/public/unsubscribe?token=${encodeURIComponent(token)}`),
+  submitUnsubscribe: (token: string, action: "unsubscribe" | "resubscribe") =>
+    request<{ ok: boolean; subscribed?: boolean; error?: string; message?: string }>(
+      "/v1/public/unsubscribe",
+      {
+        method: "POST",
+        body: JSON.stringify({ token, action }),
+      },
+    ),
 };
 
 export type ApiKeyDto = {

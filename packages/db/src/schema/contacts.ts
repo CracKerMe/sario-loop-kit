@@ -54,16 +54,36 @@ export const contactEvent = pgTable(
   ],
 );
 
-export const audience = pgTable("audience", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id")
-    .notNull()
-    .references(() => workspace.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  // SegmentFilter AST, evaluated to SQL by @loopkit/core.
-  filter: jsonb("filter").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * A named, reusable saved segment. The table existed from the start but had
+ * zero readers/writers until segments.ts was written — the comment on
+ * `filter` promised "evaluated to SQL by @loopkit/core" for a long time
+ * before that evaluator existed. It does now (see
+ * @loopkit/core's segments.ts); this table is its only persistence.
+ */
+export const audience = pgTable(
+  "audience",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // SegmentFilter AST. Shape-validated on write (validateSegmentFilter)
+    // because a malformed AST is only discovered when a campaign tries to
+    // resolve it — which is far too late to be the first failure.
+    filter: jsonb("filter").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("audience_ws_name_uidx").on(t.workspaceId, t.name),
+    index("audience_ws_idx").on(t.workspaceId),
+  ],
+);
 
 export const contactRelations = relations(contact, ({ many }) => ({
   events: many(contactEvent),

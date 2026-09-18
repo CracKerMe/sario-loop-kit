@@ -25,7 +25,8 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
     "check": "oxlint && oxfmt --write",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:test:setup": "pnpm --filter @loopkit/db db:test:setup"
   },
   "dependencies": {
     "@loopkit/env": "workspace:*",
