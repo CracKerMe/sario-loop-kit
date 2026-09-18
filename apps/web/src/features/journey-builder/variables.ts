@@ -22,19 +22,33 @@ export type JourneyVariable = {
 
 /**
  * Variables available at a given node = globals + any event payload fields
- * exposed by trigger/waitEvent nodes upstream of it in the graph. Only an
- * `event`-kind trigger or a `waitEvent` node introduces `event.*` fields —
- * everything else in the graph just passes the run context through.
+ * exposed by trigger/waitEvent nodes upstream of it in the graph, plus any
+ * real contact property keys observed in this workspace (`contactPropertyKeys`
+ * — optional, since it comes from an API call the caller may not have made
+ * yet). Only an `event`-kind trigger or a `waitEvent` node introduces
+ * `event.*` fields — everything else in the graph just passes the run
+ * context through.
  */
 export function variablesForNode(
   nodeId: string | undefined,
   nodes: Node[],
   edges: Edge[],
+  contactPropertyKeys: readonly string[] = [],
 ): JourneyVariable[] {
-  const globals: JourneyVariable[] = GLOBAL_VARIABLES.map((path) => ({
-    path,
-    group: path.startsWith("contact.") || path === "contactId" ? "Contact" : "Journey",
-  }));
+  const suggestedPaths = new Set(GLOBAL_VARIABLES);
+  const contactVars: JourneyVariable[] = contactPropertyKeys
+    .filter((key) => !suggestedPaths.has(`contact.${key}`))
+    .map((key) => ({ path: `contact.${key}`, group: "Contact" as const }));
+
+  const globals: JourneyVariable[] = [
+    ...GLOBAL_VARIABLES.map((path) => ({
+      path,
+      group: (path.startsWith("contact.") || path === "contactId" ? "Contact" : "Journey") as
+        | "Contact"
+        | "Journey",
+    })),
+    ...contactVars,
+  ];
 
   if (!nodeId) return globals;
 
@@ -81,3 +95,15 @@ export function variablesForNode(
 export function wrapVariable(path: string): string {
   return `{{ ${path} }}`;
 }
+
+/**
+ * A contact's own custom properties (firstName, plan, ...) aren't just
+ * reachable via `contact.<key>` — the email/notify channels spread them onto
+ * the top level of the render context too (see packages/email/src/channel.ts
+ * renderData), so `{{ plan }}` and `{{ contact.plan }}` both resolve to the
+ * same value. `MERGE_TAG_SUGGESTIONS` only lists the nested form; this note
+ * exists so the picker/panel can tell users the flat alias exists even
+ * though it can't enumerate every possible property key.
+ */
+export const CONTACT_PROPERTY_FLAT_ALIAS_NOTE =
+  'Contact properties are also available without the "contact." prefix (e.g. {{ plan }} works the same as {{ contact.plan }}).';

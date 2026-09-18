@@ -428,6 +428,10 @@ export function Toolbar({ editor }: { editor: Editor }) {
             >
               Insert custom path
             </Button>
+            <p className="text-[10px] leading-relaxed text-muted-foreground/70">
+              Contact properties also work without the "contact." prefix — e.g. {"{{ plan }}"} is
+              the same as {"{{ contact.plan }}"}.
+            </p>
           </div>
         </DropdownMenuContent>
       </DropdownMenu>

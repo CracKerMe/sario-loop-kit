@@ -254,6 +254,8 @@ export type CampaignDto = {
   audienceId: string | null;
   subject: string | null;
   preheader: string | null;
+  fromName: string | null;
+  replyTo: string | null;
   audienceMemberCount: number | null;
   audienceSendableCount: number | null;
   recipientCount: number;
@@ -458,6 +460,7 @@ export const api = {
   },
   contact: (id: string) =>
     request<{ contact: ContactDto; events: ContactEventDto[] }>(`/v1/contacts/${id}`),
+  contactPropertyKeys: () => request<{ keys: string[] }>("/v1/contacts/property-keys"),
   replaceContactProperties: (id: string, properties: Record<string, unknown>) =>
     request<{ contact: ContactDto }>(`/v1/contacts/${id}/properties`, {
       method: "PATCH",
@@ -611,6 +614,8 @@ export const api = {
     audienceId: string;
     subject?: string;
     preheader?: string;
+    fromName?: string;
+    replyTo?: string;
   }) =>
     request<{ campaign: CampaignDto }>("/v1/campaigns", {
       method: "POST",
@@ -618,7 +623,15 @@ export const api = {
     }),
   updateCampaign: (
     id: string,
-    input: { name?: string; templateId?: string; audienceId?: string; subject?: string },
+    input: {
+      name?: string;
+      templateId?: string;
+      audienceId?: string;
+      subject?: string;
+      preheader?: string;
+      fromName?: string;
+      replyTo?: string;
+    },
   ) =>
     request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}`, {
       method: "PUT",

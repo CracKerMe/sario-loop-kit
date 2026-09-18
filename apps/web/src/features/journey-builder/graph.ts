@@ -1,6 +1,6 @@
 import type { JourneyEdgeDto, JourneyGraphDto, JourneyNodeDto } from "@/lib/api";
-import type { JourneyEdge, JourneyGraph, JourneyNode } from "@loopkit/journey";
-import { welcomeAbScoreHoursGraph as welcomeAbScoreHoursPreset } from "@loopkit/journey";
+import { welcomeAbScoreHoursGraph as welcomeAbScoreHoursPreset } from "@loopkit/journey/presets";
+import type { JourneyEdge, JourneyGraph, JourneyNode } from "@loopkit/journey/types";
 import type { Edge, Node } from "@xyflow/react";
 
 export type BuilderNodeType = JourneyNode["type"];

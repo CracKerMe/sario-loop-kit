@@ -6,6 +6,7 @@ import {
   CopyIcon,
   Loader2Icon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   PlusIcon,
   SendIcon,
@@ -24,6 +25,23 @@ import {
   type CampaignDto,
   type EmailTemplateDto,
 } from "@/lib/api";
+
+import {
+  EmailComposerFields,
+  type EmailComposerValue,
+} from "@/features/email-composer/EmailComposerFields";
+import { variablesForNode } from "@/features/journey-builder/variables";
+
+/** Campaigns have no graph/node context — just the global variable set. */
+const CAMPAIGN_VARIABLES = variablesForNode(undefined, [], []);
+
+const emptyComposerValue: EmailComposerValue = {
+  templateId: "",
+  subject: "",
+  preheader: "",
+  fromName: "",
+  replyTo: "",
+};
 
 export const Route = createFileRoute("/_auth/campaigns/")({
   component: CampaignsPage,
@@ -45,15 +63,34 @@ function CampaignsPage() {
   const [audiences, setAudiences] = useState<AudienceWithCountsDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  /** null = dialog closed; otherwise create (no id) or edit (id set) mode. */
+  const [editor, setEditor] = useState<{ id: string | null } | null>(null);
   const [name, setName] = useState("");
-  const [templateId, setTemplateId] = useState("");
   const [audienceId, setAudienceId] = useState("");
-  const [subject, setSubject] = useState("");
-  const [preheader, setPreheader] = useState("");
+  const [composer, setComposer] = useState<EmailComposerValue>(emptyComposerValue);
+
+  const openCreate = () => {
+    setEditor({ id: null });
+    setName("");
+    setAudienceId(audiences[0]?.id ?? "");
+    setComposer({ ...emptyComposerValue, templateId: templates[0]?.id ?? "" });
+  };
+
+  const openEdit = (c: CampaignDto) => {
+    setEditor({ id: c.id });
+    setName(c.name);
+    setAudienceId(c.audienceId ?? "");
+    setComposer({
+      templateId: c.templateId ?? "",
+      subject: c.subject ?? "",
+      preheader: c.preheader ?? "",
+      fromName: c.fromName ?? "",
+      replyTo: c.replyTo ?? "",
+    });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -73,8 +110,6 @@ function CampaignsPage() {
       .then(([t, a]) => {
         setTemplates(t.templates);
         setAudiences(a.audiences);
-        setTemplateId((current) => current || t.templates[0]?.id || "");
-        setAudienceId((current) => current || a.audiences[0]?.id || "");
       })
       .catch(() => {
         /* the list's own error banner already covers load failures */
@@ -109,7 +144,7 @@ function CampaignsPage() {
         title="Campaigns"
         description="One-off broadcasts to a saved audience"
         actions={
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button size="sm" onClick={openCreate}>
             <PlusIcon data-icon="inline-start" />
             New campaign
           </Button>
@@ -167,7 +202,7 @@ function CampaignsPage() {
             A campaign sends one email to everyone in an audience. Recipients are resolved once, at
             launch, so editing the audience later cannot change who received it.
           </p>
-          <Button size="sm" className="mt-4" onClick={() => setCreating(true)}>
+          <Button size="sm" className="mt-4" onClick={openCreate}>
             <PlusIcon data-icon="inline-start" />
             New campaign
           </Button>
@@ -205,25 +240,36 @@ function CampaignsPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {c.status === "draft" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(
-                            c.id,
-                            () => api.launchCampaign(c.id),
-                            "Campaign launched — recipients are being queued",
-                          )
-                        }
-                      >
-                        {busy ? (
-                          <Loader2Icon data-icon="inline-start" className="animate-spin" />
-                        ) : (
-                          <PlayIcon data-icon="inline-start" />
-                        )}
-                        Launch
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => openEdit(c)}
+                        >
+                          <PencilIcon data-icon="inline-start" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(
+                              c.id,
+                              () => api.launchCampaign(c.id),
+                              "Campaign launched — recipients are being queued",
+                            )
+                          }
+                        >
+                          {busy ? (
+                            <Loader2Icon data-icon="inline-start" className="animate-spin" />
+                          ) : (
+                            <PlayIcon data-icon="inline-start" />
+                          )}
+                          Launch
+                        </Button>
+                      </>
                     )}
                     {(c.status === "sending" || c.status === "queued") && (
                       <>
@@ -318,9 +364,9 @@ function CampaignsPage() {
       )}
 
       <Dialog
-        open={creating}
-        onClose={() => setCreating(false)}
-        title="New campaign"
+        open={editor !== null}
+        onClose={() => setEditor(null)}
+        title={editor?.id ? "Edit campaign" : "New campaign"}
         description="Recipients are resolved from the audience when you launch."
       >
         {templates.length === 0 || audiences.length === 0 ? (
@@ -333,7 +379,7 @@ function CampaignsPage() {
                 <Button
                   type="button"
                   onClick={() => {
-                    setCreating(false);
+                    setEditor(null);
                     void navigate({ to: "/templates", search: { new: "1" } });
                   }}
                 >
@@ -345,7 +391,7 @@ function CampaignsPage() {
                   type="button"
                   variant={templates.length === 0 ? "outline" : "default"}
                   onClick={() => {
-                    setCreating(false);
+                    setEditor(null);
                     void navigate({ to: "/audiences" });
                   }}
                 >
@@ -361,21 +407,26 @@ function CampaignsPage() {
               e.preventDefault();
               setSubmitting(true);
               try {
-                await api.createCampaign({
+                const payload = {
                   name,
-                  templateId,
+                  templateId: composer.templateId,
                   audienceId,
-                  subject: subject.trim() || undefined,
-                  preheader: preheader.trim() || undefined,
-                });
-                toast.success("Campaign created");
-                setCreating(false);
-                setName("");
-                setSubject("");
-                setPreheader("");
+                  subject: composer.subject.trim() || undefined,
+                  preheader: composer.preheader.trim() || undefined,
+                  fromName: composer.fromName.trim() || undefined,
+                  replyTo: composer.replyTo.trim() || undefined,
+                };
+                if (editor?.id) {
+                  await api.updateCampaign(editor.id, payload);
+                  toast.success("Campaign updated");
+                } else {
+                  await api.createCampaign(payload);
+                  toast.success("Campaign created");
+                }
+                setEditor(null);
                 await load();
               } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Create failed");
+                toast.error(err instanceof Error ? err.message : "Save failed");
               } finally {
                 setSubmitting(false);
               }
@@ -390,22 +441,6 @@ function CampaignsPage() {
                 placeholder="September product update"
                 required
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="camp-template">Template</Label>
-              <select
-                id="camp-template"
-                value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-                required
-              >
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="camp-audience">Audience</Label>
@@ -430,30 +465,21 @@ function CampaignsPage() {
                 </p>
               )}
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="camp-subject">Subject override (optional)</Label>
-              <Input
-                id="camp-subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="Leave blank to use the template subject"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="camp-preheader">Preheader (optional)</Label>
-              <Input
-                id="camp-preheader"
-                value={preheader}
-                onChange={(e) => setPreheader(e.target.value)}
-                placeholder="Shown next to the subject in most inboxes"
-              />
-            </div>
+
+            <EmailComposerFields
+              value={composer}
+              onChange={(patch) => setComposer((prev) => ({ ...prev, ...patch }))}
+              templates={templates}
+              onTemplateCreated={(t) => setTemplates((prev) => [...prev, t])}
+              variables={CAMPAIGN_VARIABLES}
+            />
+
             <Button
               type="submit"
-              disabled={submitting || !name.trim() || !templateId || !audienceId}
+              disabled={submitting || !name.trim() || !composer.templateId || !audienceId}
             >
               {submitting && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
-              Create campaign
+              {editor?.id ? "Save changes" : "Create campaign"}
             </Button>
           </form>
         )}

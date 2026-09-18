@@ -35,7 +35,7 @@ import {
   SquareArrowOutUpRightIcon,
   Trash2Icon,
 } from "lucide-react";
-import { validateGraph } from "@loopkit/journey";
+import { validateGraph } from "@loopkit/journey/validate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -52,7 +52,12 @@ import {
 } from "./graph";
 import { NODE_ICONS, createNodeTypes } from "./nodes";
 import { VariablePicker } from "./VariablePicker";
-import { type JourneyVariable, variablesForNode, wrapVariable } from "./variables";
+import {
+  CONTACT_PROPERTY_FLAT_ALIAS_NOTE,
+  type JourneyVariable,
+  variablesForNode,
+  wrapVariable,
+} from "./variables";
 
 export type BuilderMeta = {
   dirty: boolean;
@@ -154,6 +159,10 @@ function VariablesReference({ variables }: { variables: JourneyVariable[] }) {
               </div>
             </div>
           ))}
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            {CONTACT_PROPERTY_FLAT_ALIAS_NOTE} This list only shows suggested paths — any property
+            key on the contact is usable, even if it isn't listed here.
+          </p>
         </div>
       )}
     </div>
@@ -361,6 +370,7 @@ export function JourneyBuilder({
   const [selected, setSelected] = useState<Node | null>(null);
   const [validation, setValidation] = useState<ValidationResult>({ valid: true, issues: [] });
   const [templates, setTemplates] = useState<EmailTemplateDto[]>([]);
+  const [contactPropertyKeys, setContactPropertyKeys] = useState<string[]>([]);
   const [status, setStatus] = useState<string>("draft");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(journeyId));
@@ -386,8 +396,8 @@ export function JourneyBuilder({
 
   const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
   const nodeVariables = useMemo(
-    () => variablesForNode(selected?.id, nodes, edges),
-    [selected?.id, nodes, edges],
+    () => variablesForNode(selected?.id, nodes, edges, contactPropertyKeys),
+    [selected?.id, nodes, edges, contactPropertyKeys],
   );
   const dirty = useMemo(() => {
     // Unsaved journeys always need a create call.
@@ -395,6 +405,17 @@ export function JourneyBuilder({
     if (!baseline) return false;
     return JSON.stringify(graph) !== baseline;
   }, [graph, baseline, journeyId]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { keys } = await api.contactPropertyKeys();
+        setContactPropertyKeys(keys);
+      } catch {
+        // picker falls back to the static suggestion list
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void (async () => {

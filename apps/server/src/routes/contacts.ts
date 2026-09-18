@@ -5,6 +5,7 @@ import {
   exportContacts,
   getContactById,
   isValidEmail,
+  listContactPropertyKeys,
   listContacts,
   recordContactEvent,
   replaceContactProperties,
@@ -225,6 +226,12 @@ contactsRouter.get("/export", async (c) => {
     "Content-Type": "text/csv; charset=utf-8",
     "Content-Disposition": `attachment; filename="contacts-${date}.csv"`,
   });
+});
+
+contactsRouter.get("/property-keys", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const keys = await listContactPropertyKeys(db, workspaceId);
+  return c.json({ keys });
 });
 
 contactsRouter.get("/:id", async (c) => {

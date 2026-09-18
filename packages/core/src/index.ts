@@ -22,6 +22,7 @@ export {
   bulkUpdateContacts,
   exportContacts,
   getContactById,
+  listContactPropertyKeys,
   listContacts,
   recordContactEvent,
   replaceContactProperties,

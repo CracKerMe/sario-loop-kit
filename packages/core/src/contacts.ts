@@ -214,6 +214,26 @@ export async function exportContacts(db: Db, input: ListContactsInput): Promise<
   return rows;
 }
 
+/** Cap on distinct keys returned — a picker doesn't need an unbounded list. */
+const PROPERTY_KEY_LIMIT = 200;
+
+/**
+ * Distinct `properties` keys seen across a workspace's contacts, for
+ * surfacing real merge-tag paths in the journey/email builder pickers
+ * instead of a fixed suggestion list (properties are freeform jsonb, so
+ * there's no static schema to read them from).
+ */
+export async function listContactPropertyKeys(db: Db, workspaceId: string): Promise<string[]> {
+  const result = await db.execute<{ key: string }>(sql`
+    select distinct jsonb_object_keys(${contact.properties}) as key
+    from ${contact}
+    where ${contact.workspaceId} = ${workspaceId}
+    order by key
+    limit ${PROPERTY_KEY_LIMIT}
+  `);
+  return result.rows.map((r) => r.key);
+}
+
 export type ContactBulkAction = "unsubscribe" | "resubscribe" | "delete";
 
 /**

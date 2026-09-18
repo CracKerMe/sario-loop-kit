@@ -253,11 +253,9 @@ function renderSection(node: ProseMirrorNode, opts: RenderOptions): string {
     blocks.push(renderBlock(block, opts));
   });
   const inner = blocks.join("");
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;">
-<tr>
+  return `<tr>
 <td style="background-color:${bg};padding:${padY}px 24px;">${inner}</td>
-</tr>
-</table>`;
+</tr>`;
 }
 
 function buildDocument(inner: string, opts: RenderOptions): string {
@@ -273,9 +271,7 @@ function buildDocument(inner: string, opts: RenderOptions): string {
 <tr>
 <td align="center" style="padding:0;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${width}" style="border-collapse:collapse;width:${width}px;max-width:${width}px;background-color:${opts.contentBackgroundColor};">
-<tr>
-<td style="padding:0;">${inner}</td>
-</tr>
+${inner}
 </table>
 </td>
 </tr>
