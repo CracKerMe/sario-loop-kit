@@ -14,6 +14,7 @@ import {
   PauseIcon,
   PlayIcon,
   RefreshCwIcon,
+  ShuffleIcon,
   SearchIcon,
   WorkflowIcon,
   XIcon,
@@ -23,6 +24,7 @@ import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
 import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
+import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
@@ -288,12 +290,14 @@ function JourneyEditorPage() {
   const [runs, setRuns] = useState<JourneyRunDto[]>([]);
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<string>("draft");
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [journeyName, setJourneyName] = useState("Journey");
   const [funnel, setFunnel] = useState<FunnelEntryDto[]>([]);
   const [funnelCounts, setFunnelCounts] = useState<Record<string, number>>({});
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
   const [dryRunOpen, setDryRunOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
@@ -313,6 +317,7 @@ function JourneyEditorPage() {
       setRunCounts(detail.runCounts);
       setStatus(detail.journey.status);
       setJourneyName(detail.journey.name);
+      setPublishedVersion(detail.journey.publishedVersion);
       setGraph(detail.graph);
       const res = await api.journeyRuns(journeyId);
       setRuns(res.runs);
@@ -468,6 +473,12 @@ function JourneyEditorPage() {
                   Publish
                 </Button>
               </>
+            )}
+            {status === "published" && (
+              <Button variant="outline" size="sm" onClick={() => setMigrateOpen(true)}>
+                <ShuffleIcon data-icon="inline-start" />
+                Migrate
+              </Button>
             )}
             {status === "published" && (
               <Button variant="outline" size="sm" disabled={pausing} onClick={() => void pause()}>
@@ -791,6 +802,14 @@ function JourneyEditorPage() {
         journeyId={journeyId}
         graph={graph}
         dirty={builderMeta?.dirty ?? false}
+      />
+
+      <MigrateRunsDialog
+        open={migrateOpen}
+        onClose={() => setMigrateOpen(false)}
+        journeyId={journeyId}
+        publishedVersion={publishedVersion}
+        onMigrated={() => void loadRuns()}
       />
     </div>
   );

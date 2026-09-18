@@ -1,13 +1,18 @@
 import {
   createJourneyDraft,
   getDashboardStats,
+  getInFlightVersionCounts,
   getJourneyDetail,
   getSuppression,
+  JourneyMigrationError,
   listDeadLetters,
   listJourneyRuns,
   listNodeFunnel,
+  migrateInFlightJourneyRuns,
+  migrateJourneyRun,
   publishJourney,
   searchInstances,
+  type JourneyMigrationStrategy,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
 import { contact, emailTemplate, journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
@@ -15,6 +20,7 @@ import { renderTemplate } from "@loopkit/email";
 import { dryRunJourney, validateGraph, type JourneyGraph } from "@loopkit/journey";
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 
 import type { AuthVariables } from "../middleware/auth";
@@ -22,6 +28,36 @@ import { getEngine } from "../loopkitRuntime";
 
 const graphSchema = z.object({ nodes: z.array(z.any()), edges: z.array(z.any()) });
 const createJourneySchema = z.object({ name: z.string().min(1), graph: graphSchema });
+const migrationSchema = z.object({
+  strategy: z.enum(["strict", "remap", "restart"]).default("strict"),
+  /** old node id → new node id; only consulted by the remap strategy. */
+  nodeMapping: z.record(z.string(), z.string()).optional(),
+  /** Defaults to the journey's currently published version. */
+  targetVersion: z.number().int().positive().optional(),
+});
+
+/** Maps migration precondition failures onto HTTP semantics. */
+function migrationErrorStatus(code: string): ContentfulStatusCode {
+  switch (code) {
+    case "run_not_found":
+    case "journey_not_found":
+      return 404;
+    case "pending_run":
+    case "terminal_run":
+    case "already_on_target":
+    case "unmappable":
+      return 409;
+    case "target_not_published":
+    case "target_version_not_found":
+    case "invalid_mapping":
+      return 400;
+    default:
+      return 500;
+  }
+}
+function getMigrationCode(err: unknown): string {
+  return err instanceof JourneyMigrationError ? err.code : "engine_error";
+}
 
 export const journeysRouter = new Hono<{ Variables: AuthVariables }>();
 
@@ -221,6 +257,64 @@ journeysRouter.post("/:id/publish", async (c) => {
   return c.json({ ok: true });
 });
 
+// Version distribution of a journey's in-flight runs — what the migration
+// dialog shows BEFORE the operator picks a strategy.
+journeysRouter.get("/:id/inflight-versions", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+
+  try {
+    const counts = await getInFlightVersionCounts(db, workspaceId, journeyId);
+    return c.json({ versions: counts });
+  } catch (error) {
+    return c.json(
+      {
+        error: getMigrationCode(error),
+        message: error instanceof Error ? error.message : String(error),
+      },
+      migrationErrorStatus(getMigrationCode(error)),
+    );
+  }
+});
+
+// Migrate every in-flight run to the target (default: currently published)
+// version. Per-run failures don't abort the batch — the response reports
+// them individually so the operator can retry with a different strategy.
+journeysRouter.post("/:id/migrate-inflight", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+
+  const parsed = migrationSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const engineCtx = getEngine();
+  if (!engineCtx) return c.json({ error: "engine_not_ready" }, 503);
+
+  try {
+    const result = await migrateInFlightJourneyRuns(
+      db,
+      engineCtx.ctx.engine,
+      workspaceId,
+      journeyId,
+      parsed.data as {
+        strategy: JourneyMigrationStrategy;
+        nodeMapping?: Record<string, string>;
+        targetVersion?: number;
+      },
+    );
+    return c.json(result);
+  } catch (error) {
+    return c.json(
+      {
+        error: getMigrationCode(error),
+        message: error instanceof Error ? error.message : String(error),
+      },
+      migrationErrorStatus(getMigrationCode(error)),
+    );
+  }
+});
+
 journeysRouter.post("/:id/pause", async (c) => {
   const { workspaceId } = c.get("auth");
   const journeyId = c.req.param("id");
@@ -321,6 +415,45 @@ runsRouter.post("/:instanceId/cancel", async (c) => {
     .where(eq(journeyRun.id, run.id));
 
   return c.json({ ok: true });
+});
+
+// Migrate ONE in-flight run to another journey version (defaults to the
+// journey's currently published version).
+runsRouter.post("/:instanceId/migrate", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const instanceId = c.req.param("instanceId");
+
+  const parsed = migrationSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [run] = await db
+    .select({ id: journeyRun.id })
+    .from(journeyRun)
+    .where(and(eq(journeyRun.instanceId, instanceId), eq(journeyRun.workspaceId, workspaceId)));
+  if (!run) return c.json({ error: "run_not_found" }, 404);
+
+  const engineCtx = getEngine();
+  if (!engineCtx) return c.json({ error: "engine_not_ready" }, 503);
+
+  try {
+    const result = await migrateJourneyRun(
+      db,
+      engineCtx.ctx.engine,
+      workspaceId,
+      run.id,
+      parsed.data,
+    );
+    return c.json(result);
+  } catch (error) {
+    return c.json(
+      {
+        error: getMigrationCode(error),
+        message: error instanceof Error ? error.message : String(error),
+      },
+      migrationErrorStatus(getMigrationCode(error) as Parameters<typeof migrationErrorStatus>[0]),
+    );
+  }
 });
 
 export const opsRouter = new Hono<{ Variables: AuthVariables }>();

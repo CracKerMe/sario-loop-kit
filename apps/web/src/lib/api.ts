@@ -124,6 +124,7 @@ export type JourneyRunDto = {
   instanceId: string;
   contactId: string;
   status: string;
+  journeyVersion: number;
   enteredAt: string;
   exitedAt: string | null;
   email?: string | null;
@@ -308,6 +309,45 @@ export type SuppressionDto = {
 
 export type SuppressionCountsDto = Record<SuppressionReasonDto, number>;
 
+/** One run moved to another journey version by a migration. */
+export type RunMigrationResultDto = {
+  runId: string;
+  instanceId: string;
+  contactId: string;
+  fromVersion: number;
+  toVersion: number;
+  strategy: string;
+  previousNodes: string[];
+  currentNodes: string[];
+};
+
+/** Bulk result of migrating every in-flight run of a journey. */
+export type BulkJourneyMigrationResultDto = {
+  journeyId: string;
+  fromVersions: number[];
+  toVersion: number;
+  strategy: string;
+  migrated: number;
+  alreadyOnTarget: number;
+  failed: number;
+  pending: number;
+  results: RunMigrationResultDto[];
+  failures: { runId: string; code: string; error: string }[];
+};
+
+/** In-flight run counts per journey version (migration dialog input). */
+export type InFlightVersionCountDto = {
+  version: number;
+  runs: number;
+  pending: number;
+};
+
+export type MigrationInput = {
+  strategy: "strict" | "remap" | "restart";
+  nodeMapping?: Record<string, string>;
+  targetVersion?: number;
+};
+
 export type UnsubscribeContextDto = {
   valid: boolean;
   email: string;
@@ -379,6 +419,18 @@ export const api = {
     }),
   publishJourney: (id: string) =>
     request<{ ok: true }>(`/v1/journeys/${id}/publish`, { method: "POST" }),
+  inflightVersions: (id: string) =>
+    request<{ versions: InFlightVersionCountDto[] }>(`/v1/journeys/${id}/inflight-versions`),
+  migrateInFlight: (id: string, input: MigrationInput) =>
+    request<BulkJourneyMigrationResultDto>(`/v1/journeys/${id}/migrate-inflight`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  migrateRun: (instanceId: string, input: MigrationInput) =>
+    request<RunMigrationResultDto>(`/v1/runs/${instanceId}/migrate`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   journeyDryRun: (id: string, body: { contactId: string; stopAfterNode?: string }) =>
     request<JourneyDryRunResultDto>(`/v1/journeys/${id}/dry-run`, {
       method: "POST",

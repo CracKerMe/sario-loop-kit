@@ -1,5 +1,5 @@
 import { createDb, type Db } from "@loopkit/db";
-import { journey as journeyTable, journeyVersion } from "@loopkit/db/schema";
+import { journey as journeyTable, journeyVersion as journeyVersionTable } from "@loopkit/db/schema";
 import {
   createEmailNotificationChannel,
   type EmailProvider,
@@ -9,7 +9,7 @@ import {
 } from "@loopkit/email";
 import { compile, type JourneyCompileActions, type JourneyGraph } from "@loopkit/journey";
 import { PgTimerAdapter, TimerPoller } from "@loopkit/timers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import {
   bootstrap,
   destroyContainer,
@@ -166,20 +166,29 @@ async function reregisterPublishedJourneys(
 
   for (const j of published) {
     if (j.publishedVersion === null) continue;
-    const [version] = await db
-      .select({ graph: journeyVersion.graph })
-      .from(journeyVersion)
+    // Register EVERY published version, not just the latest: in-flight runs
+    // are pinned to instance.workflowVersion, and the engine's own
+    // persistence layer only keeps the newest definition per workflowId —
+    // without this, a restart would strand every unmigrated run on an older
+    // version with an unresolvable definition (WorkflowNotFoundError → DLQ).
+    const versions = await db
+      .select({ version: journeyVersionTable.version, graph: journeyVersionTable.graph })
+      .from(journeyVersionTable)
       .where(
-        and(eq(journeyVersion.journeyId, j.id), eq(journeyVersion.version, j.publishedVersion)),
-      )
-      .limit(1);
-    if (!version) continue;
+        and(eq(journeyVersionTable.journeyId, j.id), isNotNull(journeyVersionTable.publishedAt)),
+      );
 
-    const { definition } = compile(version.graph as JourneyGraph, {
-      workflowId: j.workflowId,
-      name: j.name,
-      actions,
-    });
-    await ctx.engine.register(definition, { persist: false }); // already persisted at publish time
+    for (const v of versions) {
+      const { definition } = compile(v.graph as JourneyGraph, {
+        workflowId: j.workflowId,
+        name: j.name,
+        version: String(v.version),
+        actions,
+      });
+      await ctx.engine.register(definition, {
+        persist: false, // already persisted at publish time
+        setActive: v.version === j.publishedVersion,
+      });
+    }
   }
 }

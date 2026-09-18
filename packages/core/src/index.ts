@@ -55,6 +55,15 @@ export {
   type StartJourneyRunInput,
 } from "./journeys";
 export {
+  getInFlightVersionCounts,
+  JourneyMigrationError,
+  migrateInFlightJourneyRuns,
+  migrateJourneyRun,
+  type BulkJourneyMigrationResult,
+  type JourneyMigrationStrategy,
+  type JourneyRunMigrationResult,
+} from "./journeyMigration";
+export {
   compileAudienceWhere,
   compileSegmentFilter,
   describeSegmentFilter,

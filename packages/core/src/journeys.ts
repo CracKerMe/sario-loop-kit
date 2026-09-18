@@ -74,13 +74,23 @@ export async function publishJourney(
 
   const graph = latestVersion.graph as JourneyGraph;
   assertWhitelistedGraph(graph);
+  // The engine version string IS the journey_version integer. Registering
+  // every publish under its own version is what pins in-flight instances to
+  // the definition they started on (engine.execute resolves the workflow by
+  // instance.workflowVersion) while new starts pick up the active (latest)
+  // version — the precondition migrateInstanceVersion() needs to move a run
+  // from one version to another at all.
   const { definition, warnings } = compile(graph, {
     workflowId: j.workflowId,
     name: j.name,
+    version: String(latestVersion.version),
     actions: createJourneyCompileActions(db),
   });
 
-  await engine.register(definition);
+  // setActive: new engine.start() calls must resolve to this version.
+  // Prior versions stay registered in-memory so unmigrated runs can still
+  // resolve their pinned definition until they finish or are migrated.
+  await engine.register(definition, { setActive: true });
   await db
     .update(journeyVersion)
     .set({ compiled: definition, publishedAt: new Date() })
