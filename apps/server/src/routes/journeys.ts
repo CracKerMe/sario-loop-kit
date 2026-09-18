@@ -7,6 +7,7 @@ import {
   listJourneyRuns,
   listNodeFunnel,
   publishJourney,
+  searchInstances,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
 import { contact, emailTemplate, journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
@@ -248,6 +249,39 @@ journeysRouter.get("/:id/funnel", async (c) => {
 });
 
 export const runsRouter = new Hono<{ Variables: AuthVariables }>();
+
+// Instance search — "where is this contact stuck?" / "who is waiting for
+// this event?". Filters come from the query string; everything is
+// workspace-scoped through journey_run, which is the only table that
+// bridges engine instanceIds to a workspace.
+runsRouter.get("/", async (c) => {
+  const { workspaceId } = c.get("auth");
+
+  // Only valid run statuses reach the query — anything else is treated as
+  // "no filter" rather than a 400, so a stale client toggle degrades to a
+  // wider search instead of an error.
+  const RAW_STATUSES = [
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "exited",
+  ] as const;
+  const statusParam = c.req.query("status") || undefined;
+  const status = RAW_STATUSES.find((s) => s === statusParam);
+
+  const rows = await searchInstances(db, workspaceId, {
+    contactId: c.req.query("contactId") || undefined,
+    email: c.req.query("email") || undefined,
+    journeyId: c.req.query("journeyId") || undefined,
+    status,
+    waitingEvent: c.req.query("waitingEvent") || undefined,
+    limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined,
+  });
+
+  return c.json({ runs: rows });
+});
 
 runsRouter.get("/:instanceId", async (c) => {
   const { workspaceId } = c.get("auth");

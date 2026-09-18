@@ -159,3 +159,8 @@ export {
   listJourneyRuns,
   listNodeFunnel,
 } from "./reports";
+export {
+  searchInstances,
+  type InstanceSearchQuery,
+  type InstanceSearchRow,
+} from "./instanceSearch";

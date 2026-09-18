@@ -318,9 +318,46 @@ export type UnsubscribeContextDto = {
   canResubscribe: boolean;
 };
 
+/** One enriched run from the instance search (GET /v1/runs). */
+export type InstanceSearchRowDto = {
+  run: {
+    id: string;
+    instanceId: string;
+    status: string;
+    journeyVersion: number;
+    enteredAt: string;
+    exitedAt: string | null;
+    exitReason: string | null;
+  };
+  journey: { id: string; name: string };
+  contact: { id: string; email: string | null };
+  /** Engine's authoritative in-flight nodes ("stuck at"); null when unknown. */
+  currentNodes: string[] | null;
+  engineStatus: string | null;
+  /** Present only while a wait is pending — "parked on node X waiting for event Y". */
+  waitingFor: { nodeId: string; eventType: string }[];
+};
+
+export type InstanceSearchParams = {
+  email?: string;
+  contactId?: string;
+  journeyId?: string;
+  status?: string;
+  waitingEvent?: string;
+  limit?: number;
+};
+
 export const api = {
   stats: () => request<{ stats: Record<string, unknown> }>("/v1/ops/stats"),
   dlq: () => request<{ entries: unknown[] }>("/v1/ops/dlq"),
+  searchInstances: (params: InstanceSearchParams = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<{ runs: InstanceSearchRowDto[] }>(`/v1/runs${suffix}`);
+  },
   journeys: () => request<{ journeys: JourneyDto[] }>("/v1/journeys"),
   journey: (id: string) =>
     request<{

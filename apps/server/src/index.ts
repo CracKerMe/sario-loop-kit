@@ -120,6 +120,7 @@ app.route("/v1/transactional", transactionalRouter);
 // Dashboard-only.
 app.use("/v1/journeys/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/journeys", journeysRouter);
+app.use("/v1/runs", requireAuth({ allow: ["session"] }));
 app.use("/v1/runs/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/runs", runsRouter);
 // Public machine-readable catalog — no secrets, lets AI agents self-describe.

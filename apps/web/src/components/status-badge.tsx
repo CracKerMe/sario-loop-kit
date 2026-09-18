@@ -16,6 +16,9 @@ const STATUS_STYLES: Record<string, string> = {
   sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
   pending: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   skipped: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  // Journey run lifecycle: the contact left the journey early (goal met /
+  // branch exit). Neutral like cancelled, but distinct from it.
+  exited: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
 };
 
 const PULSING = new Set(["running", "queued", "sending"]);
