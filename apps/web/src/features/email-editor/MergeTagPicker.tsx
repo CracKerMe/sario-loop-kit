@@ -24,9 +24,15 @@ export function MergeTagPicker({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="grid gap-1.5">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Merge tags
+    <section className="rounded-2xl border border-border/80 bg-card/75 p-3.5 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="grid size-7 place-items-center rounded-lg bg-primary/10 text-primary">
+          <AtSignIcon className="size-3.5" />
+        </span>
+        <div>
+          <div className="text-xs font-semibold">Personalization</div>
+          <p className="text-[10px] text-muted-foreground">Use trusted contact data.</p>
+        </div>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -66,9 +72,9 @@ export function MergeTagPicker({ editor }: { editor: Editor }) {
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
         Inserts a personalization chip — never type <code className="font-mono">{"{{ }}"}</code>.
       </p>
-    </div>
+    </section>
   );
 }

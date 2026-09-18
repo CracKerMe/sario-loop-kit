@@ -91,6 +91,19 @@ export function apiKeyMetaBody() {
           idempotencyKey: "string (optional)",
         },
       },
+      {
+        method: "POST",
+        path: "/v1/transactional",
+        summary: "Send transactional email (receipt, reset, notification) from a saved template",
+        scopes: ["transactional:send"],
+        body: {
+          to: "string (required, email)",
+          templateId: "string (required, a template in this workspace)",
+          subject: "string (optional, overrides the template subject)",
+          variables: "object (optional, render variables; win over contact properties)",
+          idempotencyKey: "string (required, or the Idempotency-Key header)",
+        },
+      },
     ],
   };
 }

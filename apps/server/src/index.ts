@@ -15,6 +15,7 @@ import { emailTemplatesRouter } from "./routes/emailTemplates";
 import { journeysRouter, opsRouter, runsRouter } from "./routes/journeys";
 import { publicRouter } from "./routes/public";
 import { suppressionsRouter } from "./routes/suppressions";
+import { transactionalRouter } from "./routes/transactional";
 import { webhooksRouter } from "./routes/webhooks";
 import { acquireInstanceLock } from "./instanceLock";
 import { requireAuth, requireScope, type AuthVariables } from "./middleware/auth";
@@ -107,6 +108,14 @@ for (const path of ["/v1/events", "/v1/events/*"] as const) {
   );
 }
 app.route("/v1/events", eventsRouter);
+
+// Transactional email: API key or session. The legacy `ingest` scope does
+// NOT cover this — sending mail spends sender reputation in a way that
+// ingesting data never does, so a key must hold `transactional:send`
+// explicitly. See routes/transactional.ts for the full safety argument.
+app.use("/v1/transactional", ingestionAuth);
+app.use("/v1/transactional", requireScope("transactional:send"));
+app.route("/v1/transactional", transactionalRouter);
 
 // Dashboard-only.
 app.use("/v1/journeys/*", requireAuth({ allow: ["session"] }));

@@ -12,8 +12,8 @@ export function PreviewPanel({
   error: string | null;
 }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+      <CardHeader className="border-b border-border/70">
         <CardTitle className="flex items-center gap-2">
           Preview
           {loading && (
@@ -30,12 +30,12 @@ export function PreviewPanel({
             {error}
           </div>
         )}
-        <div className="overflow-hidden rounded-md border border-border bg-card">
+        <div className="overflow-hidden rounded-xl border border-border bg-muted/30 p-1.5">
           <iframe
             title="Email preview"
             srcDoc={html}
             sandbox=""
-            className="h-[600px] w-full bg-white"
+            className="h-[420px] w-full rounded-lg bg-white"
           />
         </div>
       </CardContent>

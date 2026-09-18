@@ -91,8 +91,8 @@ function ControlsCard({
 }) {
   const controls = getAttrControls(type);
   return (
-    <Card>
-      <CardHeader>
+    <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+      <CardHeader className="border-b border-border/70">
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
@@ -135,7 +135,7 @@ export function PropertiesPanel({ editor }: { editor: Editor }) {
 
   if (!active && !section) {
     return (
-      <Card>
+      <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
         <CardContent className="py-6">
           <Empty>
             <EmptyHeader>

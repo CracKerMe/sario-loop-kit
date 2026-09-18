@@ -8,6 +8,15 @@ import type {
   NotificationResult,
 } from "ts-workflow-engine-lite";
 
+// Re-exported so consumers of the channel (the engine wiring, the
+// transactional API route) don't each have to reach into the engine
+// package for these three types.
+export type {
+  NotificationChannel,
+  NotificationMessage,
+  NotificationResult,
+} from "ts-workflow-engine-lite";
+
 import type { EmailProvider } from "./provider";
 import { renderTemplate } from "./render";
 
@@ -20,8 +29,9 @@ import { renderTemplate } from "./render";
  * contactId/firstName; the email BODY does not go through that path (see
  * render.ts's doc comment for why).
  *
- * Exactly one of `journeyRunId` / `campaignId` must be present, and it names
- * the *run* the idempotency key is scoped to:
+ * Exactly one of `journeyRunId` / `campaignId` / (`transactional` +
+ * `transactionalId`) must be present, and it names the *run* the
+ * idempotency key is scoped to:
  *
  *  - **journey send** — `journeyRunId`, 1:1 with the engine instance. The
  *    engine has no mechanism to expose instance.instanceId to a notification
@@ -39,6 +49,12 @@ import { renderTemplate } from "./render";
  *    The resulting key is therefore `(campaignId, recipientId)`: unique per
  *    recipient, stable across a resumed or replayed drain, and enforced by
  *    the same `email_send` unique index the journey path uses.
+ *  - **transactional send** — `txn:${transactionalId}` with the fixed
+ *    `nodeId` "transactional". There is no engine instance at all: the
+ *    API route drives this channel directly. The `txn:` prefix keeps a
+ *    caller-chosen idempotency key from ever colliding with a real
+ *    journeyRunId/campaignId (both UUIDs today, but the prefix makes the
+ *    guarantee structural rather than incidental).
  */
 export interface EmailNodeData {
   workspaceId: string;
@@ -48,6 +64,22 @@ export interface EmailNodeData {
   /** Set for campaign sends; carried into the unsubscribe link for attribution. */
   campaignId?: string;
   journeyRunId?: string;
+  /**
+   * Set for transactional (API-driven) sends. Mutually exclusive with
+   * journeyRunId/campaignId — see the run-key derivation in send().
+   * `transactionalId` is the CALLER's idempotency key (a receipt id, an
+   * order id, ...) and is what makes a retried HTTP call send exactly one
+   * email; it is required whenever `transactional` is set.
+   */
+  transactional?: boolean;
+  transactionalId?: string;
+  /**
+   * Caller-supplied render variables (transactional sends only). Merged
+   * into the render context AFTER the contact's own properties, so an
+   * explicit value in the API request wins over an ambient contact field
+   * of the same name.
+   */
+  variables?: Record<string, unknown>;
   nodeId: string;
   preheader?: string;
   fromName?: string;
@@ -94,6 +126,14 @@ export interface RecipientGateInput {
   workspaceId: string;
   contactId: string;
   email: string;
+  /**
+   * Transactional sends (receipts, password resets, ...) are service mail:
+   * a contact who opted out of MARKETING must still receive them, so the
+   * contact-level opt-out gate does not apply. Address-level suppression
+   * still does — an operator block or a recorded hard bounce protects
+   * deliverability regardless of what kind of mail this is.
+   */
+  transactional?: boolean;
 }
 
 /**
@@ -160,6 +200,11 @@ export async function defaultRecipientGate(
       detail: "suppressed",
       error: `address suppressed (${blocked.reason})`,
     };
+  }
+
+  if (input.transactional) {
+    // Service mail reaches opted-out contacts — see RecipientGateInput.
+    return { allowed: true };
   }
 
   const [row] = await db
@@ -262,17 +307,21 @@ export function createEmailNotificationChannel(
     async send(message: NotificationMessage): Promise<NotificationResult> {
       const data = message.data as EmailNodeData | undefined;
       // The run discriminator: a journey send carries journeyRunId, a
-      // campaign send carries campaignId, and neither may be missing —
-      // without it there is no idempotency basis and a retry would
-      // double-send. Rejecting up front is the difference between a loud
-      // config error and a silent duplicate.
-      const runKey = data?.campaignId || data?.journeyRunId;
+      // campaign send carries campaignId, a transactional send carries
+      // transactional+transactionalId — and none of the three may be
+      // missing, because without a run key there is no idempotency basis
+      // and a retry would double-send. Rejecting up front is the
+      // difference between a loud config error and a silent duplicate.
+      const runKey =
+        data?.campaignId ||
+        data?.journeyRunId ||
+        (data?.transactional && data.transactionalId ? `txn:${data.transactionalId}` : undefined);
       if (!runKey || !data?.nodeId || !data.contactId || !data.templateId || !data.workspaceId) {
         return {
           ok: false,
           channel: "loopkit-email",
           error:
-            "loopkit-email requires data.{workspaceId,contactId,templateId,nodeId} plus data.journeyRunId (journey send) or data.campaignId (campaign send)",
+            "loopkit-email requires data.{workspaceId,contactId,templateId,nodeId} plus data.journeyRunId (journey send), data.campaignId (campaign send), or data.{transactional,transactionalId} (transactional send)",
         };
       }
 
@@ -311,6 +360,7 @@ export function createEmailNotificationChannel(
         workspaceId: data.workspaceId,
         contactId: data.contactId,
         email: message.target,
+        transactional: data.transactional === true,
       });
       if (!gate.allowed) {
         await db
@@ -344,6 +394,9 @@ export function createEmailNotificationChannel(
       const renderData = {
         ...data,
         ...renderContact?.properties,
+        // Caller-supplied variables (transactional API) win over ambient
+        // contact properties of the same name — explicit beats implicit.
+        ...(data.transactional && data.variables ? data.variables : {}),
         contact: renderContact ?? { id: data.contactId },
       };
       // renderTemplate() HTML-escapes by default — fine for the body,
@@ -379,13 +432,20 @@ export function createEmailNotificationChannel(
         // unsubscribe presses "report spam" instead, which is the
         // deliverability event that actually hurts.
         const headers: Record<string, string> = { "X-Loopkit-Send-Id": sendId };
-        const unsubscribe = buildUnsubscribe?.({
-          workspaceId: data.workspaceId,
-          contactId: data.contactId,
-          email: message.target,
-          journeyId: data.journeyId,
-          campaignId: typeof data.campaignId === "string" ? data.campaignId : undefined,
-        });
+        // List-Unsubscribe is a MARKETING-mail requirement (Gmail/Yahoo
+        // bulk-sender rules). A password reset or receipt must not carry a
+        // one-click unsubscribe — "unsubscribing" from invoice delivery
+        // would be a compliance bug, not a feature.
+        const unsubscribe =
+          data.transactional === true
+            ? undefined
+            : buildUnsubscribe?.({
+                workspaceId: data.workspaceId,
+                contactId: data.contactId,
+                email: message.target,
+                journeyId: data.journeyId,
+                campaignId: typeof data.campaignId === "string" ? data.campaignId : undefined,
+              });
         if (unsubscribe) {
           const targets = [`<${unsubscribe.oneClickUrl}>`];
           if (unsubscribe.mailtoUrl) targets.push(`<${unsubscribe.mailtoUrl}>`);

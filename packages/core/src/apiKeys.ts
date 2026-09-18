@@ -25,6 +25,12 @@ export const API_KEY_SCOPES = [
     description: "Record lifecycle events that wake journeys",
     endpoints: ["POST /v1/events"],
   },
+  {
+    id: "transactional:send",
+    label: "Transactional send",
+    description: "Send transactional email (receipts, password resets) from a saved template",
+    endpoints: ["POST /v1/transactional"],
+  },
 ] as const;
 
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]["id"] | "ingest";
@@ -52,10 +58,16 @@ export const API_KEY_PRESETS = [
     scopes: ["events:write"],
   },
   {
+    id: "transactional",
+    label: "Transactional sender",
+    description: "Backend service sending receipts and notifications — no contact mutation",
+    scopes: ["transactional:send"],
+  },
+  {
     id: "full",
     label: "Full access",
     description: "Read and write contacts, plus emit events",
-    scopes: ["contacts:read", "contacts:write", "events:write"],
+    scopes: ["contacts:read", "contacts:write", "events:write", "transactional:send"],
   },
 ] as const;
 

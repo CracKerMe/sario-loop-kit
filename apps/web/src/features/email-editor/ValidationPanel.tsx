@@ -5,8 +5,8 @@ import type { EmailDocIssue } from "@loopkit/email-doc";
 
 export function ValidationPanel({ issues }: { issues: EmailDocIssue[] }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="rounded-2xl bg-card/80 shadow-[0_14px_36px_-30px_color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+      <CardHeader className="border-b border-border/70">
         <CardTitle className="flex items-center gap-2">
           {issues.length === 0 ? (
             <CircleCheckIcon className="size-4 text-emerald-500 dark:text-emerald-300" />

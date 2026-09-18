@@ -59,7 +59,7 @@ export function Toolbar({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-1 rounded-lg bg-background/70 px-1 py-1">
       <ToolbarButton
         active={bold}
         label="Bold"

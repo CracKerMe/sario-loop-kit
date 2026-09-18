@@ -482,4 +482,156 @@ describe("createEmailNotificationChannel", () => {
     expect(result.ok).toBe(false);
     expect(provider.sends).toHaveLength(0);
   });
+
+  // ─── Transactional sends (P1.5) ────────────────────────────────────────
+
+  function transactionalData(overrides: Partial<EmailNodeData> = {}): EmailNodeData {
+    return {
+      workspaceId: "ws-1",
+      contactId: "contact-1",
+      templateId: "tpl-1",
+      nodeId: "transactional",
+      transactional: true,
+      transactionalId: "order-42",
+      ...overrides,
+    };
+  }
+
+  it("keys a transactional send on txn:<transactionalId> with no journey/campaign reference", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+    const message = {
+      target: "sam@example.com",
+      subject: "Your receipt",
+      body: "template:tpl-1",
+      data: transactionalData(),
+    };
+
+    const first = await channel.send(message);
+    const second = await channel.send(message); // the caller's HTTP retry
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.detail).toBe("duplicate-suppressed");
+    expect(provider.sends).toHaveLength(1);
+
+    const [row] = await db.select().from(emailSend).where(eq(emailSend.nodeId, "transactional"));
+    expect(row?.idempotencyKey).toBe("txn:order-42:transactional");
+    expect(row?.journeyRunId).toBeNull();
+    expect(row?.campaignId).toBeNull();
+  });
+
+  it("sends to an unsubscribed contact when the send is transactional", async () => {
+    await db.update(contact).set({ subscribed: false }).where(eq(contact.id, "contact-1"));
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    // A person who opted out of newsletters still gets their password
+    // reset — the contact-level gate does not apply to service mail.
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Reset your password",
+      body: "template:tpl-1",
+      data: transactionalData({ transactionalId: "reset-1" }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.detail).not.toBe("unsubscribed");
+    expect(provider.sends).toHaveLength(1);
+  });
+
+  it("still blocks a suppressed address for a transactional send", async () => {
+    await addSuppression(db, {
+      workspaceId: "ws-1",
+      email: "sam@example.com",
+      reason: "hard_bounce",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Reset your password",
+      body: "template:tpl-1",
+      data: transactionalData({ transactionalId: "reset-2" }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe("suppressed");
+    expect(provider.sends).toHaveLength(0);
+  });
+
+  it("omits List-Unsubscribe headers for a transactional send even when a builder is wired", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+      buildUnsubscribe: () => ({
+        oneClickUrl: "https://api.example.com/v1/public/unsubscribe?token=x",
+      }),
+    });
+
+    await channel.send({
+      target: "sam@example.com",
+      subject: "Your receipt",
+      body: "template:tpl-1",
+      data: transactionalData(),
+    });
+
+    const headers = provider.sends[0]?.headers ?? {};
+    expect(headers["List-Unsubscribe"]).toBeUndefined();
+    expect(headers["List-Unsubscribe-Post"]).toBeUndefined();
+    expect(headers["X-Loopkit-Send-Id"]).toBeTruthy();
+  });
+
+  it("lets caller variables win over contact properties of the same name", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    // Contact's firstName is "Sam"; the caller explicitly says otherwise.
+    await channel.send({
+      target: "sam@example.com",
+      subject: "Hi {{firstName}}",
+      body: "template:tpl-1",
+      data: transactionalData({ variables: { firstName: "Samuel" } }),
+    });
+
+    expect(provider.sends[0]?.subject).toBe("Hi Samuel");
+    expect(provider.sends[0]?.html).toBe("<p>Hi Samuel!</p>");
+  });
+
+  it("rejects a transactional send that carries no transactionalId", async () => {
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const result = await channel.send({
+      target: "sam@example.com",
+      subject: "Your receipt",
+      body: "template:tpl-1",
+      // transactional without transactionalId = no idempotency basis.
+      data: transactionalData({ transactional: true, transactionalId: undefined }),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("transactionalId");
+    expect(provider.sends).toHaveLength(0);
+    const rows = await db.select().from(emailSend);
+    expect(rows).toHaveLength(0);
+  });
 });

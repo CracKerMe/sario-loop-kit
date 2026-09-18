@@ -106,8 +106,7 @@ function parseCsv(text: string): ImportRow[] {
 }
 
 function download(filename: string, contents: string, type = "text/csv;charset=utf-8") {
-  const data = filename === "contacts-example.csv" ? CONTACTS_EXAMPLE_CSV : contents;
-  const url = URL.createObjectURL(new Blob([data], { type }));
+  const url = URL.createObjectURL(new Blob([contents], { type }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
@@ -127,8 +126,9 @@ function ContactsPage() {
   const [email, setEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [firstName, setFirstName] = useState("");
-  const [company, setCompany] = useState("");
-  const [plan, setPlan] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [userGroup, setUserGroup] = useState("");
+  const [source, setSource] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [rows, setRows] = useState<ImportRow[]>([]);
@@ -190,8 +190,9 @@ function ContactsPage() {
     setEmail("");
     setUserId("");
     setFirstName("");
-    setCompany("");
-    setPlan("");
+    setLastName("");
+    setUserGroup("");
+    setSource("");
   };
   const createContact = async () => {
     if (!email.trim()) return;
@@ -199,9 +200,10 @@ function ContactsPage() {
     try {
       const properties = Object.fromEntries(
         [
-          ["first_name", firstName],
-          ["company", company],
-          ["plan", plan],
+          ["firstName", firstName],
+          ["lastName", lastName],
+          ["userGroup", userGroup],
+          ["source", source],
         ]
           .filter(([, value]) => value.trim())
           .map(([key, value]) => [key, value.trim()]),
@@ -430,7 +432,7 @@ function ContactsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Add contact"
-        description="Add one contact now. You can add more custom fields later from an import or your API."
+        description="Email is required. Add the recommended default fields now, then manage any custom fields from the contact profile."
       >
         <form
           className="grid gap-3"
@@ -474,23 +476,34 @@ function ContactsPage() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="contact-company">Company</Label>
+              <Label htmlFor="contact-last-name">Last name</Label>
               <Input
-                id="contact-company"
-                value={company}
-                onChange={(event) => setCompany(event.target.value)}
-                placeholder="Fieldnote"
+                id="contact-last-name"
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                placeholder="Kim"
               />
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="contact-plan">Plan</Label>
-            <Input
-              id="contact-plan"
-              value={plan}
-              onChange={(event) => setPlan(event.target.value)}
-              placeholder="starter"
-            />
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="contact-user-group">User group</Label>
+              <Input
+                id="contact-user-group"
+                value={userGroup}
+                onChange={(event) => setUserGroup(event.target.value)}
+                placeholder="Trial users"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="contact-source">Source</Label>
+              <Input
+                id="contact-source"
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+                placeholder="Website"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
@@ -538,12 +551,7 @@ function ContactsPage() {
             <Button
               variant="outline"
               size="xs"
-              onClick={() =>
-                download(
-                  "contacts-example.csv",
-                  "email,user_id,first_name,company,plan\nmei@northstar.io,u_001,Mei,Northstar,pro\naria@fieldnote.co,u_002,Aria,Fieldnote,starter\n",
-                )
-              }
+              onClick={() => download("contacts-example.csv", CONTACTS_EXAMPLE_CSV)}
             >
               Example CSV
             </Button>

@@ -22,6 +22,7 @@ import "@xyflow/react/dist/style.css";
 import {
   AlertTriangleIcon,
   CheckCircle2Icon,
+  EyeIcon,
   GripVerticalIcon,
   Loader2Icon,
   PanelLeftCloseIcon,
@@ -33,6 +34,7 @@ import { validateGraph } from "@loopkit/journey";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Dialog } from "@/components/dialog";
 import { api, type EmailTemplateDto, type JourneyGraphDto, type ValidationResult } from "@/lib/api";
 import {
   NODE_CATEGORY_LABELS,
@@ -263,6 +265,10 @@ export function JourneyBuilder({
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState("");
 
   const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
   const dirty = useMemo(() => {
@@ -426,6 +432,21 @@ export function JourneyBuilder({
       ),
     );
     setSelected((s) => (s ? { ...s, data: { ...(s.data as object), ...patch } } : s));
+  };
+
+  const openTemplatePreview = async (templateId: string) => {
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewHtml("");
+    try {
+      const { template } = await api.getTemplate(templateId);
+      setPreviewHtml(template.html);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Failed to load preview");
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const save = async (publish: boolean) => {
@@ -844,18 +865,35 @@ export function JourneyBuilder({
               {selected.type === "email" && (
                 <>
                   <InspectorField label="Template">
-                    <select
-                      className={selectClass}
-                      value={String((selected.data as { templateId?: string }).templateId ?? "")}
-                      onChange={(e) => updateSelectedData({ templateId: e.target.value })}
-                    >
-                      <option value="">Select template…</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        className={selectClass}
+                        value={String((selected.data as { templateId?: string }).templateId ?? "")}
+                        onChange={(e) => updateSelectedData({ templateId: e.target.value })}
+                      >
+                        <option value="">Select template…</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        className="shrink-0"
+                        aria-label="Preview email template"
+                        disabled={!(selected.data as { templateId?: string }).templateId}
+                        onClick={() =>
+                          void openTemplatePreview(
+                            String((selected.data as { templateId?: string }).templateId),
+                          )
+                        }
+                      >
+                        <EyeIcon className="size-3.5" />
+                      </Button>
+                    </div>
                   </InspectorField>
                   <InspectorField
                     label="Subject override"
@@ -1595,6 +1633,36 @@ export function JourneyBuilder({
           </div>
         </div>
       </aside>
+
+      <Dialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title="Email template preview"
+        className="max-w-2xl"
+      >
+        {previewError && (
+          <div className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
+            {previewError}
+          </div>
+        )}
+        <div className="overflow-hidden rounded-xl border border-border bg-muted/30 p-1.5">
+          {previewLoading ? (
+            <div className="flex h-[480px] w-full items-center justify-center">
+              <Loader2Icon
+                className="size-5 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
+            </div>
+          ) : (
+            <iframe
+              title="Email template preview"
+              srcDoc={previewHtml}
+              sandbox=""
+              className="h-[480px] w-full rounded-lg bg-white"
+            />
+          )}
+        </div>
+      </Dialog>
     </div>
   );
 }

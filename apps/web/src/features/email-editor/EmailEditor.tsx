@@ -6,7 +6,7 @@ import {
   type EmailDocIssue,
   type EmailDocJson,
 } from "@loopkit/email-doc";
-import { ArrowLeftIcon, CircleIcon, SaveIcon } from "lucide-react";
+import { ArrowLeftIcon, CircleIcon, EyeIcon, SaveIcon, SparklesIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -16,7 +16,6 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { Skeleton } from "@loopkit/ui/components/skeleton";
-import { PageHeader } from "@/components/page-header";
 
 import { BlockPanel } from "./BlockPanel";
 import { Canvas } from "./Canvas";
@@ -148,69 +147,108 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
   const allIssues = [...localIssues, ...serverIssues];
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-6xl px-4 py-6">
-      <PageHeader
-        title="Email editor"
-        description="Structured, AI-readable template — rendered by the server."
-        actions={
-          <>
+    <div className="lk-fade-up email-editor-shell mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 xl:px-8">
+      <header className="mb-5 overflow-hidden rounded-2xl border border-border/80 bg-card/80 shadow-[0_18px_50px_-32px_color-mix(in_oklab,var(--foreground)_55%,transparent)] backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               type="button"
+              aria-label="Back to templates"
               onClick={() => navigate({ to: "/templates" })}
             >
-              <ArrowLeftIcon data-icon="inline-start" />
-              Templates
+              <ArrowLeftIcon className="size-4" />
             </Button>
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="grid size-7 place-items-center rounded-lg bg-primary/12 text-primary">
+                  <SparklesIcon className="size-3.5" />
+                </span>
+                <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base">
+                  Email studio
+                </h1>
+              </div>
+              <p className="ml-9 mt-0.5 text-[11px] text-muted-foreground">
+                Design the message, then check the rendered email.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-[11px] text-muted-foreground">
               <CircleIcon
                 className={
                   dirty
-                    ? "size-2 fill-amber-500 text-amber-500"
-                    : "size-2 fill-emerald-500 text-emerald-500"
+                    ? "size-1.5 fill-amber-500 text-amber-500"
+                    : "size-1.5 fill-emerald-500 text-emerald-500"
                 }
                 aria-hidden="true"
               />
-              {dirty ? "Unsaved changes" : "Saved"}
+              {dirty ? "Unsaved" : "All changes saved"}
             </span>
-            <Button size="sm" type="button" onClick={save} disabled={saving}>
-              {saving && <SaveIcon data-icon="inline-start" className="animate-spin" />}
-              Save
+            <Button size="sm" type="button" onClick={save} disabled={saving} className="shadow-sm">
+              {saving && <SaveIcon data-icon="inline-start" className="animate-spin" />}Save changes
             </Button>
-          </>
-        }
-      />
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1.5">
-          <Label htmlFor="tpl-name">Name</Label>
-          <Input id="tpl-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="tpl-subject">Subject</Label>
-          <Input id="tpl-subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] sm:px-5">
+          <div className="grid gap-1.5">
+            <Label htmlFor="tpl-name" className="text-[11px] font-medium text-muted-foreground">
+              Template name
+            </Label>
+            <Input
+              id="tpl-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-9 bg-background/60 text-sm font-medium"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="tpl-subject" className="text-[11px] font-medium text-muted-foreground">
+              Subject line
+            </Label>
+            <Input
+              id="tpl-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="h-9 bg-background/60 text-sm"
+            />
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)_360px]">
-        <aside className="grid content-start gap-4">
+      <div className="grid items-start gap-5 xl:grid-cols-[238px_minmax(540px,1fr)_340px]">
+        <aside className="editor-side-panel grid content-start gap-5 xl:sticky xl:top-5">
           <BlockPanel editor={editor} />
           <MergeTagPicker editor={editor} />
         </aside>
 
-        <section className="min-w-0">
-          <div className="overflow-hidden rounded-lg border border-border">
+        <section className="email-canvas-workspace min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card/70 shadow-[0_22px_60px_-40px_color-mix(in_oklab,var(--foreground)_75%,transparent)]">
+          <div className="flex items-center justify-between border-b border-border/70 bg-card/70 px-4 py-2.5">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-primary">
+                <SparklesIcon className="size-3.5" />
+              </span>
+              Message canvas
+            </div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <EyeIcon className="size-3.5" />
+              600px email layout
+            </span>
+          </div>
+          <div className="border-b border-border/70 bg-muted/30 px-2 py-1.5">
             <Toolbar editor={editor} />
+          </div>
+          <div className="canvas-stage p-4 sm:p-7">
             <Canvas editor={editor} />
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Click any block to edit its settings on the right. Use the toolbar for bold, italic,
-            underline and links.
-          </p>
+          <div className="border-t border-border/70 px-4 py-2.5 text-[11px] text-muted-foreground">
+            Select a block on the canvas to reveal its properties. Formatting controls apply to
+            selected text.
+          </div>
         </section>
 
-        <aside className="grid content-start gap-4">
+        <aside className="editor-inspector grid content-start gap-4 xl:sticky xl:top-5">
           <PropertiesPanel editor={editor} />
           <ValidationPanel issues={allIssues} />
           <PreviewPanel html={previewHtml} loading={previewLoading} error={previewError} />

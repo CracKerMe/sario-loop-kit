@@ -48,6 +48,15 @@ export function getEngine(): LoopkitEngine | null {
   return engineInstance;
 }
 
+/**
+ * Test seam: installs an engine built outside startEngine() (e.g. a real
+ * createLoopkitEngine() against the test database with a recording email
+ * provider). startEngine() overwrites it; production code never calls this.
+ */
+export function setEngineForTesting(engine: LoopkitEngine | null): void {
+  engineInstance = engine;
+}
+
 export async function stopEngine(): Promise<void> {
   if (engineInstance) {
     await engineInstance.stop();

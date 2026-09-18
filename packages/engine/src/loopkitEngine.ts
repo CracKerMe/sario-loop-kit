@@ -3,6 +3,7 @@ import { journey as journeyTable, journeyVersion } from "@loopkit/db/schema";
 import {
   createEmailNotificationChannel,
   type EmailProvider,
+  type NotificationChannel,
   type UnsubscribeLink,
   type UnsubscribeLinkPayload,
 } from "@loopkit/email";
@@ -45,6 +46,16 @@ export interface LoopkitEngine {
   poller: TimerPoller;
   db: Db;
   emailProvider: EmailProvider;
+  /**
+   * The one registered `loopkit-email` channel instance. Journeys and
+   * campaigns reach it through the engine's NotificationManager; callers
+   * that must send OUTSIDE a workflow (the transactional email API) use
+   * this handle so every send — whatever its origin — flows through the
+   * same idempotent, suppression-aware channel. Never create a second
+   * channel for that: a second sender is a second place for the
+   * exactly-once guarantee to be missing.
+   */
+  emailChannel: NotificationChannel;
   eventWaitIndex: EventWaitIndex;
   /** Emit `loopkit.event.<name>` to instances waiting for this contact's event. */
   wakeForContactEvent: (input: WakeEventInput) => Promise<number>;
@@ -90,14 +101,13 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
   // registers slack/feishu/dingtalk/webhook from env — never email. The
   // channel is named "loopkit-email", not "email", to avoid any
   // collision with the engine's own env-driven EmailChannel.
-  notificationManager.registerChannel(
-    createEmailNotificationChannel({
-      db,
-      provider: options.emailProvider,
-      defaultFrom: options.defaultFromEmail,
-      buildUnsubscribe: options.buildUnsubscribe,
-    }),
-  );
+  const emailChannel = createEmailNotificationChannel({
+    db,
+    provider: options.emailProvider,
+    defaultFrom: options.defaultFromEmail,
+    buildUnsubscribe: options.buildUnsubscribe,
+  });
+  notificationManager.registerChannel(emailChannel);
 
   await reregisterPublishedJourneys(db, ctx, options.journeyActions);
   await ctx.engine.resumeRunningInstancesFromStorage();
@@ -115,6 +125,7 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     poller,
     db,
     emailProvider: options.emailProvider,
+    emailChannel,
     eventWaitIndex,
     wakeForContactEvent: (input) =>
       wakeWaitingInstancesForContactEvent(db, ctx.container.eventBus, eventWaitIndex, input),
