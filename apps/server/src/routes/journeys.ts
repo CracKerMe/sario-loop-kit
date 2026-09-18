@@ -2,14 +2,16 @@ import {
   createJourneyDraft,
   getDashboardStats,
   getJourneyDetail,
+  getSuppression,
   listDeadLetters,
   listJourneyRuns,
   listNodeFunnel,
   publishJourney,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
-import { journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
-import { validateGraph, type JourneyGraph } from "@loopkit/journey";
+import { contact, emailTemplate, journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
+import { renderTemplate } from "@loopkit/email";
+import { dryRunJourney, validateGraph, type JourneyGraph } from "@loopkit/journey";
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -100,6 +102,103 @@ journeysRouter.put("/:id/draft", async (c) => {
   }
 
   return c.json({ version: nextVersion, validation });
+});
+
+journeysRouter.post("/:id/dry-run", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = z
+    .object({ contactId: z.string().min(1), stopAfterNode: z.string().optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [j] = await db
+    .select({ id: journey.id, workspaceId: journey.workspaceId, name: journey.name })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  // Publish preview targets the LATEST version graph — the draft the
+  // builder is about to publish — not the currently-published compile.
+  const [version] = await db
+    .select({ graph: journeyVersion.graph })
+    .from(journeyVersion)
+    .where(eq(journeyVersion.journeyId, journeyId))
+    .orderBy(desc(journeyVersion.version))
+    .limit(1);
+  if (!version) return c.json({ error: "no_graph" }, 400);
+  const graph = version.graph as JourneyGraph;
+
+  const [contactRow] = await db
+    .select()
+    .from(contact)
+    .where(and(eq(contact.id, parsed.data.contactId), eq(contact.workspaceId, workspaceId)));
+  if (!contactRow) return c.json({ error: "contact_not_found" }, 404);
+
+  // Same context shape the trigger path assembles at engine.start() (core's
+  // buildStartContext) so branch expressions answer the runtime's question.
+  const props = contactRow.properties ?? {};
+  const context = {
+    workspaceId,
+    journeyId,
+    contactId: contactRow.id,
+    contact: { id: contactRow.id, email: contactRow.email, ...props },
+    trigger: { kind: "manual" },
+    journeyRunId: "dry-run",
+  };
+
+  const result = dryRunJourney(graph, context, { stopAfterNode: parsed.data.stopAfterNode });
+
+  // Render what each email node WOULD send, and predict whether the send
+  // would survive the marketing gates (the journey email channel blocks on
+  // contact opt-out AND any suppression reason — service-mail exceptions
+  // don't apply here). No send happens; this is description only.
+  const emailPreviews = [];
+  for (const email of result.emails) {
+    const [tpl] = await db
+      .select()
+      .from(emailTemplate)
+      .where(
+        and(eq(emailTemplate.id, email.templateId), eq(emailTemplate.workspaceId, workspaceId)),
+      );
+    if (!tpl) {
+      emailPreviews.push({
+        nodeId: email.nodeId,
+        templateId: email.templateId,
+        templateName: null,
+        wouldSend: false,
+        blockedReason: "template_not_found",
+        subject: null,
+        html: null,
+        text: null,
+      });
+      continue;
+    }
+    const renderData = {
+      ...context,
+      ...props,
+      contact: { id: contactRow.id, email: contactRow.email, ...props },
+    };
+    const suppressed = await getSuppression(db, workspaceId, contactRow.email);
+    const blockedReason = !contactRow.subscribed
+      ? "unsubscribed"
+      : suppressed
+        ? `suppressed:${suppressed.reason}`
+        : null;
+    emailPreviews.push({
+      nodeId: email.nodeId,
+      templateId: email.templateId,
+      templateName: tpl.name,
+      wouldSend: blockedReason === null,
+      blockedReason,
+      subject: renderTemplate(email.subject || tpl.subject, renderData),
+      html: renderTemplate(tpl.html, renderData),
+      text: tpl.textBody ? renderTemplate(tpl.textBody, renderData) : null,
+    });
+  }
+
+  return c.json({ ...result, emailPreviews });
 });
 
 journeysRouter.post("/:id/publish", async (c) => {

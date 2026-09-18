@@ -136,6 +136,40 @@ export type FunnelEntryDto = {
   count: number;
 };
 
+/** One walked node from a journey dry-run (publish preview). */
+export type DryRunStepDto = {
+  nodeId: string;
+  type: string;
+  description: string;
+  detail: Record<string, unknown>;
+  next: string[];
+};
+
+/** Rendered "what would be sent" preview for one email node in a dry-run. */
+export type DryRunEmailPreviewDto = {
+  nodeId: string;
+  templateId: string;
+  templateName: string | null;
+  wouldSend: boolean;
+  /** "unsubscribed" | "suppressed:<reason>" | "template_not_found" | null */
+  blockedReason: string | null;
+  subject: string | null;
+  html: string | null;
+  text: string | null;
+};
+
+export type JourneyDryRunResultDto = {
+  startNode: string;
+  executionPath: string[];
+  steps: DryRunStepDto[];
+  emailPreviews: DryRunEmailPreviewDto[];
+  warnings: string[];
+  errors: { nodeId: string; error: string }[];
+  truncated: boolean;
+  exited: boolean;
+  exitReason?: string;
+};
+
 export type DlqEntryDto = {
   id?: string;
   [key: string]: unknown;
@@ -308,6 +342,11 @@ export const api = {
     }),
   publishJourney: (id: string) =>
     request<{ ok: true }>(`/v1/journeys/${id}/publish`, { method: "POST" }),
+  journeyDryRun: (id: string, body: { contactId: string; stopAfterNode?: string }) =>
+    request<JourneyDryRunResultDto>(`/v1/journeys/${id}/dry-run`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   pauseJourney: (id: string) =>
     request<{ ok: true }>(`/v1/journeys/${id}/pause`, { method: "POST" }),
   journeyRuns: (id: string) => request<{ runs: JourneyRunDto[] }>(`/v1/journeys/${id}/runs`),

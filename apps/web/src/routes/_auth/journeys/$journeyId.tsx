@@ -12,6 +12,7 @@ import {
   GitBranchIcon,
   Loader2Icon,
   PauseIcon,
+  PlayIcon,
   RefreshCwIcon,
   SearchIcon,
   WorkflowIcon,
@@ -21,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
+import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
@@ -291,6 +293,7 @@ function JourneyEditorPage() {
   const [funnelCounts, setFunnelCounts] = useState<Record<string, number>>({});
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
+  const [dryRunOpen, setDryRunOpen] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
@@ -437,6 +440,15 @@ function JourneyEditorPage() {
           <div className="flex flex-wrap items-center gap-2">
             {tab === "builder" && (
               <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDryRunOpen(true)}
+                  disabled={!graph}
+                >
+                  <PlayIcon data-icon="inline-start" />
+                  Preview run
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -771,6 +783,14 @@ function JourneyEditorPage() {
         instanceId={openRun}
         onClose={() => setOpenRun(null)}
         onCancelled={() => void loadRuns()}
+      />
+
+      <DryRunDialog
+        open={dryRunOpen}
+        onClose={() => setDryRunOpen(false)}
+        journeyId={journeyId}
+        graph={graph}
+        dirty={builderMeta?.dirty ?? false}
       />
     </div>
   );

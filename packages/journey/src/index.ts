@@ -7,6 +7,13 @@ export {
   type CompileResult,
 } from "./compile";
 export type { CompileOptions } from "./compile";
+export {
+  dryRunJourney,
+  type DryRunEmailNode,
+  type DryRunJourneyOptions,
+  type DryRunJourneyResult,
+  type DryRunStep,
+} from "./dryRun";
 export { decompile, type DecompileResult } from "./decompile";
 export { welcomeAbScoreHoursGraph } from "./presets";
 export { validateGraph, type ValidationIssue, type ValidationResult } from "./validate";
