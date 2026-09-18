@@ -3,7 +3,7 @@ import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { Textarea } from "@loopkit/ui/components/textarea";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2Icon, MailIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { FileCodeIcon, Loader2Icon, MailIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -12,8 +12,9 @@ import { PageHeader } from "@/components/page-header";
 import { api, type EmailTemplateDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/templates/")({
-  validateSearch: (search: Record<string, unknown>): { new?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { new?: string; edit?: string } => ({
     new: typeof search.new === "string" ? search.new : undefined,
+    edit: typeof search.edit === "string" ? search.edit : undefined,
   }),
   component: TemplatesPage,
 });
@@ -101,7 +102,7 @@ function TemplateForm({
 
 function TemplatesPage() {
   const navigate = useNavigate();
-  const { new: isNewSearch } = Route.useSearch();
+  const { new: isNewSearch, edit: editSearch } = Route.useSearch();
   const [templates, setTemplates] = useState<EmailTemplateDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,9 +129,22 @@ function TemplatesPage() {
     if (isNewSearch === "1") setCreating(true);
   }, [isNewSearch]);
 
+  // Opening with ?edit=<id> focuses the raw-HTML editor for that template.
+  useEffect(() => {
+    if (editSearch) {
+      const match = templates.find((t) => t.id === editSearch);
+      if (match) setEditing(match);
+    }
+  }, [editSearch, templates]);
+
   const closeCreate = () => {
     setCreating(false);
     if (isNewSearch === "1") void navigate({ to: "/templates", search: {} });
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    if (editSearch) void navigate({ to: "/templates", search: {} });
   };
 
   return (
@@ -184,10 +198,19 @@ function TemplatesPage() {
       {!loading && templates.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {templates.map((t) => (
-            <button
+            <div
               key={t.id}
-              type="button"
-              onClick={() => setEditing(t)}
+              role="button"
+              tabIndex={0}
+              onClick={() =>
+                navigate({ to: "/templates/$templateId", params: { templateId: t.id } })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void navigate({ to: "/templates/$templateId", params: { templateId: t.id } });
+                }
+              }}
               className="group overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:ring-1 focus-visible:ring-ring"
             >
               <TemplatePreview html={t.html} />
@@ -207,9 +230,23 @@ function TemplatesPage() {
                   <div className="mt-0.5 text-[10px] text-muted-foreground/70">
                     Updated {new Date(t.updatedAt).toLocaleDateString()}
                   </div>
+                  <div className="mt-1.5">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(t);
+                      }}
+                    >
+                      <FileCodeIcon data-icon="inline-start" />
+                      Edit HTML
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -241,7 +278,7 @@ function TemplatesPage() {
 
       <Dialog
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={closeEdit}
         title="Edit template"
         description={editing?.name}
       >

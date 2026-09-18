@@ -13,14 +13,39 @@ export const emailTemplate = pgTable("email_template", {
     .references(() => workspace.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   subject: text("subject").notNull(),
+  /**
+   * The sent artefact. When `source` is `"tiptap"` this is a **derived
+   * cache** of `doc`, produced by the server on save — see @loopkit/email-doc.
+   * It is stored rather than rendered per send so the send path stays a plain
+   * read, and so a render can never fail inside a delivery.
+   */
   html: text("html").notNull(),
   textBody: text("text_body"),
   fromName: text("from_name"),
   fromEmail: text("from_email"),
   replyTo: text("reply_to"),
-  // Non-breaking hook for a future authoring tool (React Email/MJMLM) —
-  // v1 only ever writes "html".
-  source: text("source").$type<"html" | "react-email" | "mjml">().notNull().default("html"),
+  /**
+   * What produced `html`. `"react-email"` and `"mjml"` remain unused reserved
+   * hooks from the original schema; `"tiptap"` is the visual editor, and it is
+   * the only value for which `doc` is populated.
+   */
+  source: text("source")
+    .$type<"html" | "react-email" | "mjml" | "tiptap">()
+    .notNull()
+    .default("html"),
+  /**
+   * The visual editor's ProseMirror JSON — the source of truth when present.
+   *
+   * Stored as JSON rather than re-parsed from `html` because a rendered email
+   * is a table layout with inline styles: parsing it back into a structured
+   * document is lossy in exactly the ways that matter (which text was a
+   * heading, which `<a>` was a button, where the merge tags were). Storing the
+   * document keeps editing idempotent.
+   *
+   * It is **untrusted input on read as well as on write** — the server
+   * validates it with @loopkit/email-doc before rendering, every time.
+   */
+  doc: jsonb("doc").$type<unknown>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

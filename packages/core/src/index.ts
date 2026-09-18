@@ -140,10 +140,16 @@ export {
 export { evaluateTriggersForSignal, type TriggerSignal } from "./triggerService";
 export { ensureUserWorkspace } from "./workspaces";
 export {
-  listEmailTemplates,
   createEmailTemplate,
+  EmailDocValidationError,
+  getEmailTemplate,
+  listEmailTemplates,
+  previewEmailDoc,
+  renderTemplateDoc,
   updateEmailTemplate,
   type EmailTemplateRow,
+  type EmailTemplateSource,
+  type RenderedEmailDoc,
 } from "./emailTemplates";
 export {
   getDashboardStats,

@@ -79,6 +79,7 @@ const DEFAULT_OPTIONS: RenderOptions = {
 };
 
 const COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const MERGE_TAG_RE = /\{\{([^}]*)\}\}/g;
 
 const PADDING_Y_PX: Record<string, number> = { none: 0, sm: 12, md: 24, lg: 40 };
 const HEADING_SIZE: Record<number, number> = { 1: 24, 2: 20, 3: 16 };
@@ -348,20 +349,56 @@ export function emailDocToPlainText(doc: unknown): string {
  * otherwise renders as a literal `{{firstname}}` in a real inbox, which is
  * the kind of mistake that only ever gets noticed by a recipient.
  */
+/**
+ * Collects every `{{path}}` found inside a string value (a URL or href that is
+ * partly personalised per recipient), de-duplicated against `seen` and appended
+ * to `out` in first-seen order.
+ */
+function collectMergeTagPathsFrom(value: unknown, seen: Set<string>, out: string[]): void {
+  if (typeof value !== "string") return;
+  MERGE_TAG_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MERGE_TAG_RE.exec(value)) !== null) {
+    const path = match[1] ?? "";
+    if (path !== "" && !seen.has(path)) {
+      seen.add(path);
+      out.push(path);
+    }
+  }
+}
+
 export function extractMergeTagPaths(doc: unknown): string[] {
   const pmDoc = safeFromJson(doc);
   if (!pmDoc) return [];
   const seen = new Set<string>();
   const out: string[] = [];
   const visit = (node: ProseMirrorNode): void => {
-    if (node.isText) return;
+    if (node.isText) {
+      // A `link` mark lives on a text node; its href may carry a merge tag.
+      const marks = node.marks ?? [];
+      for (const mark of marks) {
+        if (mark.type.name === "link") {
+          collectMergeTagPathsFrom(mark.attrs?.href, seen, out);
+        }
+      }
+      return;
+    }
     if (node.type.name === "emailMergeTag") {
       const path = String(node.attrs?.path ?? "");
       if (path !== "" && !seen.has(path)) {
         seen.add(path);
         out.push(path);
       }
+    } else if (node.type.name === "emailButton") {
+      // The button target is a per-recipient URL.
+      collectMergeTagPathsFrom(node.attrs?.href, seen, out);
+    } else if (node.type.name === "emailImage") {
+      // Image source (and optional link wrapper) are per-recipient URLs.
+      collectMergeTagPathsFrom(node.attrs?.src, seen, out);
+      collectMergeTagPathsFrom(node.attrs?.href, seen, out);
     }
+    // `backgroundColor` / `color` are colours, not merge tags — intentionally
+    // not scanned here.
     node.forEach((child) => visit(child));
   };
   visit(pmDoc);

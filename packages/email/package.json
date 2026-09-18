@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@loopkit/config": "workspace:*",
+    "@loopkit/email-doc": "workspace:*",
     "@types/pg": "^8.20.0",
     "dotenv": "catalog:",
     "pg": "^8.22.0",

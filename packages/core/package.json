@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@loopkit/db": "workspace:*",
+    "@loopkit/email-doc": "workspace:*",
     "@loopkit/journey": "workspace:*",
     "drizzle-orm": "catalog:",
     "ts-workflow-engine-lite": "^3.1.0"

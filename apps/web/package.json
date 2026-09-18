@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@loopkit/core": "workspace:*",
+    "@loopkit/email-doc": "workspace:*",
     "@loopkit/env": "workspace:*",
     "@loopkit/journey": "workspace:*",
     "@loopkit/ui": "workspace:*",
@@ -18,6 +19,8 @@
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-start": "^1.168.32",
+    "@tiptap/pm": "3.31.3",
+    "@tiptap/react": "3.31.3",
     "@xyflow/react": "^12.8.5",
     "better-auth": "catalog:",
     "dotenv": "catalog:",

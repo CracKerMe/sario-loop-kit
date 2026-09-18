@@ -1,3 +1,4 @@
+import type { EmailDocJson } from "@loopkit/email-doc";
 import { env } from "@loopkit/env/web";
 
 export function baseUrl(): string {
@@ -88,6 +89,34 @@ export type EmailTemplateDto = {
   subject: string;
   html: string;
   updatedAt: string;
+};
+
+/**
+ * The full template record as stored by the server. `doc` is the structured
+ * email document the visual editor reads and writes; `html`/`textBody` are
+ * server-rendered products. A template created as raw HTML has `doc: null`
+ * and `source: "html"`.
+ */
+export type FullEmailTemplateDto = {
+  id: string;
+  name: string;
+  subject: string;
+  html: string;
+  textBody: string | null;
+  fromName: string | null;
+  fromEmail: string | null;
+  replyTo: string | null;
+  source: string;
+  doc: EmailDocJson | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Response from `POST /v1/email-templates/preview`. */
+export type EmailPreviewDto = {
+  html: string;
+  textBody: string;
+  mergeTags: string[];
 };
 
 export type JourneyRunDto = {
@@ -290,9 +319,50 @@ export const api = {
     request<{ run: JourneyRunDto; instance: unknown }>(`/v1/runs/${instanceId}`),
   cancelRun: (instanceId: string) =>
     request<{ ok: true }>(`/v1/runs/${instanceId}/cancel`, { method: "POST" }),
-  contacts: () => request<{ contacts: ContactDto[] }>("/v1/contacts"),
+  contacts: (params: { query?: string; status?: "all" | "subscribed" | "unsubscribed" } = {}) => {
+    const search = new URLSearchParams();
+    if (params.query) search.set("query", params.query);
+    if (params.status && params.status !== "all") search.set("status", params.status);
+    const query = search.toString();
+    return request<{ contacts: ContactDto[]; total: number }>(
+      `/v1/contacts${query ? `?${query}` : ""}`,
+    );
+  },
   contact: (id: string) =>
     request<{ contact: ContactDto; events: ContactEventDto[] }>(`/v1/contacts/${id}`),
+  createContact: (input: {
+    email: string;
+    userId?: string;
+    properties?: Record<string, unknown>;
+  }) =>
+    request<{ contact: ContactDto }>("/v1/contacts", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  importContacts: (input: {
+    rows: {
+      email: string;
+      userId?: string;
+      properties?: Record<string, unknown>;
+      subscribed?: boolean;
+    }[];
+    signalTriggers?: boolean;
+  }) =>
+    request<{
+      total: number;
+      created: number;
+      updated: number;
+      failed: number;
+      errors: { line: number; email?: string; message: string }[];
+    }>("/v1/contacts/import", { method: "POST", body: JSON.stringify(input) }),
+  bulkUpdateContacts: (input: {
+    action: "unsubscribe" | "resubscribe" | "delete";
+    ids: string[];
+  }) =>
+    request<{ affected: number }>("/v1/contacts/bulk", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   unsubscribeContact: (id: string) =>
     request<{ ok: true }>(`/v1/contacts/${id}/unsubscribe`, { method: "POST" }),
   templates: () => request<{ templates: EmailTemplateDto[] }>("/v1/email-templates"),
@@ -304,6 +374,33 @@ export const api = {
   updateTemplate: (id: string, input: { name?: string; subject?: string; html?: string }) =>
     request<{ template: EmailTemplateDto }>(`/v1/email-templates/${id}`, {
       method: "PUT",
+      body: JSON.stringify(input),
+    }),
+
+  /* Visual (doc-based) email editor -------------------------------- */
+  /** Fetch a single template with its structured `doc` (may be null for HTML-only templates). */
+  getTemplate: (id: string) =>
+    request<{ template: FullEmailTemplateDto }>(`/v1/email-templates/${id}`),
+  /**
+   * Render a document to email HTML the same way the server will when sending.
+   * On an invalid document the server responds 400 with `{ error: "invalid_doc",
+   * details: [{ path, message }] }`; `ApiError.body` carries that payload.
+   */
+  previewEmailTemplate: (doc: EmailDocJson) =>
+    request<EmailPreviewDto>("/v1/email-templates/preview", {
+      method: "POST",
+      body: JSON.stringify({ doc }),
+    }),
+  /** Save a structured document (optionally with name/subject). Server renders `html` itself. */
+  updateTemplateDoc: (id: string, input: { doc: EmailDocJson; name?: string; subject?: string }) =>
+    request<{ template: FullEmailTemplateDto }>(`/v1/email-templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  /** Create a new template from a structured document; `source` becomes "tiptap". */
+  createTemplateFromDoc: (input: { name: string; subject: string; doc: EmailDocJson }) =>
+    request<{ template: FullEmailTemplateDto }>("/v1/email-templates", {
+      method: "POST",
       body: JSON.stringify(input),
     }),
   apiKeys: () => request<{ apiKeys: ApiKeyDto[] }>("/v1/api-keys"),
@@ -340,6 +437,15 @@ export const api = {
       contacts: ContactDto[];
       matching: number;
     }>(`/v1/audiences/${id}`),
+  audienceContacts: (id: string, params: { limit?: number; offset?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.offset) search.set("offset", String(params.offset));
+    const query = search.toString();
+    return request<{ contacts: ContactDto[]; total: number; truncated: boolean }>(
+      `/v1/audiences/${id}/contacts${query ? `?${query}` : ""}`,
+    );
+  },
   createAudience: (input: { name: string; filter: SegmentFilterDto }) =>
     request<{ audience: AudienceDto; memberCount: number; sendableCount: number }>(
       "/v1/audiences",

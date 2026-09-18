@@ -246,6 +246,76 @@ describe("extractMergeTagPaths", () => {
         },
       ],
     };
-    expect(extractMergeTagPaths(doc)).toEqual(["contact.firstName", "workspaceId"]);
+    expect(extractMergeTagPaths(doc)).toEqual([
+      "contact.firstName",
+      "workspaceId",
+      "contact.unsubscribeUrl",
+    ]);
+  });
+
+  it("collects merge tags from URL attributes (button href, link-mark href, image src/href)", () => {
+    const doc: EmailDocJson = {
+      type: "doc",
+      content: [
+        {
+          type: "emailSection",
+          attrs: { paddingY: "md", backgroundColor: null },
+          content: [
+            {
+              type: "emailParagraph",
+              attrs: { align: "left" },
+              content: [
+                {
+                  type: "text",
+                  text: "manage",
+                  marks: [{ type: "link", attrs: { href: "https://{{contact.host}}/manage" } }],
+                },
+              ],
+            },
+            {
+              type: "emailButton",
+              attrs: { href: "{{contact.preferencesUrl}}", variant: "primary", align: "center" },
+              content: [{ type: "text", text: "Preferences" }],
+            },
+            {
+              type: "emailImage",
+              attrs: {
+                src: "{{contact.bannerUrl}}",
+                alt: "Banner",
+                width: 600,
+                height: null,
+                href: "{{contact.unsubscribeUrl}}",
+                align: "center",
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(extractMergeTagPaths(doc)).toEqual([
+      "contact.host",
+      "contact.preferencesUrl",
+      "contact.bannerUrl",
+      "contact.unsubscribeUrl",
+    ]);
+  });
+
+  it("does not collect merge tags from colour attributes", () => {
+    const doc: EmailDocJson = {
+      type: "doc",
+      content: [
+        {
+          type: "emailSection",
+          attrs: { paddingY: "md", backgroundColor: null },
+          content: [
+            {
+              type: "emailDivider",
+              attrs: { variant: "dashed", color: "#d4d4d8" },
+            },
+          ],
+        },
+      ],
+    };
+    expect(extractMergeTagPaths(doc)).toEqual([]);
   });
 });

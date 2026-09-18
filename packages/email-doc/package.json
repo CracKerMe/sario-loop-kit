@@ -1,0 +1,32 @@
+{
+  "name": "@loopkit/email-doc",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.3",
+    "@tiptap/extension-bold": "3.31.3",
+    "@tiptap/extension-document": "3.31.3",
+    "@tiptap/extension-italic": "3.31.3",
+    "@tiptap/extension-link": "3.31.3",
+    "@tiptap/extension-text": "3.31.3",
+    "@tiptap/extension-underline": "3.31.3",
+    "@tiptap/pm": "3.31.3",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@loopkit/config": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "^3.2.4"
+  }
+}
