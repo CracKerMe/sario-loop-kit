@@ -128,10 +128,11 @@ export interface RecipientGateInput {
   email: string;
   /**
    * Transactional sends (receipts, password resets, ...) are service mail:
-   * a contact who opted out of MARKETING must still receive them, so the
-   * contact-level opt-out gate does not apply. Address-level suppression
-   * still does — an operator block or a recorded hard bounce protects
-   * deliverability regardless of what kind of mail this is.
+   * a contact who opted out of MARKETING must still receive them, so neither
+   * the contact-level opt-out nor an `unsubscribe`-reason suppression (its
+   * address-level mirror) applies. Address-level suppression from hard
+   * bounces, complaints and operator blocks still does — those are facts
+   * about the mailbox, not preferences.
    */
   transactional?: boolean;
 }
@@ -195,6 +196,14 @@ export async function defaultRecipientGate(
 ): Promise<RecipientGate> {
   const blocked = await getSuppression(db, input.workspaceId, input.email);
   if (blocked) {
+    // An `unsubscribe`-reason suppression is the address-level mirror of a
+    // marketing opt-out (it outlives the contact row) — so like the
+    // contact-level gate above, it does NOT apply to service mail. A
+    // hard bounce, a spam complaint or an operator block is a fact about
+    // the mailbox, not a preference, and blocks everything.
+    if (input.transactional && blocked.reason === "unsubscribe") {
+      return { allowed: true };
+    }
     return {
       allowed: false,
       detail: "suppressed",

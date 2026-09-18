@@ -571,6 +571,56 @@ describe("createEmailNotificationChannel", () => {
     expect(provider.sends).toHaveLength(0);
   });
 
+  it("does not let an unsubscribe-reason suppression block a transactional send", async () => {
+    // An `unsubscribe` suppression is the address-level mirror of a
+    // marketing opt-out — it outlives the contact row, but it is still a
+    // PREFERENCE, and service mail (unlike marketing) ignores preferences.
+    await addSuppression(db, {
+      workspaceId: "ws-1",
+      email: "sam@example.com",
+      reason: "unsubscribe",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const transactional = await channel.send({
+      target: "sam@example.com",
+      subject: "Reset your password",
+      body: "template:tpl-1",
+      data: transactionalData({ transactionalId: "reset-3" }),
+    });
+    expect(transactional.ok).toBe(true);
+    expect(transactional.detail).not.toBe("suppressed");
+    expect(provider.sends).toHaveLength(1);
+  });
+
+  it("keeps an unsubscribe-reason suppression blocking MARKETING sends", async () => {
+    await addSuppression(db, {
+      workspaceId: "ws-1",
+      email: "sam@example.com",
+      reason: "unsubscribe",
+      source: "test",
+    });
+    const channel = createEmailNotificationChannel({
+      db,
+      provider,
+      defaultFrom: "fallback@loopkit.dev",
+    });
+
+    const marketing = await channel.send({
+      target: "sam@example.com",
+      subject: "Welcome!",
+      body: "template:tpl-1",
+      data: nodeData({ transactional: undefined }),
+    });
+    expect(marketing.detail).toBe("suppressed");
+    expect(provider.sends).toHaveLength(0);
+  });
+
   it("omits List-Unsubscribe headers for a transactional send even when a builder is wired", async () => {
     const channel = createEmailNotificationChannel({
       db,
