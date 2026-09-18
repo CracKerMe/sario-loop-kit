@@ -1,4 +1,12 @@
-import { createJourneyDraft, publishJourney } from "@loopkit/core";
+import {
+  createJourneyDraft,
+  getDashboardStats,
+  getJourneyDetail,
+  listDeadLetters,
+  listJourneyRuns,
+  listNodeFunnel,
+  publishJourney,
+} from "@loopkit/core";
 import { db } from "@loopkit/db";
 import { journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
 import { validateGraph, type JourneyGraph } from "@loopkit/journey";
@@ -16,7 +24,11 @@ export const journeysRouter = new Hono<{ Variables: AuthVariables }>();
 
 journeysRouter.get("/", async (c) => {
   const { workspaceId } = c.get("auth");
-  const rows = await db.select().from(journey).where(eq(journey.workspaceId, workspaceId));
+  const rows = await db
+    .select()
+    .from(journey)
+    .where(eq(journey.workspaceId, workspaceId))
+    .orderBy(desc(journey.updatedAt));
   return c.json({ journeys: rows });
 });
 
@@ -38,12 +50,15 @@ journeysRouter.post("/", async (c) => {
 
 journeysRouter.get("/:id", async (c) => {
   const { workspaceId } = c.get("auth");
-  const [j] = await db
-    .select()
-    .from(journey)
-    .where(and(eq(journey.id, c.req.param("id")), eq(journey.workspaceId, workspaceId)));
-  if (!j) return c.json({ error: "not_found" }, 404);
-  return c.json({ journey: j });
+  const detail = await getJourneyDetail(db, workspaceId, c.req.param("id"));
+  if (!detail) return c.json({ error: "not_found" }, 404);
+  return c.json({
+    journey: detail.journey,
+    graph: detail.graph,
+    version: detail.version,
+    runCounts: detail.runCounts,
+    validation: detail.graph ? validateGraph(detail.graph) : null,
+  });
 });
 
 journeysRouter.put("/:id/draft", async (c) => {
@@ -72,6 +87,17 @@ journeysRouter.put("/:id/draft", async (c) => {
   await db
     .insert(journeyVersion)
     .values({ journeyId, version: nextVersion, graph: parsed.data.graph, compiled: {} });
+
+  // Keep trigger/reentry in sync with the graph's trigger node.
+  const triggerNode = parsed.data.graph.nodes?.find(
+    (n: { type?: string }) => n.type === "trigger",
+  ) as { data?: { trigger?: unknown } } | undefined;
+  if (triggerNode?.data?.trigger) {
+    await db
+      .update(journey)
+      .set({ trigger: triggerNode.data.trigger, updatedAt: new Date() })
+      .where(eq(journey.id, journeyId));
+  }
 
   return c.json({ version: nextVersion, validation });
 });
@@ -110,13 +136,16 @@ journeysRouter.post("/:id/pause", async (c) => {
 journeysRouter.get("/:id/runs", async (c) => {
   const { workspaceId } = c.get("auth");
   const journeyId = c.req.param("id");
-  const runs = await db
-    .select()
-    .from(journeyRun)
-    .where(and(eq(journeyRun.journeyId, journeyId), eq(journeyRun.workspaceId, workspaceId)))
-    .orderBy(desc(journeyRun.enteredAt))
-    .limit(100);
+  const runs = await listJourneyRuns(db, workspaceId, journeyId, 100);
   return c.json({ runs });
+});
+
+journeysRouter.get("/:id/funnel", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const detail = await getJourneyDetail(db, workspaceId, c.req.param("id"));
+  if (!detail) return c.json({ error: "not_found" }, 404);
+  const funnel = await listNodeFunnel(db, detail.journey.workflowId);
+  return c.json({ funnel, runCounts: detail.runCounts });
 });
 
 export const runsRouter = new Hono<{ Variables: AuthVariables }>();
@@ -159,4 +188,17 @@ runsRouter.post("/:instanceId/cancel", async (c) => {
     .where(eq(journeyRun.id, run.id));
 
   return c.json({ ok: true });
+});
+
+export const opsRouter = new Hono<{ Variables: AuthVariables }>();
+
+opsRouter.get("/stats", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const stats = await getDashboardStats(db, workspaceId);
+  return c.json({ stats });
+});
+
+opsRouter.get("/dlq", async (c) => {
+  const entries = await listDeadLetters(db, 50);
+  return c.json({ entries });
 });

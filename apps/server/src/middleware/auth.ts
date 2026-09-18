@@ -1,8 +1,6 @@
 import { auth } from "@loopkit/auth";
-import { verifyApiKey } from "@loopkit/core";
+import { ensureUserWorkspace, hasScope, verifyApiKey } from "@loopkit/core";
 import { db } from "@loopkit/db";
-import { workspaceMember } from "@loopkit/db/schema";
-import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 
 export type AuthContext =
@@ -11,20 +9,11 @@ export type AuthContext =
 
 export type AuthVariables = { auth: AuthContext };
 
-async function workspaceIdForUser(userId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ workspaceId: workspaceMember.workspaceId })
-    .from(workspaceMember)
-    .where(eq(workspaceMember.userId, userId))
-    .limit(1);
-  return row?.workspaceId ?? null;
-}
-
 /**
  * Dual auth: `Authorization: Bearer lk_live_...` resolves an API key
  * (server-to-server ingestion), a Better-Auth session cookie resolves a
- * dashboard user. `allow` restricts which are accepted on a given route
- * — ingestion endpoints take both, journey CRUD takes session only.
+ * dashboard user. Session users get a workspace auto-provisioned on first
+ * hit so a fresh signup can use the product without a separate bootstrap step.
  */
 export function requireAuth(opts: {
   allow: ("session" | "apiKey")[];
@@ -52,15 +41,30 @@ export function requireAuth(opts: {
     if (opts.allow.includes("session")) {
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
       if (session) {
-        const workspaceId = await workspaceIdForUser(session.user.id);
-        if (workspaceId) {
-          c.set("auth", { workspaceId, kind: "session", userId: session.user.id });
-          return next();
-        }
-        return c.json({ error: "no_workspace" }, 403);
+        const workspaceId = await ensureUserWorkspace(db, session.user.id);
+        c.set("auth", { workspaceId, kind: "session", userId: session.user.id });
+        return next();
       }
     }
 
     return c.json({ error: "unauthorized" }, 401);
+  };
+}
+
+/**
+ * Scope gate for ingestion routes. Dashboard sessions bypass this
+ * (they already have full workspace access via cookie auth). API keys
+ * must carry at least one of `required` — legacy `ingest` expands to
+ * contacts:write + events:write.
+ */
+export function requireScope(
+  ...required: string[]
+): MiddlewareHandler<{ Variables: AuthVariables }> {
+  return async (c, next) => {
+    const authCtx = c.get("auth");
+    if (!authCtx) return c.json({ error: "unauthorized" }, 401);
+    if (authCtx.kind === "session") return next();
+    if (hasScope(authCtx.scopes, required)) return next();
+    return c.json({ error: "insufficient_scope", required }, 403);
   };
 }

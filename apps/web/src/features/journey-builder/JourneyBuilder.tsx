@@ -1,0 +1,1600 @@
+import { Button } from "@loopkit/ui/components/button";
+import { Input } from "@loopkit/ui/components/input";
+import { Label } from "@loopkit/ui/components/label";
+import { cn } from "@loopkit/ui/lib/utils";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  MarkerType,
+  MiniMap,
+  ReactFlow,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  type Connection,
+  type Edge,
+  type Node,
+  type OnSelectionChangeParams,
+  type ReactFlowInstance,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import {
+  AlertTriangleIcon,
+  CheckCircle2Icon,
+  GripVerticalIcon,
+  Loader2Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SearchIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { validateGraph } from "@loopkit/journey";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+
+import { api, type EmailTemplateDto, type JourneyGraphDto, type ValidationResult } from "@/lib/api";
+import {
+  NODE_CATEGORY_LABELS,
+  NODE_META,
+  defaultNodeData,
+  emptyWelcomeGraph,
+  flowToGraph,
+  graphToFlow,
+  type BuilderNodeType,
+} from "./graph";
+import { NODE_ICONS, createNodeTypes } from "./nodes";
+
+export type BuilderMeta = {
+  dirty: boolean;
+  saving: boolean;
+  validation: ValidationResult;
+  nodeCount: number;
+  status: string;
+};
+
+interface BuilderProps {
+  journeyId?: string;
+  initialName?: string;
+  /** Seed graph for new journeys; defaults to the simple welcome drip. */
+  initialGraph?: JourneyGraphDto;
+  /** When provided, name is controlled by the parent chrome. */
+  controlledName?: string;
+  onNameChange?: (name: string) => void;
+  onSaved?: (journeyId: string) => void;
+  onMetaChange?: (meta: BuilderMeta) => void;
+  /** Parent chrome can trigger save/publish via a register callback. */
+  registerControls?: (controls: {
+    saveDraft: () => Promise<void>;
+    publish: () => Promise<void>;
+  }) => void;
+}
+
+let idCounter = 0;
+function nextNodeId(type: string): string {
+  idCounter += 1;
+  return `${type}_${Date.now().toString(36)}_${idCounter}`;
+}
+
+const selectClass =
+  "h-8 w-full rounded-md border border-input bg-input/30 px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50";
+const textareaClass =
+  "min-h-[88px] w-full rounded-md border border-input bg-input/30 p-2 font-mono text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50";
+
+const DRAG_MIME = "application/loopkit-journey-node";
+
+function unitToMs(unit: string): number {
+  if (unit === "hours") return 3_600_000;
+  if (unit === "days") return 86_400_000;
+  if (unit === "weeks") return 604_800_000;
+  return 60_000;
+}
+
+function InspectorField({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label className="text-[11px] font-medium text-muted-foreground">{label}</Label>
+      {children}
+      {hint && <p className="text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function SplitRoutesEditor({
+  routes,
+  onChange,
+}: {
+  routes: { name: string; expression: string }[];
+  onChange: (routes: { name: string; expression: string }[]) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <div className="text-[11px] font-medium text-muted-foreground">Routes</div>
+      {routes.map((route, i) => (
+        <div key={i} className="grid gap-1.5 rounded-lg border border-border bg-card/50 p-2">
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={route.name}
+              onChange={(e) => {
+                const next = [...routes];
+                next[i] = { ...route, name: e.target.value.replace(/\s+/g, "_") };
+                onChange(next);
+              }}
+              placeholder="route name"
+              className="h-7 flex-1 text-xs"
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Remove route"
+              onClick={() => onChange(routes.filter((_, j) => j !== i))}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <Trash2Icon className="size-3" />
+            </Button>
+          </div>
+          <textarea
+            className={textareaClass}
+            value={route.expression}
+            onChange={(e) => {
+              const next = [...routes];
+              next[i] = { ...route, expression: e.target.value };
+              onChange(next);
+            }}
+            placeholder='{{ contact.plan }} == "pro"'
+          />
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          onChange([...routes, { name: `route_${routes.length + 1}`, expression: "true" }])
+        }
+      >
+        Add route
+      </Button>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Each route needs an outgoing edge with the same handle name. A default handle is also
+        available for the fallback path.
+      </p>
+    </div>
+  );
+}
+
+function AbVariantsEditor({
+  variants,
+  onChange,
+}: {
+  variants: { name: string; weight: number }[];
+  onChange: (variants: { name: string; weight: number }[]) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <div className="text-[11px] font-medium text-muted-foreground">Variants (weights)</div>
+      {variants.map((v, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Input
+            value={v.name}
+            onChange={(e) => {
+              const next = [...variants];
+              next[i] = { ...v, name: e.target.value.replace(/\s+/g, "") };
+              onChange(next);
+            }}
+            placeholder="A"
+            className="h-7 w-16 text-xs"
+          />
+          <Input
+            type="number"
+            min={0}
+            value={v.weight}
+            onChange={(e) => {
+              const next = [...variants];
+              next[i] = { ...v, weight: Number(e.target.value) };
+              onChange(next);
+            }}
+            className="h-7 w-20 text-xs"
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Remove variant"
+            onClick={() => onChange(variants.filter((_, j) => j !== i))}
+            disabled={variants.length <= 2}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2Icon className="size-3" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          onChange([...variants, { name: String.fromCharCode(65 + variants.length), weight: 10 }])
+        }
+      >
+        Add variant
+      </Button>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Bucket is a deterministic hash of contact id — stable across runs. Weights are relative
+        (50/50 or 2:1 both work). Connect each variant name handle to a different path.
+      </p>
+    </div>
+  );
+}
+
+export function JourneyBuilder({
+  journeyId,
+  initialName,
+  initialGraph,
+  controlledName,
+  onNameChange,
+  onSaved,
+  onMetaChange,
+  registerControls,
+}: BuilderProps) {
+  const [internalName, setInternalName] = useState(initialName ?? "Untitled journey");
+  const name = controlledName ?? internalName;
+  const setName = (v: string) => {
+    if (onNameChange) onNameChange(v);
+    else setInternalName(v);
+  };
+
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [selected, setSelected] = useState<Node | null>(null);
+  const [validation, setValidation] = useState<ValidationResult>({ valid: true, issues: [] });
+  const [templates, setTemplates] = useState<EmailTemplateDto[]>([]);
+  const [status, setStatus] = useState<string>("draft");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(Boolean(journeyId));
+  const [baseline, setBaseline] = useState<string>("");
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [showMiniMap, setShowMiniMap] = useState(false);
+  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
+  const dirty = useMemo(() => {
+    // Unsaved journeys always need a create call.
+    if (!journeyId) return true;
+    if (!baseline) return false;
+    return JSON.stringify(graph) !== baseline;
+  }, [graph, baseline, journeyId]);
+
+  useEffect(() => {
+    void (async () => {
+      let loadedTemplates: EmailTemplateDto[] = [];
+      try {
+        const t = await api.templates();
+        loadedTemplates = t.templates;
+        setTemplates(t.templates);
+      } catch {
+        // templates optional while editing
+      }
+      const prefillTemplateId = (prev: Node[]): Node[] =>
+        prev.map((n) =>
+          n.type === "email" && !(n.data as { templateId?: string }).templateId
+            ? { ...n, data: { ...(n.data as object), templateId: loadedTemplates[0]?.id ?? "" } }
+            : n,
+        );
+      if (!journeyId) {
+        const g = initialGraph ?? emptyWelcomeGraph();
+        const flow = graphToFlow(g);
+        const nextNodes = prefillTemplateId(flow.nodes);
+        setNodes(nextNodes);
+        setEdges(flow.edges);
+        setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+        setLoading(false);
+        return;
+      }
+      try {
+        const detail = await api.journey(journeyId);
+        setName(detail.journey.name);
+        setStatus(detail.journey.status);
+        if (detail.graph) {
+          const flow = graphToFlow(detail.graph);
+          const nextNodes = prefillTemplateId(flow.nodes);
+          setNodes(nextNodes);
+          setEdges(flow.edges);
+          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+        } else {
+          const flow = graphToFlow(emptyWelcomeGraph());
+          const nextNodes = prefillTemplateId(flow.nodes);
+          setNodes(nextNodes);
+          setEdges(flow.edges);
+          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to load journey");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [journeyId]);
+
+  useEffect(() => {
+    const next = validateGraph(graph as never);
+    setValidation(next);
+    onMetaChange?.({
+      dirty,
+      saving,
+      validation: next,
+      nodeCount: nodes.length,
+      status,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, dirty, saving, nodes.length, status]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    setEdges((eds) =>
+      addEdge(
+        {
+          ...connection,
+          id: `e_${connection.source}_${connection.target}_${connection.sourceHandle ?? "out"}`,
+          markerEnd: { type: MarkerType.ArrowClosed },
+        },
+        eds,
+      ),
+    );
+  }, []);
+
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    setSelected(params.nodes[0] ?? null);
+  }, []);
+
+  const deleteNode = useCallback((nodeId: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelected((s) => (s?.id === nodeId ? null : s));
+  }, []);
+
+  const nodeTypes = useMemo(() => createNodeTypes(deleteNode), [deleteNode]);
+
+  const insertNode = useCallback(
+    (type: BuilderNodeType, position?: { x: number; y: number }) => {
+      if (type === "trigger" && nodes.some((n) => n.type === "trigger")) {
+        toast.error("This journey already has a trigger");
+        return;
+      }
+      const id = nextNodeId(type);
+      let pos = position;
+      if (!pos) {
+        const el = canvasRef.current;
+        if (rfInstance && el) {
+          const rect = el.getBoundingClientRect();
+          pos = rfInstance.screenToFlowPosition({
+            x: rect.left + rect.width * 0.45,
+            y: rect.top + rect.height * 0.35,
+          });
+        } else {
+          pos = { x: 180 + (nodes.length % 4) * 36, y: 80 + nodes.length * 36 };
+        }
+      }
+      const node: Node = {
+        id,
+        type,
+        position: pos,
+        data: defaultNodeData(type),
+      };
+      setNodes((prev) => [...prev, node]);
+      setSelected(node);
+    },
+    [nodes, rfInstance],
+  );
+
+  const onDragStart = useCallback((event: React.DragEvent, type: BuilderNodeType) => {
+    event.dataTransfer.setData(DRAG_MIME, type);
+    event.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData(DRAG_MIME) as BuilderNodeType | "";
+      if (!type || !rfInstance) return;
+      const position = rfInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      insertNode(type, position);
+    },
+    [insertNode, rfInstance],
+  );
+
+  const updateSelectedData = (patch: Record<string, unknown>) => {
+    if (!selected) return;
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === selected.id ? { ...n, data: { ...(n.data as object), ...patch } } : n,
+      ),
+    );
+    setSelected((s) => (s ? { ...s, data: { ...(s.data as object), ...patch } } : s));
+  };
+
+  const save = async (publish: boolean) => {
+    if (publish) {
+      const missingTemplate = nodes.filter(
+        (n) => n.type === "email" && !(n.data as { templateId?: string }).templateId,
+      );
+      if (missingTemplate.length > 0) {
+        toast.error(
+          `${missingTemplate.length} email node(s) have no template selected — pick one in the inspector before publishing.`,
+        );
+        return;
+      }
+      if (!validation.valid) {
+        toast.error(`Fix ${validation.issues.length} validation issue(s) before publishing.`);
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      let id = journeyId;
+      if (!id) {
+        const created = await api.createJourney(name, graph);
+        id = created.journeyId;
+        setBaseline(JSON.stringify(graph));
+        onSaved?.(id);
+        if (!publish) {
+          toast.success("Draft created");
+          return;
+        }
+      } else {
+        const saved = await api.saveDraft(id, graph);
+        setBaseline(JSON.stringify(graph));
+        if (!saved.validation.valid) {
+          toast.error(`Saved with ${saved.validation.issues.length} validation issue(s)`);
+        } else {
+          toast.success(`Draft saved as v${saved.version}`);
+        }
+        if (!publish) return;
+      }
+      await api.publishJourney(id);
+      setStatus("published");
+      toast.success("Journey published");
+      onSaved?.(id);
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "body" in error
+          ? JSON.stringify((error as { body: unknown }).body)
+          : error instanceof Error
+            ? error.message
+            : "Save failed";
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    registerControls?.({
+      saveDraft: () => save(false),
+      publish: () => save(true),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, name, journeyId, validation, nodes]);
+
+  // Keyboard: delete node, save draft
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.tagName === "SELECT");
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void save(false);
+        return;
+      }
+      if (typing) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        deleteNode(selected.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, graph, name, journeyId]);
+
+  const paletteItems = (Object.keys(NODE_META) as BuilderNodeType[])
+    .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
+    .filter((t) => {
+      const q = paletteQuery.trim().toLowerCase();
+      if (!q) return true;
+      const meta = NODE_META[t];
+      return meta.label.toLowerCase().includes(q) || t.toLowerCase().includes(q);
+    });
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+        Loading builder…
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid h-full min-h-0 grid-cols-[auto_minmax(0,1fr)_280px]">
+      {/* Palette */}
+      <aside
+        className={cn(
+          "flex flex-col border-r border-border bg-muted/20 transition-[width] duration-200",
+          paletteOpen ? "w-[212px]" : "w-12",
+        )}
+      >
+        <div className="flex items-center gap-1 border-b border-border/70 px-2 py-2">
+          {paletteOpen && (
+            <div className="relative min-w-0 flex-1">
+              <SearchIcon
+                className="absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                value={paletteQuery}
+                onChange={(e) => setPaletteQuery(e.target.value)}
+                placeholder="Find nodes…"
+                aria-label="Search nodes"
+                className="h-7 pl-7 text-[11px]"
+              />
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={paletteOpen ? "Collapse node palette" : "Expand node palette"}
+            onClick={() => setPaletteOpen((v) => !v)}
+            className="shrink-0"
+          >
+            {paletteOpen ? <PanelLeftCloseIcon /> : <PanelLeftOpenIcon />}
+          </Button>
+        </div>
+
+        {paletteOpen ? (
+          <div className="flex-1 overflow-y-auto p-2">
+            {(() => {
+              const groups = new Map<string, BuilderNodeType[]>();
+              for (const type of paletteItems) {
+                const cat = NODE_META[type].category;
+                const list = groups.get(cat) ?? [];
+                list.push(type);
+                groups.set(cat, list);
+              }
+              return [...groups.entries()].map(([cat, types]) => (
+                <div key={cat} className="mb-3">
+                  <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                    {NODE_CATEGORY_LABELS[cat] ?? cat}
+                  </div>
+                  <div className="grid gap-1">
+                    {types.map((type) => {
+                      const meta = NODE_META[type];
+                      const Icon = NODE_ICONS[type];
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          draggable
+                          onDragStart={(e) => onDragStart(e, type)}
+                          onClick={() => insertNode(type)}
+                          title={meta.description}
+                          className="group flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition-all duration-150 hover:border-border hover:bg-card hover:shadow-sm focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing"
+                        >
+                          <GripVerticalIcon
+                            className="size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <span
+                            className="grid size-6 shrink-0 place-items-center rounded-md transition-transform duration-150 group-hover:scale-105"
+                            style={{ background: `${meta.color}22`, color: meta.color }}
+                          >
+                            <Icon className="size-3" aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-foreground/90">
+                              {meta.label}
+                            </span>
+                            <span className="block truncate text-[10px] text-muted-foreground">
+                              {meta.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+            })()}
+            {paletteItems.length === 0 && (
+              <p className="px-2 py-4 text-[11px] text-muted-foreground">No nodes match.</p>
+            )}
+            <p className="mt-2 border-t border-border/70 px-1 pt-3 text-[10px] leading-relaxed text-muted-foreground">
+              Drag onto the canvas or click to insert. Node ids become engine TaskNode ids at
+              publish.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto py-2">
+            {(Object.keys(NODE_META) as BuilderNodeType[])
+              .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
+              .map((type) => {
+                const meta = NODE_META[type];
+                const Icon = NODE_ICONS[type];
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    draggable
+                    onDragStart={(e) => onDragStart(e, type)}
+                    onClick={() => insertNode(type)}
+                    title={`${meta.label} — ${meta.description}`}
+                    aria-label={`Add ${meta.label}`}
+                    className="grid size-8 place-items-center rounded-lg transition-colors hover:bg-card"
+                    style={{ color: meta.color }}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                  </button>
+                );
+              })}
+          </div>
+        )}
+      </aside>
+
+      {/* Canvas column */}
+      <div className="flex min-h-0 min-w-0 flex-col">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background/60 px-3 py-2">
+          {!journeyId && !controlledName && (
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-8 w-56"
+              placeholder="Journey name"
+              aria-label="Journey name"
+            />
+          )}
+          {(journeyId || controlledName) && (
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium tracking-tight">{name}</div>
+              <div className="text-[10px] text-muted-foreground">
+                {nodes.length} node{nodes.length === 1 ? "" : "s"} · {edges.length} edge
+                {edges.length === 1 ? "" : "s"}
+              </div>
+            </div>
+          )}
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                dirty
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  : "border-border bg-card text-muted-foreground",
+              )}
+              title={dirty ? "Unsaved changes" : "All changes saved"}
+            >
+              <span
+                className={cn("size-1.5 rounded-full", dirty ? "bg-amber-500" : "bg-emerald-500")}
+                aria-hidden="true"
+              />
+              {dirty ? "Unsaved" : "Saved"}
+            </div>
+            <div
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                validation.valid
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+              )}
+            >
+              {validation.valid ? (
+                <CheckCircle2Icon className="size-3" aria-hidden="true" />
+              ) : (
+                <AlertTriangleIcon className="size-3" aria-hidden="true" />
+              )}
+              {validation.valid
+                ? "Valid"
+                : `${validation.issues.length} issue${validation.issues.length === 1 ? "" : "s"}`}
+            </div>
+            {!journeyId && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !dirty}
+                  onClick={() => void save(false)}
+                >
+                  {saving && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+                  Save draft
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={saving || !validation.valid}
+                  onClick={() => void save(true)}
+                >
+                  {saving && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+                  Publish
+                </Button>
+              </>
+            )}
+            {journeyId && (
+              <span className="text-[11px] text-muted-foreground">
+                Edit the graph, then save or publish from the top bar
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div
+          ref={canvasRef}
+          className="relative min-h-[420px] flex-1"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onInit={setRfInstance}
+            onNodesChange={(changes) => {
+              setNodes((nds) => applyNodeChanges(changes, nds));
+            }}
+            onEdgesChange={(changes) => {
+              setEdges((eds) => applyEdgeChanges(changes, eds));
+            }}
+            onConnect={onConnect}
+            onSelectionChange={onSelectionChange}
+            onPaneClick={() => setSelected(null)}
+            fitView
+            minZoom={0.3}
+            maxZoom={1.6}
+            defaultEdgeOptions={{
+              markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+              style: { strokeWidth: 1.5 },
+            }}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1.4} />
+            <Controls showInteractive={false} position="bottom-left" />
+            {showMiniMap && (
+              <MiniMap
+                pannable
+                zoomable
+                position="bottom-right"
+                className="!bg-card/90 !h-28 !w-40"
+                nodeColor={(n) => NODE_META[n.type as BuilderNodeType]?.color ?? "#94a3b8"}
+                maskColor="color-mix(in oklab, var(--background) 55%, transparent)"
+              />
+            )}
+          </ReactFlow>
+
+          <div className="pointer-events-none absolute right-3 bottom-3 flex flex-col items-end gap-2">
+            <button
+              type="button"
+              className="pointer-events-auto rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+              onClick={() => setShowMiniMap((v) => !v)}
+            >
+              {showMiniMap ? "Hide map" : "Show map"}
+            </button>
+            <div className="pointer-events-none rounded-md border border-border bg-card/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
+              Drag to connect · ⌫ delete · ⌘S save
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Inspector */}
+      <aside className="flex min-h-0 flex-col overflow-hidden border-l border-border bg-muted/10">
+        <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5">
+          {selected ? (
+            <>
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{
+                  background: NODE_META[selected.type as BuilderNodeType]?.color ?? "#94a3b8",
+                }}
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-semibold">
+                  {NODE_META[selected.type as BuilderNodeType]?.label ?? selected.type}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {selected.id}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete selected node"
+                onClick={() => deleteNode(selected.id)}
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2Icon />
+              </Button>
+            </>
+          ) : (
+            <div className="text-xs font-semibold text-foreground">Inspector</div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {selected ? (
+            <div className="grid gap-3">
+              {selected.type === "email" && (
+                <>
+                  <InspectorField label="Template">
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { templateId?: string }).templateId ?? "")}
+                      onChange={(e) => updateSelectedData({ templateId: e.target.value })}
+                    >
+                      <option value="">Select template…</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </InspectorField>
+                  <InspectorField
+                    label="Subject override"
+                    hint="Leave empty to use the template subject."
+                  >
+                    <Input
+                      value={String((selected.data as { subject?: string }).subject ?? "")}
+                      onChange={(e) => updateSelectedData({ subject: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Preheader">
+                    <Input
+                      value={String((selected.data as { preheader?: string }).preheader ?? "")}
+                      onChange={(e) => updateSelectedData({ preheader: e.target.value })}
+                      placeholder="Inbox preview text"
+                    />
+                  </InspectorField>
+                  <InspectorField label="From name override">
+                    <Input
+                      value={String((selected.data as { fromName?: string }).fromName ?? "")}
+                      onChange={(e) => updateSelectedData({ fromName: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Reply-To override">
+                    <Input
+                      value={String((selected.data as { replyTo?: string }).replyTo ?? "")}
+                      onChange={(e) => updateSelectedData({ replyTo: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </InspectorField>
+                </>
+              )}
+              {selected.type === "delay" && (
+                <>
+                  <InspectorField label="Mode">
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { mode?: string }).mode ?? "duration")}
+                      onChange={(e) => {
+                        const mode = e.target.value;
+                        const d = selected.data as { ms?: number; value?: number; unit?: string };
+                        if (mode === "until") {
+                          updateSelectedData({
+                            mode: "until",
+                            iso: new Date(Date.now() + 24 * 3600_000).toISOString(),
+                          });
+                        } else if (mode === "weekly") {
+                          updateSelectedData({ mode: "weekly", dayOfWeek: 1, hour: 10, minute: 0 });
+                        } else {
+                          const unit = String(d.unit ?? "minutes");
+                          const value = d.value ?? Math.round((d.ms ?? 300000) / 60000);
+                          updateSelectedData({
+                            mode: "duration",
+                            value,
+                            unit,
+                            ms: value * unitToMs(unit),
+                          });
+                        }
+                      }}
+                    >
+                      <option value="duration">Duration</option>
+                      <option value="until">Until date/time</option>
+                      <option value="weekly">Weekly slot (pair with Time Window)</option>
+                    </select>
+                  </InspectorField>
+                  {(selected.data as { mode?: string }).mode === "until" && (
+                    <InspectorField label="Until (ISO)">
+                      <Input
+                        value={String((selected.data as { iso?: string }).iso ?? "")}
+                        onChange={(e) => updateSelectedData({ mode: "until", iso: e.target.value })}
+                        placeholder="2026-01-15T10:00:00.000Z"
+                      />
+                    </InspectorField>
+                  )}
+                  {(selected.data as { mode?: string }).mode === "weekly" && (
+                    <>
+                      <InspectorField label="Day of week">
+                        <select
+                          className={selectClass}
+                          value={String((selected.data as { dayOfWeek?: number }).dayOfWeek ?? 1)}
+                          onChange={(e) =>
+                            updateSelectedData({ dayOfWeek: Number(e.target.value) })
+                          }
+                        >
+                          {[
+                            "Sunday",
+                            "Monday",
+                            "Tuesday",
+                            "Wednesday",
+                            "Thursday",
+                            "Friday",
+                            "Saturday",
+                          ].map((d, i) => (
+                            <option key={d} value={i}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </InspectorField>
+                      <div className="grid grid-cols-2 gap-2">
+                        <InspectorField label="Hour">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={23}
+                            value={Number((selected.data as { hour?: number }).hour ?? 10)}
+                            onChange={(e) => updateSelectedData({ hour: Number(e.target.value) })}
+                          />
+                        </InspectorField>
+                        <InspectorField label="Minute">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={59}
+                            value={Number((selected.data as { minute?: number }).minute ?? 0)}
+                            onChange={(e) => updateSelectedData({ minute: Number(e.target.value) })}
+                          />
+                        </InspectorField>
+                      </div>
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
+                        Engine waits have no native weekly cron. This compiles to a 7-day upper
+                        bound — add a <strong>Time Window</strong> on the next step (false → loop
+                        back to a short delay) for precise day/hour sends.
+                      </div>
+                    </>
+                  )}
+                  {((selected.data as { mode?: string }).mode ?? "duration") === "duration" && (
+                    <div className="grid grid-cols-[1fr_1fr] gap-2">
+                      <InspectorField label="Value">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={Number(
+                            (selected.data as { value?: number }).value ??
+                              Math.round(
+                                Number((selected.data as { ms?: number }).ms ?? 0) / 60000,
+                              ),
+                          )}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            const unit = String(
+                              (selected.data as { unit?: string }).unit ?? "minutes",
+                            );
+                            updateSelectedData({
+                              mode: "duration",
+                              value,
+                              unit,
+                              ms: value * unitToMs(unit),
+                            });
+                          }}
+                        />
+                      </InspectorField>
+                      <InspectorField label="Unit">
+                        <select
+                          className={selectClass}
+                          value={String((selected.data as { unit?: string }).unit ?? "minutes")}
+                          onChange={(e) => {
+                            const unit = e.target.value;
+                            const value = Number(
+                              (selected.data as { value?: number }).value ??
+                                Math.round(
+                                  Number((selected.data as { ms?: number }).ms ?? 0) / 60000,
+                                ),
+                            );
+                            updateSelectedData({
+                              mode: "duration",
+                              value,
+                              unit,
+                              ms: value * unitToMs(unit),
+                            });
+                          }}
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                          <option value="weeks">weeks</option>
+                        </select>
+                      </InspectorField>
+                    </div>
+                  )}
+                </>
+              )}
+              {(selected.type === "branch" || selected.type === "filter") && (
+                <InspectorField
+                  label="Expression"
+                  hint='Example: {{ contact.plan }} == "pro" · Functions: includes, startsWith, now(), length…'
+                >
+                  <textarea
+                    className={textareaClass}
+                    value={String((selected.data as { expression?: string }).expression ?? "")}
+                    onChange={(e) => updateSelectedData({ expression: e.target.value })}
+                  />
+                </InspectorField>
+              )}
+              {selected.type === "timeWindow" && (
+                <>
+                  <InspectorField label="Label">
+                    <Input
+                      value={String((selected.data as { label?: string }).label ?? "")}
+                      onChange={(e) => updateSelectedData({ label: e.target.value })}
+                      placeholder="Business hours"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Open days">
+                    <div className="flex flex-wrap gap-1">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, i) => {
+                        const days =
+                          ((selected.data as { days?: number[] }).days as number[]) ?? [];
+                        const on = days.includes(i);
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => {
+                              const next = on
+                                ? days.filter((x) => x !== i)
+                                : [...days, i].sort((a, b) => a - b);
+                              updateSelectedData({ days: next });
+                            }}
+                            className={cn(
+                              "rounded-md border px-2 py-1 text-[11px] transition-colors",
+                              on
+                                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-600 dark:text-cyan-300"
+                                : "border-border text-muted-foreground hover:bg-card",
+                            )}
+                          >
+                            {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </InspectorField>
+                  <div className="grid grid-cols-2 gap-2">
+                    <InspectorField label="Start hour">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={Number((selected.data as { startHour?: number }).startHour ?? 9)}
+                        onChange={(e) => updateSelectedData({ startHour: Number(e.target.value) })}
+                      />
+                    </InspectorField>
+                    <InspectorField label="End hour">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={Number((selected.data as { endHour?: number }).endHour ?? 18)}
+                        onChange={(e) => updateSelectedData({ endHour: Number(e.target.value) })}
+                      />
+                    </InspectorField>
+                  </div>
+                  <div className="rounded-lg border border-border bg-card/60 p-2 text-[10px] leading-relaxed text-muted-foreground">
+                    <span className="text-emerald-500">true</span> = inside window ·{" "}
+                    <span className="text-rose-500">false</span> = outside (route to delay/exit).
+                    Evaluated at run time in server local time.
+                  </div>
+                </>
+              )}
+              {selected.type === "waitEvent" && (
+                <>
+                  <InspectorField label="Event name" hint="e.g. order.placed">
+                    <Input
+                      value={String((selected.data as { eventName?: string }).eventName ?? "")}
+                      onChange={(e) => updateSelectedData({ eventName: e.target.value })}
+                    />
+                  </InspectorField>
+                  <InspectorField label="Timeout (days)">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={Math.round(
+                        Number((selected.data as { timeoutMs?: number }).timeoutMs ?? 0) / 86400000,
+                      )}
+                      onChange={(e) =>
+                        updateSelectedData({ timeoutMs: Number(e.target.value) * 86400000 })
+                      }
+                    />
+                  </InspectorField>
+                  <InspectorField label="Event property filter (optional)">
+                    <div className="grid gap-1.5">
+                      <Input
+                        value={String(
+                          (
+                            selected.data as {
+                              eventFilter?: { property?: string };
+                            }
+                          ).eventFilter?.property ?? "",
+                        )}
+                        onChange={(e) => {
+                          const prev = (
+                            selected.data as {
+                              eventFilter?: { property?: string; op?: string; value?: unknown };
+                            }
+                          ).eventFilter;
+                          updateSelectedData({
+                            eventFilter: {
+                              property: e.target.value,
+                              op: prev?.op ?? "eq",
+                              value: prev?.value ?? "",
+                            },
+                          });
+                        }}
+                        placeholder="property, e.g. sku"
+                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <select
+                          className={selectClass}
+                          value={String(
+                            (
+                              selected.data as {
+                                eventFilter?: { op?: string };
+                              }
+                            ).eventFilter?.op ?? "eq",
+                          )}
+                          onChange={(e) => {
+                            const prev = (
+                              selected.data as {
+                                eventFilter?: { property?: string; op?: string; value?: unknown };
+                              }
+                            ).eventFilter;
+                            updateSelectedData({
+                              eventFilter: {
+                                property: prev?.property ?? "",
+                                op: e.target.value as "eq" | "neq" | "contains",
+                                value: prev?.value ?? "",
+                              },
+                            });
+                          }}
+                        >
+                          <option value="eq">equals</option>
+                          <option value="neq">not equals</option>
+                          <option value="contains">contains</option>
+                        </select>
+                        <Input
+                          value={String(
+                            (
+                              selected.data as {
+                                eventFilter?: { value?: unknown };
+                              }
+                            ).eventFilter?.value ?? "",
+                          )}
+                          onChange={(e) => {
+                            const prev = (
+                              selected.data as {
+                                eventFilter?: { property?: string; op?: string; value?: unknown };
+                              }
+                            ).eventFilter;
+                            updateSelectedData({
+                              eventFilter: {
+                                property: prev?.property ?? "",
+                                op: prev?.op ?? "eq",
+                                value: e.target.value,
+                              },
+                            });
+                          }}
+                          placeholder="value"
+                        />
+                      </div>
+                    </div>
+                  </InspectorField>
+                  <div className="rounded-lg border border-border bg-card/60 p-2 text-[10px] leading-relaxed text-muted-foreground">
+                    <span className="text-sky-500">Blue handle</span> = event received ·{" "}
+                    <span className="text-amber-500">amber</span> = timeout
+                  </div>
+                </>
+              )}
+              {selected.type === "webhook" && (
+                <>
+                  <InspectorField label="URL">
+                    <Input
+                      value={String((selected.data as { url?: string }).url ?? "")}
+                      onChange={(e) => updateSelectedData({ url: e.target.value })}
+                      placeholder="https://…"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Method">
+                    <select
+                      className={selectClass}
+                      value={String((selected.data as { method?: string }).method ?? "GET")}
+                      onChange={(e) => updateSelectedData({ method: e.target.value })}
+                    >
+                      {["GET", "POST", "PUT", "DELETE", "PATCH"].map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </InspectorField>
+                  <InspectorField label="Body (JSON)">
+                    <textarea
+                      className={textareaClass}
+                      value={JSON.stringify(
+                        (selected.data as { body?: unknown }).body ?? {},
+                        null,
+                        2,
+                      )}
+                      onChange={(e) => {
+                        try {
+                          updateSelectedData({ body: JSON.parse(e.target.value || "{}") });
+                        } catch {
+                          /* keep typing */
+                        }
+                      }}
+                    />
+                  </InspectorField>
+                  <InspectorField label="Headers (JSON)">
+                    <textarea
+                      className={textareaClass}
+                      value={JSON.stringify(
+                        (selected.data as { headers?: Record<string, string> }).headers ?? {},
+                        null,
+                        2,
+                      )}
+                      onChange={(e) => {
+                        try {
+                          updateSelectedData({ headers: JSON.parse(e.target.value || "{}") });
+                        } catch {
+                          /* keep typing */
+                        }
+                      }}
+                    />
+                  </InspectorField>
+                  <div className="grid grid-cols-2 gap-2">
+                    <InspectorField label="Timeout (ms)">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={Number((selected.data as { timeoutMs?: number }).timeoutMs ?? 10000)}
+                        onChange={(e) => updateSelectedData({ timeoutMs: Number(e.target.value) })}
+                      />
+                    </InspectorField>
+                    <InspectorField label="Max retries">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={Number((selected.data as { maxRetries?: number }).maxRetries ?? 2)}
+                        onChange={(e) => updateSelectedData({ maxRetries: Number(e.target.value) })}
+                      />
+                    </InspectorField>
+                  </div>
+                </>
+              )}
+              {selected.type === "notify" && (
+                <>
+                  <InspectorField
+                    label="Webhook URL"
+                    hint="Slack / Discord / 飞书 incoming webhook, Zapier, or internal API"
+                  >
+                    <Input
+                      value={String((selected.data as { url?: string }).url ?? "")}
+                      onChange={(e) => updateSelectedData({ url: e.target.value })}
+                      placeholder="https://hooks.slack.com/…"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Subject">
+                    <Input
+                      value={String((selected.data as { subject?: string }).subject ?? "")}
+                      onChange={(e) => updateSelectedData({ subject: e.target.value })}
+                    />
+                  </InspectorField>
+                  <InspectorField
+                    label="Message"
+                    hint="Supports {{ contact.email }} style placeholders"
+                  >
+                    <textarea
+                      className={textareaClass}
+                      value={String((selected.data as { message?: string }).message ?? "")}
+                      onChange={(e) => updateSelectedData({ message: e.target.value })}
+                    />
+                  </InspectorField>
+                </>
+              )}
+              {selected.type === "trigger" && (
+                <>
+                  <InspectorField label="Trigger kind">
+                    <select
+                      className={selectClass}
+                      value={String(
+                        (selected.data as { trigger?: { kind?: string } }).trigger?.kind ??
+                          "contact_created",
+                      )}
+                      onChange={(e) => {
+                        const kind = e.target.value;
+                        updateSelectedData({
+                          trigger:
+                            kind === "event"
+                              ? { kind: "event", name: "order.placed" }
+                              : kind === "property_changed"
+                                ? { kind: "property_changed", property: "plan" }
+                                : { kind },
+                        });
+                      }}
+                    >
+                      <option value="contact_created">contact_created</option>
+                      <option value="event">event</option>
+                      <option value="property_changed">property_changed</option>
+                      <option value="manual">manual</option>
+                    </select>
+                  </InspectorField>
+                  {(selected.data as { trigger?: { kind?: string } }).trigger?.kind === "event" && (
+                    <InspectorField label="Event name">
+                      <Input
+                        value={String(
+                          (selected.data as { trigger?: { name?: string } }).trigger?.name ?? "",
+                        )}
+                        onChange={(e) =>
+                          updateSelectedData({
+                            trigger: { kind: "event", name: e.target.value },
+                          })
+                        }
+                      />
+                    </InspectorField>
+                  )}
+                  {(selected.data as { trigger?: { kind?: string } }).trigger?.kind ===
+                    "property_changed" && (
+                    <InspectorField label="Property name">
+                      <Input
+                        value={String(
+                          (selected.data as { trigger?: { property?: string } }).trigger
+                            ?.property ?? "",
+                        )}
+                        onChange={(e) =>
+                          updateSelectedData({
+                            trigger: { kind: "property_changed", property: e.target.value },
+                          })
+                        }
+                      />
+                    </InspectorField>
+                  )}
+                </>
+              )}
+              {selected.type === "exit" && (
+                <InspectorField label="Reason">
+                  <Input
+                    value={String((selected.data as { reason?: string }).reason ?? "")}
+                    onChange={(e) => updateSelectedData({ reason: e.target.value })}
+                  />
+                </InspectorField>
+              )}
+              {selected.type === "split" && (
+                <SplitRoutesEditor
+                  routes={
+                    ((selected.data as { routes?: { name: string; expression: string }[] })
+                      .routes ?? []) as { name: string; expression: string }[]
+                  }
+                  onChange={(routes) => updateSelectedData({ routes })}
+                />
+              )}
+              {selected.type === "abSplit" && (
+                <AbVariantsEditor
+                  variants={
+                    ((selected.data as { variants?: { name: string; weight: number }[] })
+                      .variants ?? []) as { name: string; weight: number }[]
+                  }
+                  onChange={(variants) => updateSelectedData({ variants })}
+                />
+              )}
+              {selected.type === "updateContact" && (
+                <>
+                  <InspectorField
+                    label="Set properties (JSON)"
+                    hint='Values may be literals or single placeholders like "{{ contact.plan }}"'
+                  >
+                    <textarea
+                      className={textareaClass}
+                      value={JSON.stringify(
+                        (selected.data as { set?: Record<string, unknown> }).set ?? {},
+                        null,
+                        2,
+                      )}
+                      onChange={(e) => {
+                        try {
+                          updateSelectedData({ set: JSON.parse(e.target.value || "{}") });
+                        } catch {
+                          /* keep typing */
+                        }
+                      }}
+                    />
+                  </InspectorField>
+                  <InspectorField label="Add tags (comma-separated)">
+                    <Input
+                      value={((selected.data as { addTags?: string[] }).addTags ?? []).join(", ")}
+                      onChange={(e) =>
+                        updateSelectedData({
+                          addTags: e.target.value
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      placeholder="vip, trial"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Remove tags (comma-separated)">
+                    <Input
+                      value={((selected.data as { removeTags?: string[] }).removeTags ?? []).join(
+                        ", ",
+                      )}
+                      onChange={(e) =>
+                        updateSelectedData({
+                          removeTags: e.target.value
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      placeholder="lead"
+                    />
+                  </InspectorField>
+                </>
+              )}
+              {selected.type === "score" && (
+                <>
+                  <InspectorField label="Property" hint='Defaults to "score"'>
+                    <Input
+                      value={String((selected.data as { property?: string }).property ?? "score")}
+                      onChange={(e) => updateSelectedData({ property: e.target.value })}
+                    />
+                  </InspectorField>
+                  <div className="grid grid-cols-2 gap-2">
+                    <InspectorField label="Op">
+                      <select
+                        className={selectClass}
+                        value={String((selected.data as { op?: string }).op ?? "add")}
+                        onChange={(e) =>
+                          updateSelectedData({ op: e.target.value as "add" | "set" })
+                        }
+                      >
+                        <option value="add">add</option>
+                        <option value="set">set</option>
+                      </select>
+                    </InspectorField>
+                    <InspectorField label="Value">
+                      <Input
+                        type="number"
+                        value={Number((selected.data as { value?: number }).value ?? 0)}
+                        onChange={(e) => updateSelectedData({ value: Number(e.target.value) })}
+                      />
+                    </InspectorField>
+                  </div>
+                </>
+              )}
+              {selected.type === "goal" && (
+                <>
+                  <InspectorField label="Goal name" hint="Recorded as goal.<name> contact event">
+                    <Input
+                      value={String((selected.data as { name?: string }).name ?? "")}
+                      onChange={(e) => updateSelectedData({ name: e.target.value })}
+                      placeholder="activated"
+                    />
+                  </InspectorField>
+                  <InspectorField label="Value (optional)">
+                    <Input
+                      type="number"
+                      value={String((selected.data as { value?: number }).value ?? "")}
+                      onChange={(e) =>
+                        updateSelectedData({
+                          value: e.target.value === "" ? undefined : Number(e.target.value),
+                        })
+                      }
+                    />
+                  </InspectorField>
+                  <InspectorField label="Extra properties (JSON)">
+                    <textarea
+                      className={textareaClass}
+                      value={JSON.stringify(
+                        (selected.data as { properties?: Record<string, unknown> }).properties ??
+                          {},
+                        null,
+                        2,
+                      )}
+                      onChange={(e) => {
+                        try {
+                          updateSelectedData({
+                            properties: JSON.parse(e.target.value || "{}"),
+                          });
+                        } catch {
+                          /* keep typing */
+                        }
+                      }}
+                    />
+                  </InspectorField>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              <div className="rounded-xl border border-dashed border-border bg-card/40 px-3 py-8 text-center">
+                <div className="text-xs font-medium text-foreground">Nothing selected</div>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  Click a node on the canvas to edit its configuration. Drag from the palette to add
+                  new steps.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-border/70 p-3">
+          <div className="rounded-lg border border-border bg-card/70 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Validation
+              </div>
+              <span
+                className={cn(
+                  "text-[10px] font-medium",
+                  validation.valid
+                    ? "text-emerald-600 dark:text-emerald-300"
+                    : "text-amber-600 dark:text-amber-300",
+                )}
+              >
+                {validation.valid ? "Ready" : `${validation.issues.length}`}
+              </span>
+            </div>
+            {validation.valid ? (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-300">
+                <CheckCircle2Icon className="size-3" aria-hidden="true" />
+                Graph looks valid
+              </div>
+            ) : (
+              <ul className="mt-1.5 space-y-1 text-[11px] text-amber-700 dark:text-amber-300">
+                {validation.issues.slice(0, 4).map((issue, i) => (
+                  <li key={i} className="leading-snug">
+                    {issue.nodeId ? <span className="font-mono">[{issue.nodeId}] </span> : null}
+                    {issue.message}
+                  </li>
+                ))}
+                {validation.issues.length > 4 && (
+                  <li className="text-muted-foreground">+{validation.issues.length - 4} more…</li>
+                )}
+              </ul>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}

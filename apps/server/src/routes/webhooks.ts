@@ -16,8 +16,9 @@ webhooksRouter.post("/resend", async (c) => {
     headers[key] = value;
   });
 
+  let contactEvents: Awaited<ReturnType<typeof processEmailWebhook>>;
   try {
-    await processEmailWebhook(db, engineCtx.emailProvider, { body, headers });
+    contactEvents = await processEmailWebhook(db, engineCtx.emailProvider, { body, headers });
   } catch (error) {
     // A verification failure is a 401, not a 500 — the request itself
     // was handled correctly, it just wasn't from Resend.
@@ -26,5 +27,16 @@ webhooksRouter.post("/resend", async (c) => {
     throw error;
   }
 
-  return c.json({ ok: true });
+  // Engagement events (email.opened / email.clicked / ...) can be waitEvent
+  // wake-ups — this is the differentiated path the product exists for.
+  let woken = 0;
+  for (const evt of contactEvents) {
+    woken += await engineCtx.wakeForContactEvent({
+      eventName: evt.name,
+      contactId: evt.contactId,
+      properties: evt.properties,
+    });
+  }
+
+  return c.json({ ok: true, woken });
 });

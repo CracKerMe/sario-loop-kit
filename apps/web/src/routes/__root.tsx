@@ -3,8 +3,7 @@ import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanst
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { createMiddleware } from "@tanstack/react-start";
 import { evlogErrorHandler } from "evlog/nitro/v3";
-
-import Header from "../components/header";
+import { ThemeProvider } from "next-themes";
 
 import appCss from "../index.css?url";
 
@@ -25,13 +24,42 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "My App",
+        title: "Loopkit — Lifecycle marketing engine",
+      },
+      {
+        name: "description",
+        content:
+          "Self-hostable lifecycle marketing: visual journey builder compiled onto a durable workflow engine.",
+      },
+      {
+        name: "theme-color",
+        content: "#12131a",
       },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.googleapis.com",
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+      },
+      {
+        rel: "icon",
+        type: "image/svg+xml",
+        href: `data:image/svg+xml,${encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7cf8"/><stop offset="1" stop-color="#5b5bd6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#g)"/><path d="M21.5 10.5a7.8 7.8 0 1 0 2 5.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="23.5" cy="15.7" r="2" fill="#fff"/></svg>`,
+        )}`,
       },
     ],
   }),
@@ -41,17 +69,21 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 
 function RootDocument() {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
-        <div className="grid h-svh grid-rows-[auto_1fr]">
-          <Header />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
           <Outlet />
-        </div>
-        <Toaster richColors />
-        <TanStackRouterDevtools position="bottom-left" />
+          <Toaster richColors />
+          <TanStackRouterDevtools position="bottom-left" />
+        </ThemeProvider>
         <Scripts />
       </body>
     </html>

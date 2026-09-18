@@ -1,8 +1,7 @@
 import { createDb, type Db } from "@loopkit/db";
 import { journey as journeyTable, journeyVersion } from "@loopkit/db/schema";
 import { createEmailNotificationChannel, type EmailProvider } from "@loopkit/email";
-import { DrizzleStorageProvider } from "@loopkit/engine-storage";
-import { compile, type JourneyGraph } from "@loopkit/journey";
+import { compile, type JourneyCompileActions, type JourneyGraph } from "@loopkit/journey";
 import { PgTimerAdapter, TimerPoller } from "@loopkit/timers";
 import { and, eq } from "drizzle-orm";
 import {
@@ -12,11 +11,21 @@ import {
   type AppContext,
 } from "ts-workflow-engine-lite";
 
+import { EventIndexedStorageProvider } from "./eventIndexedStorage";
+import { EventWaitIndex } from "./eventWaitIndex";
+import { wakeWaitingInstancesForContactEvent, type WakeEventInput } from "./wakeEvents";
+
 export interface LoopkitEngineOptions {
   db?: Db;
   emailProvider: EmailProvider;
   defaultFromEmail: string;
   pollIntervalMs?: number;
+  /**
+   * Journey action handlers (updateContact/score/goal). Injected by the
+   * server so boot re-register attaches the same closures publish used.
+   * When omitted those action nodes no-op with a structured error result.
+   */
+  journeyActions?: JourneyCompileActions;
 }
 
 export interface LoopkitEngine {
@@ -24,6 +33,9 @@ export interface LoopkitEngine {
   poller: TimerPoller;
   db: Db;
   emailProvider: EmailProvider;
+  eventWaitIndex: EventWaitIndex;
+  /** Emit `loopkit.event.<name>` to instances waiting for this contact's event. */
+  wakeForContactEvent: (input: WakeEventInput) => Promise<number>;
   stop: () => Promise<void>;
 }
 
@@ -44,7 +56,8 @@ export interface LoopkitEngine {
  */
 export async function createLoopkitEngine(options: LoopkitEngineOptions): Promise<LoopkitEngine> {
   const db = options.db ?? createDb();
-  const storage = new DrizzleStorageProvider(db);
+  const eventWaitIndex = new EventWaitIndex();
+  const storage = new EventIndexedStorageProvider(db, eventWaitIndex);
   const timerAdapter = new PgTimerAdapter(db);
 
   const ctx = await bootstrap({
@@ -73,8 +86,11 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     }),
   );
 
-  await reregisterPublishedJourneys(db, ctx);
+  await reregisterPublishedJourneys(db, ctx, options.journeyActions);
   await ctx.engine.resumeRunningInstancesFromStorage();
+  // After resume: any waits restored through storage already hit the index
+  // hooks; this backfills rows written before this process started.
+  await eventWaitIndex.loadFromStorage(ctx.container.storage);
 
   const poller = new TimerPoller(db, ctx.container.eventBus, ctx.container.storage, {
     pollIntervalMs: options.pollIntervalMs,
@@ -86,6 +102,9 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     poller,
     db,
     emailProvider: options.emailProvider,
+    eventWaitIndex,
+    wakeForContactEvent: (input) =>
+      wakeWaitingInstancesForContactEvent(db, ctx.container.eventBus, eventWaitIndex, input),
     stop: async () => {
       poller.stop();
       ctx.engine.destroy();
@@ -106,7 +125,11 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
  * closure) needs that closure back in memory before it can resume —
  * jsonb-persisted workflow definitions silently lose function values.
  */
-async function reregisterPublishedJourneys(db: Db, ctx: AppContext): Promise<void> {
+async function reregisterPublishedJourneys(
+  db: Db,
+  ctx: AppContext,
+  actions?: JourneyCompileActions,
+): Promise<void> {
   const published = await db
     .select({
       id: journeyTable.id,
@@ -131,6 +154,7 @@ async function reregisterPublishedJourneys(db: Db, ctx: AppContext): Promise<voi
     const { definition } = compile(version.graph as JourneyGraph, {
       workflowId: j.workflowId,
       name: j.name,
+      actions,
     });
     await ctx.engine.register(definition, { persist: false }); // already persisted at publish time
   }

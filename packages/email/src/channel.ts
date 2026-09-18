@@ -36,6 +36,10 @@ export interface EmailNodeData {
   journeyId?: string;
   journeyRunId: string;
   nodeId: string;
+  preheader?: string;
+  fromName?: string;
+  replyTo?: string;
+  utm?: { source?: string; medium?: string; campaign?: string };
   [key: string]: unknown;
 }
 
@@ -69,13 +73,40 @@ async function defaultLoadTemplate(
   return row ?? null;
 }
 
-async function isSuppressed(db: Db, contactId: string): Promise<boolean> {
-  const [row] = await db
+function isSuppressed(db: Db, contactId: string): Promise<boolean> {
+  return db
     .select({ subscribed: contact.subscribed })
     .from(contact)
     .where(eq(contact.id, contactId))
-    .limit(1);
-  return row ? !row.subscribed : false;
+    .limit(1)
+    .then((rows) => (rows[0] ? !rows[0].subscribed : false));
+}
+
+/** Appends utm_* query params to http(s) hrefs found in the HTML body. */
+export function appendUtmParams(
+  html: string,
+  utm: { source?: string; medium?: string; campaign?: string },
+): string {
+  const params: string[] = [];
+  if (utm.source) params.push(`utm_source=${encodeURIComponent(utm.source)}`);
+  if (utm.medium) params.push(`utm_medium=${encodeURIComponent(utm.medium)}`);
+  if (utm.campaign) params.push(`utm_campaign=${encodeURIComponent(utm.campaign)}`);
+  if (params.length === 0) return html;
+  const suffix = params.join("&");
+  return html.replace(/href=(["'])(https?:\/\/[^"']+)\1/gi, (_m, quote: string, url: string) => {
+    const join = url.includes("?") ? "&" : "?";
+    return `href=${quote}${url}${join}${suffix}${quote}`;
+  });
+}
+
+/** Injects an inbox-preview preheader after <body> without showing it in the body layout. */
+export function injectPreheader(html: string, preheader: string): string {
+  if (!preheader) return html;
+  const block = `<div style="display:none;font-size:1px;color:#fff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">${preheader}</div>`;
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/<body([^>]*)>/i, `<body$1>${block}`);
+  }
+  return block + html;
 }
 
 /**
@@ -217,17 +248,28 @@ export function createEmailNotificationChannel(
       // subject template should use for interpolated values.
       const subjectTemplate = message.subject || template.subject;
       const subject = renderTemplate(subjectTemplate, renderData);
-      const html = renderTemplate(template.html, renderData);
+      let html = renderTemplate(template.html, renderData);
       const text = template.textBody ? renderTemplate(template.textBody, renderData) : undefined;
-      const from = template.fromEmail ?? defaultFrom;
+      // Node-level overrides beat template defaults — journey author wins.
+      const fromEmail = template.fromEmail ?? defaultFrom;
+      const fromName = data.fromName || template.fromName;
+      const replyTo = data.replyTo || template.replyTo || undefined;
+      const from = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
+
+      if (data.utm) {
+        html = appendUtmParams(html, data.utm);
+      }
+      if (data.preheader) {
+        html = injectPreheader(html, renderTemplate(String(data.preheader), renderData));
+      }
 
       await db.update(emailSend).set({ subject }).where(eq(emailSend.id, sendId));
 
       try {
         const result = await provider.send({
           to: message.target,
-          from: template.fromName ? `${template.fromName} <${from}>` : from,
-          replyTo: template.replyTo ?? undefined,
+          from,
+          replyTo,
           subject,
           html,
           text,

@@ -1,124 +1,94 @@
-# loopkit
+# Loopkit
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Hono, and more.
+Self-hostable lifecycle marketing engine built on a real workflow engine (`ts-workflow-engine-lite`).
 
-## Features
+Journeys are not a fixed set of marketing nodes — they **compile** into engine `WorkflowDefinition`s with durable waits, event wake-ups, retries, and DLQ.
 
-- **TypeScript** - For type safety and improved developer experience
-- **TanStack Start** - SSR framework with TanStack Router
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Hono** - Lightweight, performant server framework
-- **Node.js** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Husky** - Git hooks for code quality
-- **Oxlint** - Oxlint + Oxfmt (linting & formatting)
-- **Turborepo** - Optimized monorepo build system
+## Stack
 
-## Getting Started
+- **apps/server** — Hono API (ingestion, dashboard APIs, Resend webhooks)
+- **apps/web** — TanStack Start dashboard + React Flow journey builder
+- **packages/engine** — bootstrap, EventWaitIndex, contact-event wake-ups
+- **packages/engine-storage** — Drizzle/Postgres `StorageProvider`
+- **packages/timers** — Postgres external timers + poller (restart-safe waits)
+- **packages/email** — EmailProvider / Resend / notification channel bridge
+- **packages/journey** — graph types, `compile`/`decompile`, `validateGraph`, node whitelist
+- **packages/core** — contacts, journeys, triggers, API keys, reports
+- **packages/db** — Drizzle schema (engine tables + product tables)
 
-First, install the dependencies:
+## Quick start
 
 ```bash
 pnpm install
+pnpm db:start          # docker compose up -d postgres
+cd packages/db && pnpm db:push
+cd ../..
+pnpm dev               # API :3000, web :3001
 ```
 
-## Database Setup
+Open http://localhost:3001 → sign up (workspace + welcome email template are auto-provisioned) → **Journeys** → **New journey** → pick a template → publish → **API keys** → ingest a contact:
 
-This project uses PostgreSQL with Drizzle ORM.
-
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
-
-3. Apply the schema to your database:
+New-journey templates include a marketing sample **Welcome + A/B + Score + Hours** (welcome email → lead score → weighted A/B → path A nurture with business-hours gate + goal, path B sales tag + team notify).
 
 ```bash
-pnpm run db:push
+curl -H "Authorization: Bearer lk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","properties":{"firstName":"Sam"}}' \
+  http://localhost:3000/v1/contacts
 ```
 
-Then, run the development server:
+Without `RESEND_API_KEY`, emails are logged by `ConsoleEmailProvider`.
 
-```bash
-pnpm run dev
-```
+## API surface
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+| Method   | Path                       | Auth               | Purpose                                      |
+| -------- | -------------------------- | ------------------ | -------------------------------------------- |
+| POST     | `/v1/contacts`             | API key / session  | Upsert contact + evaluate entry triggers     |
+| POST     | `/v1/events`               | API key / session  | Record event, start journeys, wake waitEvent |
+| GET      | `/v1/journeys`             | session            | List journeys                                |
+| POST     | `/v1/journeys`             | session            | Create draft from graph                      |
+| GET      | `/v1/journeys/:id`         | session            | Journey + latest graph + run counts          |
+| PUT      | `/v1/journeys/:id/draft`   | session            | Save graph as a new version                  |
+| POST     | `/v1/journeys/:id/publish` | session            | Server-side whitelist + compile + register   |
+| GET      | `/v1/journeys/:id/runs`    | session            | Runs                                         |
+| GET      | `/v1/ops/stats`            | session            | Dashboard stats                              |
+| GET      | `/v1/ops/dlq`              | session            | Dead-letter queue                            |
+| GET/POST | `/v1/email-templates`      | session            | Template CRUD                                |
+| GET/POST | `/v1/api-keys`             | session            | Ingestion keys                               |
+| POST     | `/v1/webhooks/resend`      | provider signature | Delivery events + engagement wake-ups        |
 
-## UI Customization
+## Journey graph
 
-React web apps in this stack share shadcn/ui primitives through `packages/ui`.
+Source of truth is `journey_version.graph` (React Flow nodes/edges). Node ids are engine `TaskNode.id`s.
 
-- Change design tokens and global styles in `packages/ui/src/styles/globals.css`
-- Update shared primitives in `packages/ui/src/components/*`
-- Adjust shadcn aliases or style config in `packages/ui/components.json` and `apps/web/components.json`
+| Journey node    | Engine node                                       | Purpose                                                        |
+| --------------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| trigger         | — (startNode via first edge)                      | Entry: contact_created / event / property_changed / manual     |
+| delay           | `wait` + `externalTimer.enabled`                  | Duration (min/h/d/w), absolute `until`, weekly slot helper     |
+| email           | `notification` channel `loopkit-email`            | Templated email + subject/preheader/from/replyTo/UTM overrides |
+| notify          | `http` POST                                       | Team webhook (Slack/Discord/飞书/Zapier)                       |
+| branch / filter | `condition`                                       | Expression true/false                                          |
+| split           | `router`                                          | Multi-route expression router                                  |
+| abSplit         | `action` + `conditionalNext`                      | Deterministic weighted A/B buckets from contact id             |
+| timeWindow      | `action` + `conditionalNext`                      | Day/hour gate at run time (business hours, weekdays)           |
+| waitEvent       | `event` (`next` = event, `failureNext` = timeout) | Wait for lifecycle event                                       |
+| webhook         | `http`                                            | Outbound HTTP with headers/timeout/retries                     |
+| updateContact   | `action` (runtime handler)                        | Set properties / add / remove tags                             |
+| score           | `action` (runtime handler)                        | Add or set a lead-score property                               |
+| goal            | `action` (runtime handler)                        | Record `goal.*` contact event + lastGoal property              |
+| exit            | terminal `action`                                 | End journey for the contact                                    |
 
-### Add more shared components
+Publish always runs `assertWhitelistedGraph()` then `compile()` on the server. Action-backed marketing nodes (`updateContact` / `score` / `goal`) receive DB handlers injected via `CompileOptions.actions` — the browser only runs `validateGraph()`.
 
-Run this from the project root to add more primitives to the shared UI package:
+## Verification gates (from the plan)
 
-```bash
-npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
-```
+1. **Storage conformance** — `pnpm --filter @loopkit/engine-storage test` (Memory vs Drizzle + 10k stress)
+2. **Timer restart** — `pnpm --filter @loopkit/timers test` (kill mid-wait, no duplicate timer)
+3. **End-to-end** — publish a journey, POST a contact, observe `journey_run` + email + timer rows
 
-Import shared components like this:
+## Scripts
 
-```tsx
-import { Button } from "@loopkit/ui/components/button";
-```
-
-### Add app-specific blocks
-
-If you want to add app-specific blocks instead of shared primitives, run the shadcn CLI from `apps/web`.
-
-## Deployment
-
-### Docker Compose
-
-- Target: server
-- Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
-- Build images: pnpm run docker:build
-- Start: pnpm run docker:up
-- Logs: pnpm run docker:logs
-- Stop: pnpm run docker:down
-
-Environment variables are read from each app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
-
-For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
-
-## Git Hooks and Formatting
-
-- Initialize hooks: `pnpm run prepare`
-- Run checks: `pnpm run check`
-
-## Project Structure
-
-```
-loopkit/
-├── apps/
-│   ├── web/         # Frontend application (React + TanStack Start)
-│   └── server/      # Backend API (Hono)
-├── packages/
-│   ├── ui/          # Shared shadcn/ui components and styles
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
-```
-
-## Available Scripts
-
-- `pnpm run dev`: Start all applications in development mode
-- `pnpm run build`: Build all applications
-- `pnpm run dev:web`: Start only the web application
-- `pnpm run dev:server`: Start only the server
-- `pnpm run check-types`: Check TypeScript types across all apps
-- `pnpm run db:push`: Push schema changes to database
-- `pnpm run db:generate`: Generate database client/types
-- `pnpm run db:migrate`: Run database migrations
-- `pnpm run db:studio`: Open database studio UI
-- `pnpm run check`: Run Oxlint and Oxfmt
-- `pnpm run docker:build`: Build the Docker Compose images
-- `pnpm run docker:up`: Build and start the Docker Compose stack
-- `pnpm run docker:logs`: Tail logs from the Docker Compose stack
-- `pnpm run docker:down`: Stop the Docker Compose stack
+- `pnpm dev` — web + server
+- `pnpm check-types` — monorepo TypeScript
+- `pnpm db:push` / `pnpm db:studio`
+- `pnpm --filter @loopkit/<pkg> test`

@@ -47,6 +47,7 @@ export const apiKey = pgTable(
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    description: text("description"),
     // Shown in the UI, e.g. "lk_live_abc1" — never the full key.
     prefix: text("prefix").notNull(),
     // sha256(full key). A high-entropy random key needs only an indexed
@@ -54,6 +55,7 @@ export const apiKey = pgTable(
     hash: text("hash").notNull(),
     scopes: text("scopes").array().notNull().default(["ingest"]),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

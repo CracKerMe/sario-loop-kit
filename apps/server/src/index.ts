@@ -7,11 +7,12 @@ import { evlog, type EvlogVariables } from "evlog/hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { apiKeysRouter } from "./routes/apiKeys";
+import { apiKeyMetaBody, apiKeysRouter } from "./routes/apiKeys";
 import { contactsRouter, eventsRouter } from "./routes/contacts";
-import { journeysRouter, runsRouter } from "./routes/journeys";
+import { emailTemplatesRouter } from "./routes/emailTemplates";
+import { journeysRouter, opsRouter, runsRouter } from "./routes/journeys";
 import { webhooksRouter } from "./routes/webhooks";
-import { requireAuth, type AuthVariables } from "./middleware/auth";
+import { requireAuth, requireScope, type AuthVariables } from "./middleware/auth";
 import { startEngine, stopEngine } from "./loopkitRuntime";
 
 initLogger({
@@ -55,9 +56,50 @@ app.get("/", (c) => {
 app.get("/health", (c) => c.json({ ok: true }));
 
 // Ingestion: API key or session (lets the dashboard test-send too).
-app.use("/v1/contacts/*", requireAuth({ allow: ["apiKey", "session"] }));
+// Scope gates are method-aware — read scopes cover GETs, write scopes
+// cover mutations. Dashboard sessions skip scope checks (cookie auth).
+const ingestionAuth = requireAuth({ allow: ["apiKey", "session"] });
+const readScope = requireScope("contacts:read", "contacts:write", "ingest");
+const writeContactsScope = requireScope("contacts:write", "ingest");
+const writeEventsScope = requireScope("events:write", "ingest");
+
+function byMethod(
+  map: Partial<Record<string, ReturnType<typeof requireScope>>>,
+): ReturnType<typeof requireScope> {
+  return async (c, next) => {
+    const handler = map[c.req.method];
+    if (!handler) return next();
+    return handler(c, next);
+  };
+}
+
+for (const path of ["/v1/contacts", "/v1/contacts/*"] as const) {
+  app.use(path, ingestionAuth);
+  app.use(
+    path,
+    byMethod({
+      GET: readScope,
+      POST: writeContactsScope,
+      PUT: writeContactsScope,
+      PATCH: writeContactsScope,
+      DELETE: writeContactsScope,
+    }),
+  );
+}
 app.route("/v1/contacts", contactsRouter);
-app.use("/v1/events/*", requireAuth({ allow: ["apiKey", "session"] }));
+
+for (const path of ["/v1/events", "/v1/events/*"] as const) {
+  app.use(path, ingestionAuth);
+  app.use(
+    path,
+    byMethod({
+      POST: writeEventsScope,
+      PUT: writeEventsScope,
+      PATCH: writeEventsScope,
+      DELETE: writeEventsScope,
+    }),
+  );
+}
 app.route("/v1/events", eventsRouter);
 
 // Dashboard-only.
@@ -65,8 +107,17 @@ app.use("/v1/journeys/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/journeys", journeysRouter);
 app.use("/v1/runs/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/runs", runsRouter);
-app.use("/v1/api-keys/*", requireAuth({ allow: ["session"] }));
+// Public machine-readable catalog — no secrets, lets AI agents self-describe.
+// Registered before the session guard so it stays open.
+app.get("/v1/api-keys/meta", (c) => c.json(apiKeyMetaBody()));
+for (const path of ["/v1/api-keys", "/v1/api-keys/*"] as const) {
+  app.use(path, requireAuth({ allow: ["session"] }));
+}
 app.route("/v1/api-keys", apiKeysRouter);
+app.use("/v1/email-templates/*", requireAuth({ allow: ["session"] }));
+app.route("/v1/email-templates", emailTemplatesRouter);
+app.use("/v1/ops/*", requireAuth({ allow: ["session"] }));
+app.route("/v1/ops", opsRouter);
 
 // Public — verified by the provider's own webhook signature, not session/API-key auth.
 app.route("/v1/webhooks", webhooksRouter);

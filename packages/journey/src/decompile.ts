@@ -35,7 +35,7 @@ export function decompile(definition: WorkflowDefinition): DecompileResult {
     y += 1;
     const decompiled = decompileNode(id, node, warnings);
     nodes.push({ ...decompiled, position: { x: 0, y: y * 120 } });
-    edges.push(...edgesForNode(id, node));
+    edges.push(...edgesForNode(id, node, decompiled));
   }
 
   return { graph: { nodes, edges }, warnings };
@@ -50,13 +50,25 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
     case "wait": {
       const durationMs = typeof config.durationMs === "number" ? config.durationMs : undefined;
       const until = typeof config.until === "string" ? config.until : undefined;
-      return {
-        id,
-        type: "delay",
-        data: until
-          ? { mode: "until", iso: until }
-          : { mode: "duration", ms: durationMs ?? node.timeout ?? 0 },
-      };
+      const weekly = config.weekly as
+        | { dayOfWeek?: number; hour?: number; minute?: number }
+        | undefined;
+      if (until) {
+        return { id, type: "delay", data: { mode: "until", iso: until } };
+      }
+      if (weekly && typeof weekly.dayOfWeek === "number") {
+        return {
+          id,
+          type: "delay",
+          data: {
+            mode: "weekly",
+            dayOfWeek: weekly.dayOfWeek,
+            hour: weekly.hour ?? 9,
+            minute: weekly.minute ?? 0,
+          },
+        };
+      }
+      return { id, type: "delay", data: { mode: "duration", ms: durationMs ?? node.timeout ?? 0 } };
     }
 
     case "notification": {
@@ -69,18 +81,33 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
           `node ${id}: notification channel "${String(config.channel)}" is not loopkit-email; imported as an email node anyway`,
         );
       }
+      const data = (config.data ?? {}) as Record<string, unknown>;
       return {
         id,
         type: "email",
         data: {
           templateId,
           subject: typeof config.subject === "string" ? config.subject : undefined,
+          preheader: typeof data.preheader === "string" ? data.preheader : undefined,
+          fromName: typeof data.fromName === "string" ? data.fromName : undefined,
+          replyTo: typeof data.replyTo === "string" ? data.replyTo : undefined,
         },
       };
     }
 
     case "condition": {
-      const conditionConfig = config as { condition?: string };
+      const conditionConfig = config as { condition?: string; op?: string };
+      if (conditionConfig.op === "timeWindow") {
+        return {
+          id,
+          type: "timeWindow",
+          data: {
+            days: (config.days as number[]) ?? [1, 2, 3, 4, 5],
+            startHour: Number(config.startHour ?? 9),
+            endHour: Number(config.endHour ?? 18),
+          },
+        };
+      }
       return { id, type: "branch", data: { expression: conditionConfig.condition ?? "" } };
     }
 
@@ -101,7 +128,26 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
     }
 
     case "http": {
-      const httpConfig = config as { method?: string; url?: string; body?: unknown };
+      const httpConfig = config as {
+        method?: string;
+        url?: string;
+        body?: unknown;
+        headers?: Record<string, string>;
+        timeoutMs?: number;
+      };
+      const body = httpConfig.body as { message?: string; subject?: string } | undefined;
+      if (typeof body?.message === "string" && typeof httpConfig.url === "string") {
+        return {
+          id,
+          type: "notify",
+          data: {
+            url: httpConfig.url,
+            subject: body.subject,
+            message: body.message,
+            headers: httpConfig.headers,
+          },
+        };
+      }
       return {
         id,
         type: "webhook",
@@ -109,7 +155,75 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
           url: httpConfig.url ?? "",
           method: (httpConfig.method as "GET") ?? "GET",
           body: httpConfig.body,
+          headers: httpConfig.headers,
+          timeoutMs: httpConfig.timeoutMs,
+          maxRetries: node.maxRetries,
         },
+      };
+    }
+
+    case "action": {
+      const op = config.journeyOp ?? config.op;
+      if (op === "updateContact") {
+        return {
+          id,
+          type: "updateContact",
+          data: {
+            set: config.set as Record<string, unknown> | undefined,
+            addTags: config.addTags as string[] | undefined,
+            removeTags: config.removeTags as string[] | undefined,
+          },
+        };
+      }
+      if (op === "score") {
+        return {
+          id,
+          type: "score",
+          data: {
+            property: (config.property as string) ?? "score",
+            value: Number(config.value ?? 0),
+            op: (config.op === "set" ? "set" : "add") as "add" | "set",
+          },
+        };
+      }
+      if (op === "goal") {
+        return {
+          id,
+          type: "goal",
+          data: {
+            name: String(config.name ?? "converted"),
+            value: typeof config.value === "number" ? config.value : undefined,
+            properties: config.properties as Record<string, unknown> | undefined,
+          },
+        };
+      }
+      if (op === "abSplit") {
+        const variants = (config.variants as { name: string; weight: number }[]) ?? [];
+        return { id, type: "abSplit", data: { variants } };
+      }
+      if (op === "timeWindow") {
+        return {
+          id,
+          type: "timeWindow",
+          data: {
+            days: (config.days as number[]) ?? [1, 2, 3, 4, 5],
+            startHour: Number(config.startHour ?? 9),
+            endHour: Number(config.endHour ?? 18),
+          },
+        };
+      }
+      // exit / unknown action
+      if (op !== undefined) {
+        warnings.push(
+          `node ${id}: action op "${String(op)}" is not a known journey op; imported as exit`,
+        );
+      } else {
+        warnings.push(`node ${id}: engine action node has no journey op marker; imported as exit`);
+      }
+      return {
+        id,
+        type: "exit",
+        data: { reason: typeof config.reason === "string" ? config.reason : undefined },
       };
     }
 
@@ -122,39 +236,99 @@ function decompileNode(id: string, node: TaskNode, warnings: string[]): Decompil
   }
 }
 
-function edgesForNode(id: string, node: TaskNode): JourneyEdge[] {
+function edgesForNode(
+  id: string,
+  node: TaskNode,
+  decompiled: { type: string; data?: unknown },
+): JourneyEdge[] {
   const out: JourneyEdge[] = [];
+  const config = (node.config ?? {}) as Record<string, unknown>;
+  const data = (decompiled.data ?? {}) as Record<string, unknown>;
 
-  if (node.type === "condition") {
-    const config = (node.config ?? {}) as { trueBranch?: string; falseBranch?: string };
-    if (config.trueBranch)
-      out.push({ id: `${id}-true`, source: id, target: config.trueBranch, sourceHandle: "true" });
-    if (config.falseBranch)
-      out.push({
-        id: `${id}-false`,
-        source: id,
-        target: config.falseBranch,
-        sourceHandle: "false",
-      });
-    return out;
+  if (node.type === "condition" || (node.type === "action" && config.op === "timeWindow")) {
+    const conditionConfig = (node.config ?? {}) as { trueBranch?: string; falseBranch?: string };
+    // action timeWindow uses conditionalNext instead
+    if (node.type === "condition") {
+      if (conditionConfig.trueBranch)
+        out.push({
+          id: `${id}-true`,
+          source: id,
+          target: conditionConfig.trueBranch,
+          sourceHandle: "true",
+        });
+      if (conditionConfig.falseBranch)
+        out.push({
+          id: `${id}-false`,
+          source: id,
+          target: conditionConfig.falseBranch,
+          sourceHandle: "false",
+        });
+      return out;
+    }
   }
 
   if (node.type === "router") {
-    const config = (node.config ?? {}) as { routes?: { target: string }[]; defaultTarget?: string };
-    (config.routes ?? []).forEach((route, i) => {
+    const routerConfig = (node.config ?? {}) as {
+      routes?: { target: string }[];
+      defaultTarget?: string;
+    };
+    const routeNames =
+      decompiled.type === "split"
+        ? ((data.routes as { name: string }[]) ?? []).map((r) => r.name)
+        : [];
+    (routerConfig.routes ?? []).forEach((route, i) => {
       out.push({
         id: `${id}-route-${i}`,
         source: id,
         target: route.target,
-        sourceHandle: `route-${i}`,
+        sourceHandle: routeNames[i] ?? `route-${i}`,
       });
     });
-    if (config.defaultTarget) {
+    if (routerConfig.defaultTarget) {
       out.push({
         id: `${id}-default`,
         source: id,
-        target: config.defaultTarget,
+        target: routerConfig.defaultTarget,
         sourceHandle: "default",
+      });
+    }
+    return out;
+  }
+
+  if (node.type === "event") {
+    const eventTarget = node.next?.[0];
+    if (eventTarget) {
+      out.push({ id: `${id}-event`, source: id, target: eventTarget, sourceHandle: "event" });
+    }
+    const timeoutTarget = node.failureNext?.[0];
+    if (timeoutTarget) {
+      out.push({
+        id: `${id}-timeout`,
+        source: id,
+        target: timeoutTarget,
+        sourceHandle: "timeout",
+      });
+    }
+    return out;
+  }
+
+  // action nodes with conditionalNext (abSplit / timeWindow)
+  if (node.conditionalNext?.length) {
+    for (const branch of node.conditionalNext) {
+      const handle = inferHandleFromCondition(branch.condition, decompiled);
+      out.push({
+        id: `${id}-${handle}-${branch.target}`,
+        source: id,
+        target: branch.target,
+        sourceHandle: handle,
+      });
+    }
+    if (node.defaultNext) {
+      out.push({
+        id: `${id}-default`,
+        source: id,
+        target: node.defaultNext,
+        sourceHandle: decompiled.type === "abSplit" ? "default" : "false",
       });
     }
     return out;
@@ -164,4 +338,24 @@ function edgesForNode(id: string, node: TaskNode): JourneyEdge[] {
     out.push({ id: `${id}-${target}`, source: id, target });
   }
   return out;
+}
+
+function inferHandleFromCondition(
+  condition: string,
+  decompiled: { type: string; data?: unknown },
+): string {
+  if (decompiled.type === "abSplit") {
+    const m = condition.match(/__abVariant\s*==\s*"([^"]+)"/);
+    if (m) return m[1]!;
+  }
+  if (condition.includes("__timeWindowOk == true") || condition.includes("__timeWindowOk ==true")) {
+    return "true";
+  }
+  if (
+    condition.includes("__timeWindowOk == false") ||
+    condition.includes("__timeWindowOk ==false")
+  ) {
+    return "false";
+  }
+  return "default";
 }

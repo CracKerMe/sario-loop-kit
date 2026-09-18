@@ -11,6 +11,13 @@ function isHardFail(type: NormalizedEmailEvent["type"]): type is HardFailType {
   return HARD_FAIL_TYPES.has(type as HardFailType);
 }
 
+export interface WebhookContactEvent {
+  workspaceId: string;
+  contactId: string;
+  name: string;
+  properties: Record<string, unknown>;
+}
+
 /**
  * Processes a provider webhook end to end: verify + parse (via the
  * provider), dedup by providerEventId, update email_send's status
@@ -20,13 +27,17 @@ function isHardFail(type: NormalizedEmailEvent["type"]): type is HardFailType {
  * branch on engagement (`email.opened`, `email.clicked`, ...) — this is
  * the differentiator this whole design exists to enable, and it costs
  * one insert.
+ *
+ * Returns the contact events that were newly recorded, so the caller can
+ * wake waitEvent instances (engine eventBus emit) without re-querying.
  */
 export async function processEmailWebhook(
   db: Db,
   provider: EmailProvider,
   request: WebhookRequest,
-): Promise<void> {
+): Promise<WebhookContactEvent[]> {
   const events = await provider.parseWebhook(request);
+  const contactEvents: WebhookContactEvent[] = [];
 
   for (const event of events) {
     const inserted = await db
@@ -96,5 +107,14 @@ export async function processEmailWebhook(
       properties: event.url ? { url: event.url } : {},
       occurredAt: event.occurredAt,
     });
+
+    contactEvents.push({
+      workspaceId: send.workspaceId,
+      contactId: send.contactId,
+      name: `email.${event.type}`,
+      properties: event.url ? { url: event.url } : {},
+    });
   }
+
+  return contactEvents;
 }

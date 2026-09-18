@@ -1,8 +1,10 @@
 import type { Db } from "@loopkit/db";
 import { journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
 import { assertWhitelistedGraph, compile, type JourneyGraph } from "@loopkit/journey";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { WorkflowEngine } from "ts-workflow-engine-lite";
+
+import { createJourneyCompileActions } from "./journeyActions";
 
 export interface CreateJourneyInput {
   workspaceId: string;
@@ -66,13 +68,17 @@ export async function publishJourney(
     .select()
     .from(journeyVersion)
     .where(eq(journeyVersion.journeyId, journeyId))
-    .orderBy(journeyVersion.version)
+    .orderBy(desc(journeyVersion.version))
     .limit(1);
   if (!latestVersion) throw new Error(`journey ${journeyId} has no version to publish`);
 
   const graph = latestVersion.graph as JourneyGraph;
   assertWhitelistedGraph(graph);
-  const { definition, warnings } = compile(graph, { workflowId: j.workflowId, name: j.name });
+  const { definition, warnings } = compile(graph, {
+    workflowId: j.workflowId,
+    name: j.name,
+    actions: createJourneyCompileActions(db),
+  });
 
   await engine.register(definition);
   await db

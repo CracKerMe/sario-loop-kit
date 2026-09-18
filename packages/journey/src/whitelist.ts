@@ -10,18 +10,26 @@ const ALLOWED_TYPES: ReadonlySet<JourneyNode["type"]> = new Set([
   "waitEvent",
   "webhook",
   "exit",
+  "abSplit",
+  "timeWindow",
+  "updateContact",
+  "score",
+  "goal",
+  "notify",
 ]);
 
 /**
  * Server-side gate before compile(): the compiler itself only ever
- * produces `action`/`sql`/etc. engine nodes for the `exit` node's fixed,
- * hardcoded action closure — never from user-controlled graph content.
- * This check exists so that stays true even if the graph came from a
- * client the server does not fully trust (a builder bug, a hand-crafted
- * API request, a future node type added client-side before the server
- * whitelist is updated). Reject anything outside the known node-type set
- * rather than silently compiling it — the injection surface this guards
- * is the sandbox-evaluated `action`/`sql` node config strings.
+ * produces `action` nodes for a fixed set of hardcoded closures (exit,
+ * abSplit, timeWindow) or for runtime handlers injected via
+ * CompileOptions.actions (updateContact/score/goal) — never from
+ * user-controlled graph content. This check exists so that stays true
+ * even if the graph came from a client the server does not fully trust
+ * (a builder bug, a hand-crafted API request, a future node type added
+ * client-side before the server whitelist is updated). Reject anything
+ * outside the known node-type set rather than silently compiling it —
+ * the injection surface this guards is the sandbox-evaluated
+ * `action`/`sql` node config strings.
  */
 export function assertWhitelistedGraph(graph: JourneyGraph): void {
   for (const node of graph.nodes) {
@@ -32,3 +40,5 @@ export function assertWhitelistedGraph(graph: JourneyGraph): void {
     }
   }
 }
+
+export const JOURNEY_NODE_TYPES = [...ALLOWED_TYPES] as const;

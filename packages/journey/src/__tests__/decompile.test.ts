@@ -22,8 +22,8 @@ describe("decompile", () => {
     expect(ids).toContain("a");
     expect(ids).toContain("b");
     expect(graph.edges.some((e) => e.source === "a" && e.target === "b")).toBe(true);
-    // The action node has no journey-graph equivalent -> imported with a
-    // warning rather than failing.
+    // Unknown/untagged action nodes import as exit with a warning rather
+    // than failing the whole import.
     expect(warnings.some((w) => w.includes("action"))).toBe(true);
   });
 

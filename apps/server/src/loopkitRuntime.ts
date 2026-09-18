@@ -1,3 +1,5 @@
+import { createJourneyCompileActions } from "@loopkit/core";
+import { db } from "@loopkit/db";
 import { createLoopkitEngine, type LoopkitEngine } from "@loopkit/engine";
 import { ConsoleEmailProvider, ResendProvider } from "@loopkit/email";
 
@@ -29,6 +31,7 @@ export async function startEngine(): Promise<LoopkitEngine> {
   startingPromise = createLoopkitEngine({
     emailProvider: buildEmailProvider(),
     defaultFromEmail: process.env.DEFAULT_FROM_EMAIL ?? "noreply@loopkit.dev",
+    journeyActions: createJourneyCompileActions(db),
   }).then((engine) => {
     engineInstance = engine;
     return engine;

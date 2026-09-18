@@ -56,3 +56,8 @@ coverage
 .cache
 tmp
 temp
+
+.workbuddy/
+.pi/
+.playwright-cli/
+.claude/

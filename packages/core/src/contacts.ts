@@ -1,6 +1,6 @@
 import type { Db } from "@loopkit/db";
 import { contact, contactEvent } from "@loopkit/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
 export interface UpsertContactInput {
   workspaceId: string;
@@ -100,6 +100,118 @@ export async function unsubscribeContact(
     .update(contact)
     .set({ subscribed: false, unsubscribedAt: new Date() })
     .where(and(eq(contact.workspaceId, workspaceId), eq(contact.id, contactId)));
+}
+
+export type ContactStatusFilter = "all" | "subscribed" | "unsubscribed";
+
+export interface ListContactsInput {
+  workspaceId: string;
+  /** Case-insensitive substring match over email, userId and JSON properties text. */
+  query?: string;
+  status?: ContactStatusFilter;
+  page?: number; // 1-based
+  pageSize?: number;
+}
+
+function contactListWhere(input: ListContactsInput) {
+  const conditions = [eq(contact.workspaceId, input.workspaceId)];
+  const q = input.query?.trim();
+  if (q) {
+    const pattern = `%${q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+    conditions.push(
+      or(
+        ilike(contact.email, pattern),
+        ilike(contact.userId, pattern),
+        sql`${contact.properties}::text ilike ${pattern}`,
+      )!,
+    );
+  }
+  if (input.status === "subscribed") conditions.push(eq(contact.subscribed, true));
+  if (input.status === "unsubscribed") conditions.push(eq(contact.subscribed, false));
+  return and(...conditions)!;
+}
+
+/**
+ * Server-side list for the dashboard: filtering happens in SQL (indexed
+ * email match + GIN-backed properties text match) so pagination and the
+ * total count stay correct as the workspace grows past the old
+ * limit-100 endpoint. Defaults preserve the previous page size.
+ */
+export async function listContacts(
+  db: Db,
+  input: ListContactsInput,
+): Promise<{ contacts: Contact[]; total: number }> {
+  const page = Math.max(1, input.page ?? 1);
+  const pageSize = Math.min(500, Math.max(1, input.pageSize ?? 100));
+  const where = contactListWhere(input);
+
+  const [rows, [countRow]] = await Promise.all([
+    db
+      .select()
+      .from(contact)
+      .where(where)
+      .orderBy(desc(contact.updatedAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contact)
+      .where(where),
+  ]);
+
+  return { contacts: rows, total: countRow?.count ?? 0 };
+}
+
+/** Same filters as listContacts but unpaginated, capped for safety. */
+export const CONTACT_EXPORT_LIMIT = 10_000;
+
+export async function exportContacts(db: Db, input: ListContactsInput): Promise<Contact[]> {
+  const rows = await db
+    .select()
+    .from(contact)
+    .where(contactListWhere(input))
+    .orderBy(desc(contact.updatedAt))
+    .limit(CONTACT_EXPORT_LIMIT);
+  return rows;
+}
+
+export type ContactBulkAction = "unsubscribe" | "resubscribe" | "delete";
+
+/**
+ * Bulk management op in one statement — atomic without an explicit
+ * transaction. Workspace scoping in the WHERE clause means ids from
+ * another workspace are silently not-affecting rather than leaking.
+ * Deleting a contact cascades to its events via the FK.
+ */
+export async function bulkUpdateContacts(
+  db: Db,
+  input: { workspaceId: string; ids: string[]; action: ContactBulkAction },
+): Promise<{ affected: number }> {
+  if (input.ids.length === 0) return { affected: 0 };
+  const where = and(eq(contact.workspaceId, input.workspaceId), inArray(contact.id, input.ids));
+
+  switch (input.action) {
+    case "unsubscribe": {
+      const rows = await db
+        .update(contact)
+        .set({ subscribed: false, unsubscribedAt: new Date() })
+        .where(where)
+        .returning({ id: contact.id });
+      return { affected: rows.length };
+    }
+    case "resubscribe": {
+      const rows = await db
+        .update(contact)
+        .set({ subscribed: true, unsubscribedAt: null })
+        .where(where)
+        .returning({ id: contact.id });
+      return { affected: rows.length };
+    }
+    case "delete": {
+      const rows = await db.delete(contact).where(where).returning({ id: contact.id });
+      return { affected: rows.length };
+    }
+  }
 }
 
 export interface RecordEventInput {
