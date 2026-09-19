@@ -19,12 +19,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, api, type FullEmailTemplateDto } from "@/lib/api";
+import type { CopilotEmailResultDto } from "@/lib/api";
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { Skeleton } from "@loopkit/ui/components/skeleton";
 
 import { Canvas } from "./Canvas";
+import { EmailCopilotDialog } from "./EmailCopilotDialog";
 import { PreviewPanel } from "./PreviewPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
@@ -78,6 +80,7 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
   const [localIssues, setLocalIssues] = useState<EmailDocIssue[]>([]);
   const [serverIssues, setServerIssues] = useState<EmailDocIssue[]>([]);
   const [saving, setSaving] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -168,6 +171,21 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
     }
   };
 
+  // Copilot output replaces the working canvas and subject. The baseline is
+  // left untouched: applying counts as unsaved work, so the normal save flow
+  // (with its dirty guard) takes over from here.
+  const applyCopilotResult = useCallback(
+    (subject: string, doc: EmailDocJson, result: CopilotEmailResultDto) => {
+      editor?.commands.setContent(doc);
+      setSubject(subject);
+      setDirty(true);
+      setLocalIssues(safeValidate(doc));
+      setCopilotOpen(false);
+      toast.success(`Copilot 邮件已套用（${result.model}，记得保存）`);
+    },
+    [editor],
+  );
+
   if (!editor) {
     return (
       <div className="lk-fade-up mx-auto w-full max-w-6xl px-4 py-6">
@@ -219,6 +237,16 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
               />
               {dirty ? "Unsaved" : "All changes saved"}
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setCopilotOpen(true)}
+              className="shadow-sm"
+            >
+              <SparklesIcon className="size-3.5" aria-hidden="true" />
+              Copilot
+            </Button>
             <Button size="sm" type="button" onClick={save} disabled={saving} className="shadow-sm">
               {saving && <SaveIcon data-icon="inline-start" className="animate-spin" />}Save changes
             </Button>
@@ -298,6 +326,12 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
           <ValidationPanel issues={allIssues} />
         </aside>
       </div>
+
+      <EmailCopilotDialog
+        open={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        onApply={applyCopilotResult}
+      />
     </div>
   );
 }

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
+    "@loopkit/email-doc": "workspace:*",
     "@loopkit/journey": "workspace:*",
     "zod": "catalog:"
   },

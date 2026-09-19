@@ -12,11 +12,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.12",
-    "@loopkit/auth": "workspace:*",
     "@loopkit/ai": "workspace:*",
+    "@loopkit/auth": "workspace:*",
     "@loopkit/core": "workspace:*",
     "@loopkit/db": "workspace:*",
     "@loopkit/email": "workspace:*",
+    "@loopkit/email-doc": "workspace:*",
     "@loopkit/engine": "workspace:*",
     "@loopkit/env": "workspace:*",
     "@loopkit/journey": "workspace:*",

@@ -111,6 +111,9 @@ importers:
       '@loopkit/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@loopkit/email-doc':
+        specifier: workspace:*
+        version: link:../../packages/email-doc
       '@loopkit/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -281,6 +284,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.125.0
         version: 0.125.0(zod@4.6.1)
+      '@loopkit/email-doc':
+        specifier: workspace:*
+        version: link:../email-doc
       '@loopkit/journey':
         specifier: workspace:*
         version: link:../journey

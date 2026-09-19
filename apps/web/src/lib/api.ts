@@ -105,6 +105,15 @@ export type EmailTemplateDto = {
  * server-rendered products. A template created as raw HTML has `doc: null`
  * and `source: "html"`.
  */
+export type CopilotEmailResultDto = {
+  subject: string;
+  doc: EmailDocJson;
+  validation: { valid: boolean; issues: { path: string; message: string }[] };
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
 export type FullEmailTemplateDto = {
   id: string;
   name: string;
@@ -549,6 +558,16 @@ export const api = {
   /** Create a new template from a structured document; `source` becomes "tiptap". */
   createTemplateFromDoc: (input: { name: string; subject: string; doc: EmailDocJson }) =>
     request<{ template: FullEmailTemplateDto }>("/v1/email-templates", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  /**
+   * Email copilot: natural language to a guarded `{subject, doc}`. Error
+   * semantics: 503 ai_not_configured, 502 ai_guard_rejected (issues only),
+   * 400 invalid_request — `ApiError.body` carries them.
+   */
+  copilotEmailTemplate: (input: { request: string; tone?: string; audience?: string }) =>
+    request<CopilotEmailResultDto>("/v1/email-templates/copilot", {
       method: "POST",
       body: JSON.stringify(input),
     }),

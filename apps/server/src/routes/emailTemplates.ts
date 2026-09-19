@@ -2,11 +2,14 @@ import {
   createEmailTemplate,
   EmailDocValidationError,
   getEmailTemplate,
+  listContactPropertyKeys,
   listEmailTemplates,
   previewEmailDoc,
   updateEmailTemplate,
 } from "@loopkit/core";
+import { AiConfigError, AiGraphError, generateEmailContent } from "@loopkit/ai";
 import { db } from "@loopkit/db";
+import { MERGE_TAG_SUGGESTIONS, validateEmailDoc } from "@loopkit/email-doc";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -140,5 +143,70 @@ emailTemplatesRouter.put("/:id", async (c) => {
     return c.json({ template });
   } catch (error) {
     return invalidDoc(c, error);
+  }
+});
+
+/**
+ * The email copilot: natural language to `{subject, doc}`. Context gathering
+ * is workspace-scoped and intentionally tiny — the model only needs the
+ * merge-tag paths that actually exist, so it cannot personalise against a
+ * field no contact carries. `MERGE_TAG_SUGGESTIONS` are always offered (they
+ * cover the built-in contact fields); observed `contact.properties` keys are
+ * mapped to `contact.<key>` paths and merged in.
+ *
+ * Error semantics mirror the journey copilot: AiConfigError -> 503
+ * ai_not_configured, AiGraphError -> 502 ai_guard_rejected (issues only, the
+ * raw payload never leaves the guard), anything else -> 500.
+ */
+const copilotSchema = z.object({
+  request: z.string().min(10).max(2000),
+  tone: z.string().max(200).optional(),
+  audience: z.string().max(200).optional(),
+});
+
+const MERGE_TAG_PATH_LIMIT = 60;
+
+emailTemplatesRouter.post("/copilot", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = copilotSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const propertyKeys = await listContactPropertyKeys(db, workspaceId);
+  const mergeTagPaths = [
+    ...new Set([...MERGE_TAG_SUGGESTIONS, ...propertyKeys.map((key) => `contact.${key}`)]),
+  ].slice(0, MERGE_TAG_PATH_LIMIT);
+
+  try {
+    const result = await generateEmailContent({
+      request: parsed.data.request,
+      tone: parsed.data.tone,
+      audience: parsed.data.audience,
+      mergeTagPaths,
+    });
+    // validateEmailDoc already ran inside the guard; the echo is for the
+    // UI's issue list and to fail loudly if the two layers ever drift apart.
+    return c.json({
+      subject: result.subject,
+      doc: result.doc,
+      validation: validateEmailDoc(result.doc),
+      model: result.model,
+      attempts: result.attempts,
+      usage: result.usage,
+    });
+  } catch (error) {
+    if (error instanceof AiConfigError) {
+      return c.json({ error: "ai_not_configured", message: error.message }, 503);
+    }
+    if (error instanceof AiGraphError) {
+      return c.json(
+        { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+        502,
+      );
+    }
+    return c.json(
+      { error: "ai_unavailable", message: error instanceof Error ? error.message : String(error) },
+      500,
+    );
   }
 });

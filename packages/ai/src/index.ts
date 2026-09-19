@@ -22,3 +22,16 @@ export {
   type JourneyGenerationContext,
   type JourneyTemplateRef,
 } from "./prompt";
+export {
+  generateEmailContent,
+  type GeneratedEmail,
+  type GenerateEmailOptions,
+} from "./generateEmail";
+export { guardEmailContent, type GeneratedEmailContent } from "./emailGuard";
+export {
+  EMAIL_TOOL_NAME,
+  buildEmailRepairPrompt,
+  buildEmailSystemPrompt,
+  buildEmailUserPrompt,
+  type EmailGenerationContext,
+} from "./emailPrompt";
