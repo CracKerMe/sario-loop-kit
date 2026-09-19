@@ -30,6 +30,7 @@ import {
   DEFAULT_AI_MODEL,
   type AiConfig,
 } from "./client";
+import { callOpenAiForTurn } from "./openaiBackend";
 
 export interface GeneratedJourney {
   graph: JourneyGraph;
@@ -70,44 +71,80 @@ export async function generateJourneyGraph(
     options.config ??
     (options.client
       ? // Injected client (tests / caller-managed auth): no env needed.
-        { apiKey: "", model: options.model ?? DEFAULT_AI_MODEL, maxTokens: DEFAULT_AI_MAX_TOKENS }
+        {
+          provider: "anthropic",
+          apiKey: "",
+          model: options.model ?? DEFAULT_AI_MODEL,
+          maxTokens: DEFAULT_AI_MAX_TOKENS,
+        }
       : aiConfigFromEnv());
-  const client = options.client ?? createAiClient(config);
   const model = options.model ?? config.model;
   const maxAttempts = options.maxAttempts ?? 2;
 
   const system = buildSystemPrompt();
-  const tools: Anthropic.Messages.Tool[] = [
-    {
-      name: GRAPH_TOOL_NAME,
-      description: "Submit the complete journey graph for the user's request.",
-      input_schema: journeyToolSchema() as Anthropic.Messages.Tool.InputSchema,
-    },
-  ];
+  const toolDescription = "Submit the complete journey graph for the user's request.";
+  const toolParameters = journeyToolSchema();
+
+  // Provider-neutral turn: the loop below is provider-agnostic. Anthropic
+  // goes through the SDK; openai-compatible gateways through the fetch
+  // backend. Injected clients (tests) always take the SDK path.
+  const callTurn: (ms: MessageParam[]) => Promise<{
+    content: Anthropic.Messages.ContentBlock[];
+    stopReason: string;
+    usage: { inputTokens: number; outputTokens: number };
+  }> =
+    options.client || config.provider === "anthropic"
+      ? async (ms) => {
+          const client = options.client ?? createAiClient(config);
+          const response = await client.messages.create({
+            model,
+            max_tokens: config.maxTokens,
+            system,
+            messages: ms,
+            tools: [
+              {
+                name: GRAPH_TOOL_NAME,
+                description: toolDescription,
+                input_schema: toolParameters as Anthropic.Messages.Tool.InputSchema,
+              },
+            ],
+            // Force the graph tool: a prose answer is useless and would only
+            // open a path where unguarded text gets parsed downstream.
+            tool_choice: { type: "tool", name: GRAPH_TOOL_NAME },
+          });
+          return {
+            content: response.content,
+            stopReason: response.stop_reason ?? "unknown",
+            usage: {
+              inputTokens: response.usage?.input_tokens ?? 0,
+              outputTokens: response.usage?.output_tokens ?? 0,
+            },
+          };
+        }
+      : (ms) =>
+          callOpenAiForTurn({
+            config,
+            model,
+            system,
+            messages: ms,
+            toolDescription,
+            toolParameters,
+          });
 
   const messages: MessageParam[] = [{ role: "user", content: buildUserPrompt(ctx) }];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const response = await client.messages.create({
-      model,
-      max_tokens: config.maxTokens,
-      system,
-      messages,
-      tools,
-      // Force the graph tool: a prose answer is useless and would only
-      // open a path where unguarded text gets parsed downstream.
-      tool_choice: { type: "tool", name: GRAPH_TOOL_NAME },
-    });
+    const turn = await callTurn(messages);
 
-    usage.inputTokens += response.usage?.input_tokens ?? 0;
-    usage.outputTokens += response.usage?.output_tokens ?? 0;
+    usage.inputTokens += turn.usage.inputTokens;
+    usage.outputTokens += turn.usage.outputTokens;
 
-    const toolCall = extractToolInput(response.content);
+    const toolCall = extractToolInput(turn.content);
     if (!toolCall) {
       lastError = new AiGraphError(
-        `model did not call the ${GRAPH_TOOL_NAME} tool (stop_reason: ${response.stop_reason})`,
+        `model did not call the ${GRAPH_TOOL_NAME} tool (stop_reason: ${turn.stopReason})`,
       );
       break; // nothing useful to repair from — rethrow below
     }
@@ -120,13 +157,13 @@ export async function generateJourneyGraph(
       if (attempt === maxAttempts) break;
       // Repair round: replay the assistant turn and return the guard
       // failures as the tool result.
-      messages.push({ role: "assistant", content: response.content });
+      messages.push({ role: "assistant", content: turn.content });
       messages.push({
         role: "user",
         content: [
           {
             type: "tool_result",
-            tool_use_id: response.content.find(
+            tool_use_id: turn.content.find(
               (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
             )!.id,
             is_error: true,

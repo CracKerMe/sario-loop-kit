@@ -39,11 +39,11 @@ function Dialog({
       />
       <div
         className={cn(
-          "lk-fade-up relative z-10 w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-2xl",
+          "lk-fade-up relative z-10 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl",
           className,
         )}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 p-5 pb-0">
           <div>
             <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
@@ -57,7 +57,7 @@ function Dialog({
             <XIcon className="size-4" />
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-5">{children}</div>
       </div>
     </div>
   );

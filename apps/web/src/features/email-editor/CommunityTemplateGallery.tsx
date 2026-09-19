@@ -132,7 +132,7 @@ export function CommunityTemplateGallery({
         </p>
       )}
 
-      <div className="grid max-h-[52vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+      <div className="grid max-h-[calc(85vh-12rem)] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
         {visible.map((template) => {
           const busy = submitting === template.id;
           return (
