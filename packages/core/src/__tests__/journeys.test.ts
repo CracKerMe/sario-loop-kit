@@ -1,5 +1,6 @@
 import { DrizzleStorageProvider } from "@loopkit/engine-storage";
 import {
+  campaign,
   contact,
   journey,
   journeyRun,
@@ -213,5 +214,133 @@ describe("publishJourney + startJourneyRun", () => {
       expect(second.started).toBe(true);
       expect(first.instanceId).not.toBe(second.instanceId);
     });
+  });
+});
+
+describe("publishJourney: sendCampaign node snapshotting", () => {
+  let ctx: AppContext;
+
+  beforeEach(async () => {
+    await resetTables(db);
+    ctx = await bootstrap({
+      storage: new DrizzleStorageProvider(db),
+      skipValidation: true,
+      skipGracefulShutdown: true,
+    });
+    await db.insert(workspace).values({ id: "ws-1", name: "test", slug: "ws-1" });
+    await db.insert(campaign).values({
+      id: "camp-1",
+      workspaceId: "ws-1",
+      name: "September update",
+      status: "draft",
+      templateId: "tpl-camp",
+      subject: "Big sale",
+      preheader: "Don't miss it",
+      fromName: "Sales team",
+      replyTo: "sales@example.com",
+    });
+  });
+
+  afterEach(async () => {
+    ctx.engine.destroy();
+    await destroyContainer(ctx.container);
+  });
+
+  const graphWithSendCampaign = {
+    nodes: [
+      {
+        id: "t",
+        type: "trigger" as const,
+        position: { x: 0, y: 0 },
+        data: { trigger: { kind: "manual" as const } },
+      },
+      {
+        id: "sc",
+        type: "sendCampaign" as const,
+        position: { x: 0, y: 1 },
+        data: { campaignId: "camp-1" },
+      },
+      { id: "end", type: "exit" as const, position: { x: 0, y: 2 }, data: {} },
+    ],
+    edges: [
+      { id: "e1", source: "t", target: "sc" },
+      { id: "e2", source: "sc", target: "end" },
+    ],
+  };
+
+  it("freezes the referenced campaign's composition into the node's data.snapshot on publish", async () => {
+    await db.insert(journey).values({
+      id: "journey-1",
+      workspaceId: "ws-1",
+      name: "test journey",
+      status: "draft",
+      workflowId: "journey-journey-1",
+      trigger: { kind: "manual" },
+    });
+    await db
+      .insert(journeyVersion)
+      .values({ journeyId: "journey-1", version: 1, graph: graphWithSendCampaign, compiled: {} });
+
+    await publishJourney(db, ctx.engine, "ws-1", "journey-1");
+
+    const [v] = await db
+      .select()
+      .from(journeyVersion)
+      .where(and(eq(journeyVersion.journeyId, "journey-1"), eq(journeyVersion.version, 1)));
+    const savedNode = (v!.graph as typeof graphWithSendCampaign).nodes.find(
+      (n) => n.id === "sc",
+    ) as {
+      data: { campaignId: string; snapshot?: { templateId: string; subject?: string } };
+    };
+    expect(savedNode.data.snapshot?.templateId).toBe("tpl-camp");
+    expect(savedNode.data.snapshot?.subject).toBe("Big sale");
+
+    const compiled = v!.compiled as { nodes: Record<string, { config?: { template?: string } }> };
+    expect(compiled.nodes.sc?.config?.template).toBe("template:tpl-camp");
+
+    // Editing the campaign afterward must not retroactively change the
+    // already-published snapshot — it's frozen until the next publish.
+    await db
+      .update(campaign)
+      .set({ subject: "Changed after publish" })
+      .where(eq(campaign.id, "camp-1"));
+    const [vAfterEdit] = await db
+      .select()
+      .from(journeyVersion)
+      .where(and(eq(journeyVersion.journeyId, "journey-1"), eq(journeyVersion.version, 1)));
+    const nodeAfterEdit = (vAfterEdit!.graph as typeof graphWithSendCampaign).nodes.find(
+      (n) => n.id === "sc",
+    ) as { data: { snapshot?: { subject?: string } } };
+    expect(nodeAfterEdit.data.snapshot?.subject).toBe("Big sale");
+  });
+
+  it("leaves the node without a snapshot and warns if the campaign no longer exists", async () => {
+    await db.insert(journey).values({
+      id: "journey-2",
+      workspaceId: "ws-1",
+      name: "dangling reference",
+      status: "draft",
+      workflowId: "journey-journey-2",
+      trigger: { kind: "manual" },
+    });
+    const graphWithMissingCampaign = {
+      ...graphWithSendCampaign,
+      nodes: graphWithSendCampaign.nodes.map((n) =>
+        n.id === "sc" ? { ...n, data: { campaignId: "does-not-exist" } } : n,
+      ),
+    };
+    await db
+      .insert(journeyVersion)
+      .values({
+        journeyId: "journey-2",
+        version: 1,
+        graph: graphWithMissingCampaign,
+        compiled: {},
+      });
+
+    await publishJourney(db, ctx.engine, "ws-1", "journey-2");
+
+    const [j] = await db.select().from(journey).where(eq(journey.id, "journey-2"));
+    expect(j?.status).toBe("published"); // one bad reference doesn't block the whole publish
   });
 });

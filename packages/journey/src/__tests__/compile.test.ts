@@ -570,3 +570,62 @@ describe("compile: marketing node catalog", () => {
     expect(data.replyTo).toBe("sam@example.com");
   });
 });
+
+describe("compile: sendCampaign", () => {
+  const graphWith = (data: JourneyGraph["nodes"][number]["data"]): JourneyGraph => ({
+    nodes: [
+      {
+        id: "t",
+        type: "trigger",
+        position: { x: 0, y: 0 },
+        data: { trigger: { kind: "contact_created" } },
+      },
+      { id: "sc", type: "sendCampaign", position: { x: 0, y: 1 }, data } as never,
+      { id: "end", type: "exit", position: { x: 0, y: 2 }, data: {} },
+    ],
+    edges: [
+      { id: "e0", source: "t", target: "sc" },
+      { id: "e1", source: "sc", target: "end" },
+    ],
+  });
+
+  it("compiles into a notification node using the resolved snapshot, not the campaign id", () => {
+    const graph = graphWith({
+      campaignId: "camp-1",
+      snapshot: {
+        templateId: "tpl-camp",
+        subject: "Big sale",
+        preheader: "Don't miss it",
+        fromName: "Sales team",
+        replyTo: "sales@example.com",
+      },
+    });
+    const { definition, warnings } = compile(graph, { workflowId: "wf-sc", name: "sc" });
+    expect(warnings).toEqual([]);
+    const node = definition.nodes.sc!;
+    expect(node.type).toBe("notification");
+    expect(node.config?.channel).toBe("loopkit-email");
+    expect(node.config?.template).toBe("template:tpl-camp");
+    expect(node.config?.subject).toBe("Big sale");
+    const data = node.config?.data as Record<string, unknown>;
+    expect(data.templateId).toBe("tpl-camp");
+    expect(data.preheader).toBe("Don't miss it");
+    expect(data.fromName).toBe("Sales team");
+    expect(data.replyTo).toBe("sales@example.com");
+    // Must NOT carry campaignId: the email channel treats data.campaignId as
+    // the idempotency runKey for a broadcast fan-out (shared across every
+    // recipient's instance), which would collide across every contact that
+    // walks this same journey node. A journey send is scoped by
+    // journeyRunId instead, exactly like a plain `email` node.
+    expect(data.campaignId).toBeUndefined();
+    expect(data.journeyRunId).toBe("{{ journeyRunId }}");
+    expect(data.nodeId).toBe("sc");
+  });
+
+  it("without a resolved snapshot, warns and compiles to an inert no-op instead of throwing", () => {
+    const graph = graphWith({ campaignId: "camp-missing" });
+    const { definition, warnings } = compile(graph, { workflowId: "wf-sc2", name: "sc2" });
+    expect(warnings.some((w) => w.includes("camp-missing"))).toBe(true);
+    expect(definition.nodes.sc!.type).toBe("action");
+  });
+});
