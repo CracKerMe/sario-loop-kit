@@ -1,4 +1,5 @@
 export {
+  AiConfigError,
   aiConfigFromEnv,
   createAiClient,
   DEFAULT_AI_MODEL,

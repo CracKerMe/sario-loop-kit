@@ -21,10 +21,18 @@ export interface AiConfig {
 export const DEFAULT_AI_MODEL = "claude-sonnet-4-5";
 export const DEFAULT_AI_MAX_TOKENS = 8192;
 
+/** Thrown when AI features are used without a usable configuration. */
+export class AiConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiConfigError";
+  }
+}
+
 export function aiConfigFromEnv(source: NodeJS.ProcessEnv = process.env): AiConfig {
   const apiKey = source.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error(
+    throw new AiConfigError(
       "ANTHROPIC_API_KEY is not set — AI features are unavailable until it is configured",
     );
   }

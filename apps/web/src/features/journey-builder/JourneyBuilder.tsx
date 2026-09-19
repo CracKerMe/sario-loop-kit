@@ -32,6 +32,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  SparklesIcon,
   SquareArrowOutUpRightIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -43,11 +44,13 @@ import { Dialog } from "@/components/dialog";
 import {
   api,
   type CampaignDto,
+  type CopilotResultDto,
   type EmailTemplateDto,
   type JourneyDto,
   type JourneyGraphDto,
   type ValidationResult,
 } from "@/lib/api";
+import { CopilotDialog } from "./CopilotDialog";
 import {
   NODE_CATEGORY_LABELS,
   NODE_META,
@@ -402,6 +405,7 @@ export function JourneyBuilder({
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateSubject, setNewTemplateSubject] = useState("");
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
   const nodeVariables = useMemo(
@@ -502,6 +506,27 @@ export function JourneyBuilder({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, dirty, saving, nodes.length, status]);
+
+  // Copilot output replaces the working canvas. Baseline is intentionally
+  // left untouched: the applied graph counts as unsaved work so the normal
+  // save/publish flow (and its dirty guard) takes over from here.
+  const applyCopilotResult = useCallback(
+    (g: JourneyGraphDto, result: CopilotResultDto) => {
+      const flow = graphToFlow(g);
+      const nextNodes = flow.nodes.map((n) =>
+        n.type === "email" && !(n.data as { templateId?: string }).templateId
+          ? { ...n, data: { ...(n.data as object), templateId: templates[0]?.id ?? "" } }
+          : n,
+      );
+      setNodes(nextNodes);
+      setEdges(flow.edges);
+      setSelected(null);
+      setCopilotOpen(false);
+      requestAnimationFrame(() => rfInstance?.fitView({ padding: 0.15 }));
+      toast.success(`Copilot 旅程已套用（${result.graph.nodes.length} 个节点，记得保存草稿）`);
+    },
+    [templates, rfInstance],
+  );
 
   const onConnect = useCallback((connection: Connection) => {
     setEdges((eds) =>
@@ -795,6 +820,16 @@ export function JourneyBuilder({
               />
             </div>
           )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Open Journey Copilot"
+            title="Journey Copilot"
+            onClick={() => setCopilotOpen(true)}
+            className="shrink-0"
+          >
+            <SparklesIcon />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2061,6 +2096,12 @@ export function JourneyBuilder({
           </Button>
         </form>
       </Dialog>
+
+      <CopilotDialog
+        open={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        onApply={applyCopilotResult}
+      />
     </div>
   );
 }

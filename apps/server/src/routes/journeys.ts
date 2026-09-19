@@ -15,8 +15,16 @@ import {
   type JourneyMigrationStrategy,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
-import { contact, emailTemplate, journey, journeyRun, journeyVersion } from "@loopkit/db/schema";
+import {
+  contact,
+  contactEvent,
+  emailTemplate,
+  journey,
+  journeyRun,
+  journeyVersion,
+} from "@loopkit/db/schema";
 import { renderTemplate } from "@loopkit/email";
+import { AiConfigError, AiGraphError, generateJourneyGraph } from "@loopkit/ai";
 import { dryRunJourney, validateGraph, type JourneyGraph } from "@loopkit/journey";
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -69,6 +77,75 @@ journeysRouter.get("/", async (c) => {
     .where(eq(journey.workspaceId, workspaceId))
     .orderBy(desc(journey.updatedAt));
   return c.json({ journeys: rows });
+});
+
+const copilotSchema = z.object({
+  /** What the operator wants, in their own words. */
+  request: z.string().trim().min(3).max(4000),
+});
+
+// Journey Copilot: natural language → guarded JourneyGraph. The model
+// pipeline (@loopkit/ai) is the ONLY producer here — its output has already
+// cleared zod structure, the node whitelist and validateGraph before this
+// handler sees it. Workspace context is gathered server-side so the model
+// can only reference templates / events / child journeys that exist.
+journeysRouter.post("/copilot", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = copilotSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [templates, publishedJourneys, events] = await Promise.all([
+    db
+      .select({ id: emailTemplate.id, name: emailTemplate.name })
+      .from(emailTemplate)
+      .where(eq(emailTemplate.workspaceId, workspaceId))
+      .limit(100),
+    db
+      .select({ id: journey.id, name: journey.name })
+      .from(journey)
+      .where(and(eq(journey.workspaceId, workspaceId), eq(journey.status, "published")))
+      .limit(50),
+    db
+      .selectDistinct({ name: contactEvent.name })
+      .from(contactEvent)
+      .where(eq(contactEvent.workspaceId, workspaceId))
+      .limit(50),
+  ]);
+
+  try {
+    const result = await generateJourneyGraph({
+      request: parsed.data.request,
+      templates,
+      childJourneys: publishedJourneys,
+      events: events.map((e) => e.name),
+    });
+    // validateGraph already ran inside the guard; the echo is for the UI's
+    // issue list and to fail loudly if the two layers ever drift apart.
+    return c.json({
+      graph: result.graph,
+      validation: validateGraph(result.graph),
+      model: result.model,
+      attempts: result.attempts,
+      usage: result.usage,
+    });
+  } catch (error) {
+    if (error instanceof AiConfigError) {
+      return c.json({ error: "ai_not_configured", message: error.message }, 503);
+    }
+    if (error instanceof AiGraphError) {
+      // The model could not produce a graph that survives the guard —
+      // never hand back the raw payload, only the issue list.
+      return c.json(
+        { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+        502,
+      );
+    }
+    return c.json(
+      { error: "ai_unavailable", message: error instanceof Error ? error.message : String(error) },
+      500,
+    );
+  }
 });
 
 journeysRouter.post("/", async (c) => {

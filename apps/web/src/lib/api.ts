@@ -66,6 +66,14 @@ export type JourneyDto = {
 export type ValidationIssue = { nodeId?: string; message: string };
 export type ValidationResult = { valid: boolean; issues: ValidationIssue[] };
 
+export type CopilotResultDto = {
+  graph: JourneyGraphDto;
+  validation: ValidationResult;
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
 export type ContactDto = {
   id: string;
   email: string;
@@ -401,6 +409,11 @@ export const api = {
     return request<{ runs: InstanceSearchRowDto[] }>(`/v1/runs${suffix}`);
   },
   journeys: () => request<{ journeys: JourneyDto[] }>("/v1/journeys"),
+  copilotGenerate: (requestText: string) =>
+    request<CopilotResultDto>("/v1/journeys/copilot", {
+      method: "POST",
+      body: JSON.stringify({ request: requestText }),
+    }),
   journey: (id: string) =>
     request<{
       journey: JourneyDto;
