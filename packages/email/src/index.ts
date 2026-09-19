@@ -25,3 +25,13 @@ export {
   type UnsubscribeLinkPayload,
 } from "./channel";
 export { processEmailWebhook, type WebhookContactEvent } from "./webhook";
+export {
+  createWorkspaceSendLimiter,
+  sendLimitsFromEnv,
+  type SendLimiter,
+  type SendSlotRelease,
+  type WorkspaceLimiterStat,
+  type WorkspaceSendLimiterConfig,
+  type WorkspaceSendLimiterStats,
+  type WorkspaceSendLimits,
+} from "./rateLimit";

@@ -17,8 +17,11 @@ export type {
   NotificationResult,
 } from "ts-workflow-engine-lite";
 
-import type { EmailProvider } from "./provider";
+import type { EmailProvider, SendEmailResult } from "./provider";
 import { renderTemplate } from "./render";
+import type { SendLimiter } from "./rateLimit";
+
+export type { SendLimiter, SendSlotRelease, WorkspaceSendLimits } from "./rateLimit";
 
 /**
  * The shape `notification` node's `config.data` must carry for this
@@ -120,6 +123,14 @@ export interface CreateEmailChannelOptions {
    * server from @loopkit/core's token helpers + PUBLIC_*_URL env.
    */
   buildUnsubscribe?: (payload: UnsubscribeLinkPayload) => UnsubscribeLink | null;
+  /**
+   * Per-workspace send throttle (P2.5). Acquired around the `provider.send`
+   * call ONLY — idempotency bookkeeping, the compliance gate and template
+   * loading all run unthrottled, so quota is consumed exclusively by sends
+   * that would otherwise hit the wire. Omitted = unlimited (the limiter
+   * degrades to a pass-through; the server wires one from env by default).
+   */
+  sendLimiter?: SendLimiter;
 }
 
 export interface RecipientGateInput {
@@ -304,6 +315,7 @@ export function createEmailNotificationChannel(
     loadTemplate = defaultLoadTemplate,
     recipientGate = defaultRecipientGate,
     buildUnsubscribe,
+    sendLimiter,
   } = options;
 
   return {
@@ -462,15 +474,27 @@ export function createEmailNotificationChannel(
           headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
         }
 
-        const result = await provider.send({
-          to: message.target,
-          from,
-          replyTo,
-          subject,
-          html,
-          text,
-          headers,
-        });
+        // Throttle at the provider boundary: everything above (idempotency
+        // row, suppression gate, template load, render) is local work and
+        // runs unthrottled — a queued slot is held only across the actual
+        // outbound call. The release MUST happen even when the provider
+        // throws, or one failed send permanently shrinks the workspace's
+        // concurrency budget.
+        const releaseSlot = sendLimiter ? await sendLimiter.acquire(data.workspaceId) : null;
+        let result: SendEmailResult;
+        try {
+          result = await provider.send({
+            to: message.target,
+            from,
+            replyTo,
+            subject,
+            html,
+            text,
+            headers,
+          });
+        } finally {
+          releaseSlot?.();
+        }
         await db
           .update(emailSend)
           .set({ status: "sent", providerMessageId: result.messageId, sentAt: new Date() })

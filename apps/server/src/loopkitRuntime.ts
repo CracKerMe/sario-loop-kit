@@ -1,7 +1,12 @@
 import { createJourneyCompileActions } from "@loopkit/core";
 import { db } from "@loopkit/db";
 import { createLoopkitEngine, type LoopkitEngine } from "@loopkit/engine";
-import { ConsoleEmailProvider, ResendProvider } from "@loopkit/email";
+import {
+  ConsoleEmailProvider,
+  ResendProvider,
+  createWorkspaceSendLimiter,
+  sendLimitsFromEnv,
+} from "@loopkit/email";
 
 import { buildOneClickLink } from "./unsubscribeLinks";
 
@@ -26,6 +31,28 @@ function buildEmailProvider() {
   return new ResendProvider(apiKey, process.env.RESEND_WEBHOOK_SECRET);
 }
 
+/**
+ * Per-workspace send throttle (P2.5). Defaults protect the provider even
+ * when the operator configures nothing: at most 5 outbound calls in flight
+ * per workspace, no per-minute cap. Env overrides:
+ *   SEND_MAX_CONCURRENT_PER_WORKSPACE — in-flight cap per workspace
+ *   SEND_PER_MINUTE_PER_WORKSPACE    — send starts per rolling minute
+ * Invalid/absent values fall back per-dimension via sendLimitsFromEnv.
+ */
+function buildSendLimiter() {
+  const config = sendLimitsFromEnv(process.env);
+  const limiter = createWorkspaceSendLimiter({
+    ...config,
+    defaults: { concurrency: 5, perMinute: 0, ...config.defaults },
+  });
+  const envConcurrency = process.env.SEND_MAX_CONCURRENT_PER_WORKSPACE;
+  const envPerMinute = process.env.SEND_PER_MINUTE_PER_WORKSPACE;
+  console.log(
+    `[loopkit] send limiter: concurrency=${envConcurrency ?? "5 (default)"} perMinute=${envPerMinute ?? "unlimited"}`,
+  );
+  return limiter;
+}
+
 export async function startEngine(): Promise<LoopkitEngine> {
   if (engineInstance) return engineInstance;
   if (startingPromise) return startingPromise;
@@ -35,6 +62,7 @@ export async function startEngine(): Promise<LoopkitEngine> {
     defaultFromEmail: process.env.DEFAULT_FROM_EMAIL ?? "noreply@loopkit.dev",
     journeyActions: createJourneyCompileActions(db),
     buildUnsubscribe: buildOneClickLink,
+    sendLimiter: buildSendLimiter(),
   }).then((engine) => {
     engineInstance = engine;
     return engine;

@@ -4,6 +4,7 @@ import {
   createEmailNotificationChannel,
   type EmailProvider,
   type NotificationChannel,
+  type SendLimiter,
   type UnsubscribeLink,
   type UnsubscribeLinkPayload,
 } from "@loopkit/email";
@@ -39,6 +40,11 @@ export interface LoopkitEngineOptions {
    * about. Omitted = no List-Unsubscribe headers.
    */
   buildUnsubscribe?: (payload: UnsubscribeLinkPayload) => UnsubscribeLink | null;
+  /**
+   * Per-workspace send throttle handed to the email channel (P2.5).
+   * Omitted = unlimited; the server wires one from env by default.
+   */
+  sendLimiter?: SendLimiter;
 }
 
 export interface LoopkitEngine {
@@ -56,6 +62,12 @@ export interface LoopkitEngine {
    * exactly-once guarantee to be missing.
    */
   emailChannel: NotificationChannel;
+  /**
+   * The per-workspace send throttle backing emailChannel (P2.5), when one
+   * was wired. Exposed so server-side diagnostics can read stats() without
+   * unwrapping the channel.
+   */
+  sendLimiter?: SendLimiter;
   eventWaitIndex: EventWaitIndex;
   /** Emit `loopkit.event.<name>` to instances waiting for this contact's event. */
   wakeForContactEvent: (input: WakeEventInput) => Promise<number>;
@@ -106,6 +118,7 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     provider: options.emailProvider,
     defaultFrom: options.defaultFromEmail,
     buildUnsubscribe: options.buildUnsubscribe,
+    sendLimiter: options.sendLimiter,
   });
   notificationManager.registerChannel(emailChannel);
 
@@ -126,6 +139,7 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     db,
     emailProvider: options.emailProvider,
     emailChannel,
+    sendLimiter: options.sendLimiter,
     eventWaitIndex,
     wakeForContactEvent: (input) =>
       wakeWaitingInstancesForContactEvent(db, ctx.container.eventBus, eventWaitIndex, input),
