@@ -1,3 +1,10 @@
+export {
+  compactParkedJourneyHistory,
+  journeyHistoryLimitsFromEnv,
+  type HistoryCompactionOptions,
+  type HistoryCompactionStats,
+  type JourneyHistoryLimits,
+} from "./historyCompaction";
 export { EventIndexedStorageProvider } from "./eventIndexedStorage";
 export { EventWaitIndex } from "./eventWaitIndex";
 export {

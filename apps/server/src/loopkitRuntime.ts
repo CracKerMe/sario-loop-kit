@@ -1,6 +1,11 @@
 import { createJourneyCompileActions } from "@loopkit/core";
 import { db } from "@loopkit/db";
-import { createLoopkitEngine, type LoopkitEngine } from "@loopkit/engine";
+import {
+  compactParkedJourneyHistory,
+  createLoopkitEngine,
+  journeyHistoryLimitsFromEnv,
+  type LoopkitEngine,
+} from "@loopkit/engine";
 import {
   ConsoleEmailProvider,
   ResendProvider,
@@ -65,6 +70,7 @@ export async function startEngine(): Promise<LoopkitEngine> {
     sendLimiter: buildSendLimiter(),
   }).then((engine) => {
     engineInstance = engine;
+    startHistorySweeper(engine);
     return engine;
   });
 
@@ -86,8 +92,74 @@ export function setEngineForTesting(engine: LoopkitEngine | null): void {
 }
 
 export async function stopEngine(): Promise<void> {
+  stopHistorySweeper();
   if (engineInstance) {
     await engineInstance.stop();
     engineInstance = null;
+  }
+}
+
+/**
+ * Periodic history compaction for parked journey instances (P2.6). A
+ * year-long nurture run parks on delays for weeks while every node
+ * transition rewrites the whole wf_instance.data blob — the sweep trims
+ * the execution log of parked instances so the blob (and the in-memory
+ * copy) stays bounded. See @loopkit/engine's historyCompaction.ts for why
+ * this is safe (log-only fields, waiting-only, CAS-persisted) and why the
+ * engine's own ContinueAsNew primitive cannot do this job (it only fires
+ * on completion, and there is no resume-at-node).
+ *
+ * Env: JOURNEY_HISTORY_SWEEP_MS — interval between sweeps, default 6h;
+ * 0 disables the sweeper entirely. JOURNEY_HISTORY_MAX / _KEEP tune the
+ * compaction thresholds (see journeyHistoryLimitsFromEnv).
+ */
+let historySweeperTimer: NodeJS.Timeout | null = null;
+
+function startHistorySweeper(engine: LoopkitEngine): void {
+  if (historySweeperTimer) return;
+  const parsed = Number.parseInt(process.env.JOURNEY_HISTORY_SWEEP_MS ?? "", 10);
+  const intervalMs = Number.isFinite(parsed) ? parsed : 6 * 60 * 60 * 1000;
+  if (intervalMs <= 0) {
+    console.log("[loopkit] history sweeper disabled (JOURNEY_HISTORY_SWEEP_MS<=0)");
+    return;
+  }
+
+  const sweep = async () => {
+    if (!engineInstance) return;
+    try {
+      const stats = await compactParkedJourneyHistory(
+        db,
+        engine.ctx.engine,
+        engine.ctx.container.storage,
+        journeyHistoryLimitsFromEnv(process.env),
+      );
+      if (stats.candidates > 0) {
+        console.log(
+          `[loopkit] history sweep: ${stats.compacted}/${stats.candidates} compacted, ` +
+            `${stats.entriesFreed} entries freed, ${stats.skipped} skipped`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[loopkit] history sweep failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
+  // First pass right after boot (memory was just loaded; trimming parked
+  // instances here pays off before the first long interval elapses), then
+  // on the interval. unref so the sweeper never keeps the process alive.
+  void sweep();
+  historySweeperTimer = setInterval(() => {
+    void sweep();
+  }, intervalMs);
+  historySweeperTimer.unref();
+}
+
+function stopHistorySweeper(): void {
+  if (historySweeperTimer) {
+    clearInterval(historySweeperTimer);
+    historySweeperTimer = null;
   }
 }
