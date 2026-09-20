@@ -1,15 +1,14 @@
 import { Button } from "@loopkit/ui/components/button";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { cn } from "@loopkit/ui/lib/utils";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   FilterIcon,
   HomeIcon,
-  KeyRoundIcon,
   MailIcon,
   PlusIcon,
   RouteIcon,
-  ScrollTextIcon,
   SendIcon,
-  ShieldAlertIcon,
+  SettingsIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -19,82 +18,77 @@ import { Logo } from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import UserMenu from "./user-menu";
 
-type NavItem = {
-  to:
-    | "/dashboard"
-    | "/contacts"
-    | "/audiences"
-    | "/journeys"
-    | "/campaigns"
-    | "/templates"
-    | "/compliance"
-    | "/api-keys"
-    | "/logs";
+type PrimaryNav = {
+  to: "/dashboard" | "/contacts" | "/journeys" | "/campaigns" | "/templates" | "/settings";
   label: string;
   icon: LucideIcon;
 };
 
-const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
-  {
-    label: "General",
-    items: [{ to: "/dashboard", label: "Home", icon: HomeIcon }],
-  },
-  {
-    label: "Audience",
-    items: [
-      { to: "/contacts", label: "Contacts", icon: UsersIcon },
-      { to: "/audiences", label: "Audiences", icon: FilterIcon },
-    ],
-  },
-  {
-    label: "Messaging",
-    items: [
-      { to: "/journeys", label: "Journeys", icon: RouteIcon },
-      { to: "/campaigns", label: "Campaigns", icon: SendIcon },
-      { to: "/templates", label: "Templates", icon: MailIcon },
-    ],
-  },
-  {
-    // Placed above Developer on purpose: a suppression list is an operational
-    // surface (someone has to read it after a complaint), not a dev tool.
-    label: "Compliance",
-    items: [{ to: "/compliance", label: "Suppressions", icon: ShieldAlertIcon }],
-  },
-  {
-    label: "Developer",
-    items: [
-      { to: "/api-keys", label: "API keys", icon: KeyRoundIcon },
-      { to: "/logs", label: "Logs", icon: ScrollTextIcon },
-    ],
-  },
+/** Daily product surface — ops/dev lives under Settings. */
+const PRIMARY_NAV: PrimaryNav[] = [
+  { to: "/dashboard", label: "Home", icon: HomeIcon },
+  { to: "/contacts", label: "Contacts", icon: UsersIcon },
+  { to: "/journeys", label: "Automations", icon: RouteIcon },
+  { to: "/campaigns", label: "Broadcasts", icon: SendIcon },
+  { to: "/templates", label: "Emails", icon: MailIcon },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-const MOBILE_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+const navLinkClass =
+  "flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/60 hover:text-foreground active:bg-accent";
+
+function navActiveClass(active: boolean) {
+  return cn(navLinkClass, active && "bg-accent font-medium text-foreground");
+}
 
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
   return (
     <nav aria-label="Main navigation" className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label}>
-          <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-            {group.label}
-          </div>
-          <div className="grid gap-0.5">
-            {group.items.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                onClick={onNavigate}
-                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/60 hover:text-foreground active:bg-accent [&.active]:bg-accent [&.active]:font-medium [&.active]:text-foreground"
-                activeProps={{ className: "bg-accent font-medium text-foreground" }}
-              >
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
-                {label}
-              </Link>
-            ))}
-          </div>
+      <div className="grid gap-0.5">
+        {PRIMARY_NAV.filter((item) => item.to !== "/settings").map(({ to, label, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={onNavigate}
+            className={navLinkClass}
+            activeProps={{ className: "bg-accent font-medium text-foreground" }}
+          >
+            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            {label}
+          </Link>
+        ))}
+      </div>
+
+      <div>
+        <div className="mb-1 px-2 text-[10px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+          Also
         </div>
-      ))}
+        <div className="grid gap-0.5">
+          <Link
+            to="/audiences"
+            onClick={onNavigate}
+            className={navLinkClass}
+            activeProps={{ className: "bg-accent font-medium text-foreground" }}
+          >
+            <FilterIcon className="size-4 shrink-0" aria-hidden="true" />
+            Audiences
+          </Link>
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-3">
+        <Link
+          to="/settings/$tab"
+          params={{ tab: "api-keys" }}
+          onClick={onNavigate}
+          className={navActiveClass(pathname.startsWith("/settings"))}
+        >
+          <SettingsIcon className="size-4 shrink-0" aria-hidden="true" />
+          Settings
+        </Link>
+      </div>
     </nav>
   );
 }
@@ -121,6 +115,13 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand?: () => void }) {
 
 export function MobileTopBar() {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const mobileItems = [
+    ...PRIMARY_NAV.filter((item) => item.to !== "/settings"),
+    { to: "/audiences" as const, label: "Audiences", icon: FilterIcon },
+    { to: "/settings" as const, label: "Settings", icon: SettingsIcon },
+  ];
+
   return (
     <div className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur md:hidden">
       <div className="flex h-12 items-center justify-between px-4">
@@ -140,17 +141,25 @@ export function MobileTopBar() {
       </div>
       <div className="overflow-x-auto px-3 pb-2">
         <div className="flex items-center gap-1">
-          {MOBILE_ITEMS.map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground [&.active]:bg-accent [&.active]:font-medium [&.active]:text-foreground"
-              activeProps={{ className: "bg-accent font-medium text-foreground" }}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {label}
-            </Link>
-          ))}
+          {mobileItems.map(({ to, label, icon: Icon }) => {
+            const active =
+              to === "/settings"
+                ? pathname.startsWith("/settings")
+                : to === "/audiences"
+                  ? pathname.startsWith("/audiences")
+                  : pathname.startsWith(to);
+            return (
+              <Link
+                key={label}
+                to={to === "/settings" ? "/settings/$tab" : to}
+                params={to === "/settings" ? { tab: "api-keys" } : undefined}
+                className={navActiveClass(active)}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+                {label}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </div>

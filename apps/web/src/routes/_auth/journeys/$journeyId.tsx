@@ -445,7 +445,7 @@ function JourneyEditorPage() {
             className="h-7 px-2 text-muted-foreground"
           >
             <ArrowLeftIcon data-icon="inline-start" />
-            Journeys
+            Automations
           </Button>
           <div className="h-4 w-px bg-border" aria-hidden="true" />
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">

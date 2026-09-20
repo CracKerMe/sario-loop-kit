@@ -2,7 +2,7 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { cn } from "@loopkit/ui/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, Loader2Icon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { JourneyBuilder } from "@/features/journey-builder/JourneyBuilder";
@@ -18,9 +18,13 @@ export const Route = createFileRoute("/_auth/journeys/new")({
 
 function NewJourneyPage() {
   const navigate = useNavigate();
-  const [templateId, setTemplateId] = useState<JourneyTemplateId>("marketing-ab-score-hours");
+  const [templateId, setTemplateId] = useState<JourneyTemplateId>("blank-welcome");
+  const [showExamples, setShowExamples] = useState(false);
   const template = useMemo(() => journeyTemplateById(templateId), [templateId]);
   const [name, setName] = useState(template.name);
+
+  const simpleTemplates = JOURNEY_TEMPLATES.filter((t) => t.tier === "simple");
+  const exampleTemplates = JOURNEY_TEMPLATES.filter((t) => t.tier === "example");
 
   const selectTemplate = (id: JourneyTemplateId) => {
     setTemplateId(id);
@@ -44,16 +48,16 @@ function NewJourneyPage() {
           className="text-muted-foreground"
         >
           <ArrowLeftIcon data-icon="inline-start" />
-          Journeys
+          Automations
         </Button>
-        <div className="h-4 w-px border-border bg-border" aria-hidden="true" />
+        <div className="h-4 w-px bg-border border-border" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="h-8 max-w-sm border-transparent bg-transparent px-2 text-sm font-medium hover:border-input focus-visible:border-ring"
-            placeholder="Journey name"
-            aria-label="Journey name"
+            placeholder="Automation name"
+            aria-label="Automation name"
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -68,28 +72,65 @@ function NewJourneyPage() {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-muted/20 px-4 py-2">
-        <span className="text-[11px] font-medium text-muted-foreground">Template</span>
-        {JOURNEY_TEMPLATES.map((t) => {
-          const active = t.id === templateId;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => selectTemplate(t.id)}
-              title={t.description}
-              className={cn(
-                "rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                active
-                  ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
-              )}
-            >
-              <span className="block text-xs font-medium">{t.name}</span>
-              <span className="block text-[10px] text-muted-foreground">{t.description}</span>
-            </button>
-          );
-        })}
+      <div className="shrink-0 border-b border-border/70 bg-muted/20 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-medium text-muted-foreground">Start from</span>
+          {simpleTemplates.map((t) => {
+            const active = t.id === templateId;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => selectTemplate(t.id)}
+                title={t.description}
+                className={cn(
+                  "rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                  active
+                    ? "border-primary/40 bg-primary/10 text-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+                )}
+              >
+                <span className="block text-xs font-medium">{t.name}</span>
+                <span className="block text-[10px] text-muted-foreground">{t.description}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowExamples((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            More examples
+            <ChevronDownIcon
+              className={cn("size-3.5 transition-transform", showExamples && "rotate-180")}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+        {showExamples && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+            {exampleTemplates.map((t) => {
+              const active = t.id === templateId;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => selectTemplate(t.id)}
+                  title={t.description}
+                  className={cn(
+                    "rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                    active
+                      ? "border-primary/40 bg-primary/10 text-foreground"
+                      : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+                  )}
+                >
+                  <span className="block text-xs font-medium">{t.name}</span>
+                  <span className="block text-[10px] text-muted-foreground">{t.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -97,21 +138,12 @@ function NewJourneyPage() {
         <JourneyBuilder
           key={templateId}
           initialName={name}
-          initialGraph={template.build()}
           controlledName={name}
+          initialGraph={template.build()}
           onNameChange={setName}
           onSaved={onSaved}
         />
       </div>
-    </div>
-  );
-}
-
-export function LoadingNewJourney() {
-  return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-      <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
-      Preparing builder…
     </div>
   );
 }

@@ -262,6 +262,7 @@ export function flowToGraph(nodes: Node[], edges: Edge[]): JourneyGraphDto {
   };
 }
 
+/** Default seed: Loops-style welcome drip — trigger → email → delay → email → exit. */
 export function emptyWelcomeGraph(): JourneyGraphDto {
   return {
     nodes: [
@@ -278,31 +279,131 @@ export function emptyWelcomeGraph(): JourneyGraphDto {
         data: { templateId: "", subject: "Welcome aboard", preheader: "" },
       },
       {
-        id: "score_onboarding",
-        type: "score",
-        position: { x: 280, y: 280 },
-        data: { property: "score", value: 5, op: "add" },
-      },
-      {
-        id: "delay_5m",
+        id: "delay_1d",
         type: "delay",
-        position: { x: 280, y: 400 },
-        data: { mode: "duration", ms: 5 * 60_000, value: 5, unit: "minutes" },
+        position: { x: 280, y: 280 },
+        data: { mode: "duration", ms: 86_400_000, value: 1, unit: "days" },
       },
       {
         id: "email_followup",
         type: "email",
-        position: { x: 280, y: 520 },
+        position: { x: 280, y: 400 },
         data: { templateId: "", subject: "Getting started tips" },
       },
-      { id: "exit", type: "exit", position: { x: 280, y: 640 }, data: { reason: "completed" } },
+      { id: "exit", type: "exit", position: { x: 280, y: 520 }, data: { reason: "completed" } },
     ],
     edges: [
       { id: "e1", source: "trigger", target: "email_welcome" },
-      { id: "e2", source: "email_welcome", target: "score_onboarding" },
-      { id: "e3", source: "score_onboarding", target: "delay_5m" },
-      { id: "e4", source: "delay_5m", target: "email_followup" },
-      { id: "e5", source: "email_followup", target: "exit" },
+      { id: "e2", source: "email_welcome", target: "delay_1d" },
+      { id: "e3", source: "delay_1d", target: "email_followup" },
+      { id: "e4", source: "email_followup", target: "exit" },
+    ],
+  };
+}
+
+/** Simple onboarding: branch paid vs free after a day. */
+export function onboardingBranchGraph(): JourneyGraphDto {
+  return {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        position: { x: 360, y: 40 },
+        data: { trigger: { kind: "contact_created" } },
+      },
+      {
+        id: "email_welcome",
+        type: "email",
+        position: { x: 360, y: 160 },
+        data: { templateId: "", subject: "Welcome — let's get you set up" },
+      },
+      {
+        id: "delay_1d",
+        type: "delay",
+        position: { x: 360, y: 280 },
+        data: { mode: "duration", ms: 86_400_000, value: 1, unit: "days" },
+      },
+      {
+        id: "branch_paid",
+        type: "branch",
+        position: { x: 360, y: 400 },
+        data: { expression: '{{ contact.plan }} == "paid"' },
+      },
+      {
+        id: "email_paid",
+        type: "email",
+        position: { x: 160, y: 540 },
+        data: { templateId: "", subject: "You're in — next steps on the paid plan" },
+      },
+      {
+        id: "email_free",
+        type: "email",
+        position: { x: 560, y: 540 },
+        data: { templateId: "", subject: "Make the most of your free account" },
+      },
+      {
+        id: "exit",
+        type: "exit",
+        position: { x: 360, y: 680 },
+        data: { reason: "onboarding-done" },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger", target: "email_welcome" },
+      { id: "e2", source: "email_welcome", target: "delay_1d" },
+      { id: "e3", source: "delay_1d", target: "branch_paid" },
+      { id: "e4", source: "branch_paid", target: "email_paid", sourceHandle: "true" },
+      { id: "e5", source: "branch_paid", target: "email_free", sourceHandle: "false" },
+      { id: "e6", source: "email_paid", target: "exit" },
+      { id: "e7", source: "email_free", target: "exit" },
+    ],
+  };
+}
+
+/** Simple winback: inactive event → nudge → last chance if still inactive. */
+export function winbackGraph(): JourneyGraphDto {
+  return {
+    nodes: [
+      {
+        id: "trigger",
+        type: "trigger",
+        position: { x: 280, y: 40 },
+        data: { trigger: { kind: "event", name: "inactive" } },
+      },
+      {
+        id: "email_nudge",
+        type: "email",
+        position: { x: 280, y: 160 },
+        data: { templateId: "", subject: "We miss you — here's what's new" },
+      },
+      {
+        id: "delay_3d",
+        type: "delay",
+        position: { x: 280, y: 280 },
+        data: { mode: "duration", ms: 3 * 86_400_000, value: 3, unit: "days" },
+      },
+      {
+        id: "filter_active",
+        type: "filter",
+        position: { x: 280, y: 400 },
+        data: { expression: "{{ contact.active }} == true" },
+      },
+      {
+        id: "email_last",
+        type: "email",
+        position: { x: 280, y: 540 },
+        data: { templateId: "", subject: "Last chance — still interested?" },
+      },
+      { id: "exit", type: "exit", position: { x: 280, y: 660 }, data: { reason: "winback-done" } },
+    ],
+    edges: [
+      { id: "e1", source: "trigger", target: "email_nudge" },
+      { id: "e2", source: "email_nudge", target: "delay_3d" },
+      { id: "e3", source: "delay_3d", target: "filter_active" },
+      // false = still inactive → last chance; true = recovered → exit
+      { id: "e4", source: "filter_active", target: "email_last", sourceHandle: "false" },
+      { id: "e5", source: "filter_active", target: "exit", sourceHandle: "true" },
+      { id: "e6", source: "email_last", target: "exit" },
     ],
   };
 }
@@ -322,6 +423,8 @@ export function standardWelcomeSequenceGraph(): JourneyGraphDto {
 
 export type JourneyTemplateId =
   | "blank-welcome"
+  | "onboarding-branch"
+  | "winback"
   | "marketing-ab-score-hours"
   | "standard-welcome-sequence";
 
@@ -329,26 +432,45 @@ export interface JourneyTemplate {
   id: JourneyTemplateId;
   name: string;
   description: string;
+  /** "simple" is always visible; "example" hides under More examples. */
+  tier: "simple" | "example";
   build: () => JourneyGraphDto;
 }
 
 export const JOURNEY_TEMPLATES: JourneyTemplate[] = [
   {
     id: "blank-welcome",
-    name: "Simple welcome drip",
-    description: "Welcome email → score → short delay → follow-up",
+    name: "Welcome drip",
+    description: "Welcome → 1 day → follow-up",
+    tier: "simple",
     build: emptyWelcomeGraph,
+  },
+  {
+    id: "onboarding-branch",
+    name: "Onboarding branch",
+    description: "Welcome, then split paid vs free after a day",
+    tier: "simple",
+    build: onboardingBranchGraph,
+  },
+  {
+    id: "winback",
+    name: "Winback",
+    description: "Inactive contact nudge, then a last chance",
+    tier: "simple",
+    build: winbackGraph,
   },
   {
     id: "marketing-ab-score-hours",
     name: "Welcome + A/B + Score + Hours",
-    description: "Full marketing sample: experiment split, lead score, business-hours gate, goal",
+    description: "Experiment split, lead score, business-hours gate, goal",
+    tier: "example",
     build: welcomeAbScoreHoursGraph,
   },
   {
     id: "standard-welcome-sequence",
     name: "Standard welcome sequence",
-    description: "Reusable subJourney child: welcome → lifecycle tag → tips → activation goal",
+    description: "Reusable child journey for subJourney nodes",
+    tier: "example",
     build: standardWelcomeSequenceGraph,
   },
 ];

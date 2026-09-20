@@ -141,13 +141,18 @@ function CampaignsPage() {
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
-        title="Campaigns"
-        description="One-off broadcasts to a saved audience"
+        title="Broadcasts"
+        description="One-off emails to a saved audience"
         actions={
-          <Button size="sm" onClick={openCreate}>
-            <PlusIcon data-icon="inline-start" />
-            New campaign
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/audiences" })}>
+              Audiences
+            </Button>
+            <Button size="sm" onClick={openCreate}>
+              <PlusIcon data-icon="inline-start" />
+              New broadcast
+            </Button>
+          </div>
         }
       />
 
@@ -197,18 +202,17 @@ function CampaignsPage() {
           <span className="mx-auto mb-3 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
             <SendIcon className="size-5" aria-hidden="true" />
           </span>
-          <div className="text-sm font-medium">No campaigns yet</div>
+          <div className="text-sm font-medium">No broadcasts yet</div>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
-            A campaign sends one email to everyone in an audience. Recipients are resolved once, at
-            launch, so editing the audience later cannot change who received it. For multi-step
-            per-contact flows, build a journey instead.
+            A broadcast sends one email to everyone in an audience. Recipients are resolved once at
+            launch. For multi-step sequences, use an automation instead.
           </p>
           <div className="mx-auto mt-4 max-w-2xl">
             <MessagingPathPicker compact />
           </div>
           <Button size="sm" className="mt-4" onClick={openCreate}>
             <PlusIcon data-icon="inline-start" />
-            New campaign
+            New broadcast
           </Button>
         </div>
       )}

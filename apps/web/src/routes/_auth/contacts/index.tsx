@@ -640,7 +640,8 @@ function ContactsPage() {
               {'{ "email": "mei@example.com", "properties": { "plan": "pro" } }'}
             </pre>
             <Link
-              to="/api-keys"
+              to="/settings/$tab"
+              params={{ tab: "api-keys" }}
               className="mt-3 inline-flex text-xs font-medium text-primary hover:underline"
             >
               Manage API keys →

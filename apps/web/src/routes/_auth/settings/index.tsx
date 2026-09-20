@@ -1,7 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** Legacy route — Settings hosts API keys now. */
-export const Route = createFileRoute("/_auth/api-keys")({
+export const Route = createFileRoute("/_auth/settings/")({
   beforeLoad: () => {
     throw redirect({ to: "/settings/$tab", params: { tab: "api-keys" } });
   },

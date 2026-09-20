@@ -128,16 +128,16 @@ function JourneysPage() {
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-4xl overflow-y-auto px-4 py-6">
       <PageHeader
-        title="Journeys"
+        title="Automations"
         description={
           loading
-            ? "Loading journeys…"
-            : `${counts.all} journey${counts.all === 1 ? "" : "s"} · ${counts.published} published`
+            ? "Loading automations…"
+            : `${counts.all} automation${counts.all === 1 ? "" : "s"} · ${counts.published} published`
         }
         actions={
           <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
             <PlusIcon data-icon="inline-start" />
-            New journey
+            New automation
           </Button>
         }
       />
@@ -372,9 +372,9 @@ function JourneysPage() {
             </EmptyMedia>
             <EmptyTitle>No journeys yet</EmptyTitle>
             <EmptyDescription>
-              Journeys are per-contact graphs (waits, branches, event wake-ups). For a one-shot
-              broadcast to an audience, create a Campaign instead. For backend-triggered mail, use
-              the Transactional API.
+              Automations are multi-step email sequences (waits, branches, event wake-ups). For a
+              one-shot broadcast to an audience, create a Campaign instead. For backend-triggered
+              mail, use the Transactional API.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="w-full max-w-2xl">

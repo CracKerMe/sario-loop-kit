@@ -1,31 +1,25 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@loopkit/ui/components/card";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ActivityIcon,
-  CheckIcon,
-  CopyIcon,
+  ArrowRightIcon,
+  FilterIcon,
   MailIcon,
   PlusIcon,
   RouteIcon,
+  SendIcon,
   UsersIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { cn } from "@loopkit/ui/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/dashboard")({
   component: DashboardPage,
 });
-
-const CURL_SNIPPET = `curl -H "Authorization: Bearer lk_live_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{"email":"you@example.com","properties":{"firstName":"Sam"}}' \\
-  http://localhost:3000/v1/contacts`;
 
 function Stat({
   label,
@@ -51,7 +45,7 @@ function Stat({
     >
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
             {label}
           </div>
           <span
@@ -86,7 +80,7 @@ function Distribution({ title, counts }: { title: string; counts: Record<string,
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium">{title}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
           {total} total
         </span>
       </div>
@@ -98,7 +92,7 @@ function Distribution({ title, counts }: { title: string; counts: Record<string,
         <div className="grid gap-1.5">
           {rows.map(([status, count]) => (
             <div key={status} className="flex items-center gap-2">
-              <span className="w-20 shrink-0 truncate text-[11px] capitalize text-muted-foreground">
+              <span className="w-20 shrink-0 truncate text-[11px] text-muted-foreground capitalize">
                 {status}
               </span>
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
@@ -121,11 +115,44 @@ function Distribution({ title, counts }: { title: string; counts: Record<string,
   );
 }
 
+const QUICK_ACTIONS: {
+  title: string;
+  body: string;
+  to: "/journeys/new" | "/campaigns" | "/templates" | "/settings/$tab";
+  params?: { tab: string };
+  icon: typeof RouteIcon;
+}[] = [
+  {
+    title: "Create automation",
+    body: "Welcome drip, onboarding, winback — multi-step email that runs itself.",
+    to: "/journeys/new",
+    icon: RouteIcon,
+  },
+  {
+    title: "Send a broadcast",
+    body: "One email to a saved audience — announcements and newsletters.",
+    to: "/campaigns",
+    icon: SendIcon,
+  },
+  {
+    title: "Write an email",
+    body: "Reusable email bodies used by automations and broadcasts.",
+    to: "/templates",
+    icon: MailIcon,
+  },
+  {
+    title: "Connect your app",
+    body: "API keys for contacts, events, and transactional send.",
+    to: "/settings/$tab",
+    params: { tab: "api-keys" },
+    icon: FilterIcon,
+  },
+];
+
 function DashboardPage() {
   const { session } = Route.useRouteContext();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     void api
@@ -137,19 +164,10 @@ function DashboardPage() {
   const journeysByStatus = (stats?.journeysByStatus as Record<string, number>) ?? {};
   const emails = (stats?.emails as Record<string, number>) ?? {};
   const runsByStatus = (stats?.journeyRunsByStatus as Record<string, number>) ?? {};
+  const emailTotal = (emails.sent ?? 0) + (emails.delivered ?? 0);
+  const activeAutomations = journeysByStatus.published ?? 0;
 
   const firstName = (session.data?.user.name ?? session.data?.user.email ?? "").split(/[@\s]/)[0];
-
-  const copySnippet = async () => {
-    try {
-      await navigator.clipboard.writeText(CURL_SNIPPET);
-      setCopied(true);
-      toast.success("Copied to clipboard");
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      toast.error("Copy failed");
-    }
-  };
 
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
@@ -159,21 +177,20 @@ function DashboardPage() {
             Welcome back, {firstName || "there"}
           </span>
         }
-        description="Your lifecycle engine at a glance. Pick the right sending path before you build."
+        description="Contacts, automations, and delivery — at a glance."
         actions={
-          <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
-            <PlusIcon data-icon="inline-start" />
-            New journey
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/campaigns" })}>
+              <SendIcon data-icon="inline-start" />
+              Broadcast
+            </Button>
+            <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
+              <PlusIcon data-icon="inline-start" />
+              New automation
+            </Button>
+          </div>
         }
       />
-
-      <div className="mb-6">
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Sending paths — choose once, then build
-        </div>
-        <MessagingPathPicker compact />
-      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
@@ -184,25 +201,58 @@ function DashboardPage() {
           onClick={() => void navigate({ to: "/contacts" })}
         />
         <Stat
-          label="Published journeys"
-          value={journeysByStatus.published ?? 0}
+          label="Active automations"
+          value={activeAutomations}
           icon={RouteIcon}
           tone="bg-emerald-500/10 text-emerald-500 dark:text-emerald-300"
           onClick={() => void navigate({ to: "/journeys" })}
         />
         <Stat
-          label="Active runs"
+          label="Emails sent"
+          value={emailTotal}
+          icon={MailIcon}
+          tone="bg-amber-500/10 text-amber-500 dark:text-amber-300"
+          onClick={() => void navigate({ to: "/templates" })}
+        />
+        <Stat
+          label="Runs in flight"
           value={runsByStatus.running ?? 0}
           icon={ActivityIcon}
           tone="bg-sky-500/10 text-sky-500 dark:text-sky-300"
           onClick={() => void navigate({ to: "/journeys" })}
         />
-        <Stat
-          label="Emails sent+delivered"
-          value={(emails.sent ?? 0) + (emails.delivered ?? 0)}
-          icon={MailIcon}
-          tone="bg-amber-500/10 text-amber-500 dark:text-amber-300"
-        />
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          What do you want to do?
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {QUICK_ACTIONS.map((action) => (
+            <Link
+              key={action.title}
+              to={action.to}
+              params={action.params as never}
+              className="group rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:ring-1 hover:ring-foreground/10"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                  <action.icon className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    {action.title}
+                    <ArrowRightIcon
+                      className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs leading-snug text-muted-foreground">{action.body}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -210,7 +260,7 @@ function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <RouteIcon className="size-4 text-primary" aria-hidden="true" />
-              Journeys
+              Automations
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -222,7 +272,7 @@ function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ActivityIcon className="size-4 text-primary" aria-hidden="true" />
-              Journey runs
+              Automation runs
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -242,54 +292,6 @@ function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Quick start</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 text-xs text-muted-foreground">
-          <div className="flex items-start gap-2.5">
-            <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-              1
-            </span>
-            <p>
-              Pick a path: <strong>Journey</strong> for multi-step lifecycle,{" "}
-              <strong>Campaign</strong> for one broadcast to an audience, or{" "}
-              <strong>Transactional API</strong> for backend mail. Then publish a journey or prepare
-              templates.
-            </p>
-          </div>
-          <div className="flex items-start gap-2.5">
-            <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-              2
-            </span>
-            <p>Create an API key, then upsert a contact:</p>
-          </div>
-          <div className="group relative overflow-x-auto rounded-lg border border-border bg-muted/40">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Copy snippet"
-              onClick={() => void copySnippet()}
-              className="absolute top-1.5 right-1.5 opacity-60 transition-opacity group-hover:opacity-100"
-            >
-              {copied ? <CheckIcon className="text-emerald-500" /> : <CopyIcon />}
-            </Button>
-            <pre className="p-3 font-mono text-[11px] leading-relaxed text-foreground">
-              {CURL_SNIPPET}
-            </pre>
-          </div>
-          <div className="flex items-start gap-2.5">
-            <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-              3
-            </span>
-            <p>
-              Watch runs and email sends on the journey page (Lab for dry-run/optimize), campaign
-              recipients, or contact 360 activity.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

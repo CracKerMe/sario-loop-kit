@@ -1,7 +1,6 @@
 /**
- * Phase 0 product disambiguation: three sending paths share one email channel
- * but are different products. This picker is the single place that says so
- * before an operator creates the wrong kind of object.
+ * Lightweight path disambiguation — used only on empty states when an operator
+ * might otherwise build the wrong kind of object. Not on Home.
  */
 import { cn } from "@loopkit/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
@@ -15,7 +14,6 @@ type Path = {
   blurb: string;
   when: string;
   href?: string;
-  external?: boolean;
   icon: typeof RouteIcon;
   accent: string;
 };
@@ -23,9 +21,9 @@ type Path = {
 export const MESSAGING_PATHS: Path[] = [
   {
     id: "journey",
-    title: "Lifecycle journey",
-    blurb: "Per-contact graph with waits, branches, and event wake-ups.",
-    when: "Welcome series, onboarding, re-engagement — anything multi-step.",
+    title: "Automation",
+    blurb: "Multi-step email that runs per contact.",
+    when: "Welcome series, onboarding, winback.",
     href: "/journeys/new",
     icon: RouteIcon,
     accent:
@@ -33,18 +31,18 @@ export const MESSAGING_PATHS: Path[] = [
   },
   {
     id: "campaign",
-    title: "Broadcast campaign",
-    blurb: "One email to a saved audience, with pause/resume and recipient ledger.",
-    when: "Product announcements, newsletters — one shot to a segment.",
+    title: "Broadcast",
+    blurb: "One email to a saved audience.",
+    when: "Announcements, newsletters.",
     href: "/campaigns",
     icon: SendIcon,
     accent: "border-sky-500/30 bg-sky-500/5 hover:border-sky-500/50 hover:bg-sky-500/10",
   },
   {
     id: "transactional",
-    title: "API transactional",
-    blurb: "Template + recipient + required idempotency key, outside any graph.",
-    when: "Password resets, receipts — triggered by your backend, not the dashboard.",
+    title: "Transactional API",
+    blurb: "Backend-triggered mail with an idempotency key.",
+    when: "Password resets, receipts.",
     icon: Code2Icon,
     accent:
       "border-violet-500/30 bg-violet-500/5 hover:border-violet-500/50 hover:bg-violet-500/10",
@@ -63,7 +61,7 @@ export function MessagingPathPicker({
   onSelect?: (id: MessagingPathId) => void;
 }) {
   return (
-    <div className={cn("grid gap-2", compact ? "sm:grid-cols-3" : "sm:grid-cols-3", className)}>
+    <div className={cn("grid gap-2 sm:grid-cols-3", className)}>
       {MESSAGING_PATHS.map((path) => {
         const Icon = path.icon;
         const body = (
@@ -118,9 +116,8 @@ export function MessagingPathPicker({
           <div key={path.id} className={cn(classes, "opacity-90")}>
             {body}
             <p className="mt-2 text-[10px] text-muted-foreground">
-              Use <code className="font-mono">POST /v1/transactional</code> with scope{" "}
-              <code className="font-mono">transactional:send</code>. Dashboard test-send lives on
-              Templates.
+              Use <code className="font-mono">POST /v1/transactional</code> — test send lives on
+              Emails.
             </p>
           </div>
         );

@@ -3,6 +3,7 @@ import { Input } from "@loopkit/ui/components/input";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRightIcon,
+  FilterIcon,
   HomeIcon,
   KeyRoundIcon,
   LogsIcon,
@@ -10,6 +11,8 @@ import {
   PlusIcon,
   RouteIcon,
   SearchIcon,
+  SendIcon,
+  SettingsIcon,
   UsersIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -47,44 +50,77 @@ const COMMANDS: CommandItem[] = [
     run: (n) => void n({ to: "/contacts" }),
   },
   {
-    id: "go-journeys",
-    label: "Journeys",
+    id: "go-automations",
+    label: "Automations",
+    hint: "Lifecycle email sequences",
     group: "Go to",
     icon: RouteIcon,
     run: (n) => void n({ to: "/journeys" }),
   },
   {
-    id: "go-templates",
-    label: "Templates",
+    id: "go-broadcasts",
+    label: "Broadcasts",
+    hint: "One-shot to an audience",
+    group: "Go to",
+    icon: SendIcon,
+    run: (n) => void n({ to: "/campaigns" }),
+  },
+  {
+    id: "go-emails",
+    label: "Emails",
     group: "Go to",
     icon: MailIcon,
     run: (n) => void n({ to: "/templates" }),
   },
   {
+    id: "go-audiences",
+    label: "Audiences",
+    group: "Go to",
+    icon: FilterIcon,
+    run: (n) => void n({ to: "/audiences" }),
+  },
+  {
+    id: "go-settings",
+    label: "Settings",
+    group: "Go to",
+    icon: SettingsIcon,
+    run: (n) => void n({ to: "/settings/$tab", params: { tab: "api-keys" } }),
+  },
+  {
     id: "go-api-keys",
     label: "API keys",
+    hint: "Settings",
     group: "Go to",
     icon: KeyRoundIcon,
-    run: (n) => void n({ to: "/api-keys" }),
+    run: (n) => void n({ to: "/settings/$tab", params: { tab: "api-keys" } }),
   },
   {
     id: "go-logs",
     label: "Logs",
+    hint: "Settings · runs & DLQ",
     group: "Go to",
     icon: LogsIcon,
-    run: (n) => void n({ to: "/logs" }),
+    run: (n) => void n({ to: "/settings/$tab", params: { tab: "logs" } }),
   },
   {
-    id: "new-journey",
-    label: "New journey",
-    hint: "Visual builder",
+    id: "go-suppressions",
+    label: "Suppressions",
+    hint: "Settings",
+    group: "Go to",
+    icon: SettingsIcon,
+    run: (n) => void n({ to: "/settings/$tab", params: { tab: "suppressions" } }),
+  },
+  {
+    id: "new-automation",
+    label: "New automation",
+    hint: "Welcome drip builder",
     group: "Create",
     icon: PlusIcon,
     run: (n) => void n({ to: "/journeys/new" }),
   },
   {
-    id: "new-template",
-    label: "New email template",
+    id: "new-email",
+    label: "New email",
     hint: "Reusable email body",
     group: "Create",
     icon: PlusIcon,
@@ -121,19 +157,26 @@ function CommandMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         onClose();
-      } else if (e.key === "ArrowDown") {
+        return;
+      }
+      if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActive((a) => Math.min(a + 1, items.length - 1));
-      } else if (e.key === "ArrowUp") {
+        setActive((i) => Math.min(i + 1, Math.max(items.length - 1, 0)));
+        return;
+      }
+      if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActive((a) => Math.max(a - 1, 0));
-      } else if (e.key === "Enter") {
+        setActive((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter") {
         e.preventDefault();
         const item = items[active];
         if (item) {
-          onClose();
           item.run(navigate);
+          onClose();
         }
       }
     };
@@ -141,100 +184,95 @@ function CommandMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
     return () => window.removeEventListener("keydown", onKey);
   }, [open, items, active, navigate, onClose]);
 
-  useEffect(() => {
-    listRef.current
-      ?.querySelector(`[data-index="${active}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [active]);
-
   if (!open) return null;
 
-  let lastGroup = "";
-
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-start justify-center px-4 pt-[12vh]"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/60 px-4 pt-[12vh] backdrop-blur-sm">
       <button
         type="button"
-        aria-label="Close command menu"
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 cursor-default"
+        aria-label="Close"
         onClick={onClose}
       />
-      <div className="lk-fade-up relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <div className="flex items-center gap-2 border-b border-border px-3">
-          <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
           <Input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type a command or search…"
-            className="h-11 border-0 bg-transparent px-0 text-sm focus-visible:ring-0 dark:bg-transparent"
-            aria-label="Command search"
+            placeholder="Search pages and actions…"
+            className="h-11 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           <Kbd>esc</Kbd>
         </div>
-        <div ref={listRef} className="max-h-72 overflow-y-auto p-1.5">
+        <div ref={listRef} className="max-h-80 overflow-y-auto p-1.5">
           {items.length === 0 && (
-            <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-              No results for “{query}”
-            </div>
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">No matches</div>
           )}
-          {items.map((item, i) => {
-            const showGroup = item.group !== lastGroup;
-            lastGroup = item.group;
+          {(["Go to", "Create"] as const).map((group) => {
+            const grouped = items.filter((i) => i.group === group);
+            if (grouped.length === 0) return null;
             return (
-              <div key={item.id}>
-                {showGroup && (
-                  <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                    {item.group}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  data-index={i}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => {
-                    onClose();
-                    item.run(navigate);
-                  }}
-                  className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm transition-colors ${
-                    i === active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-foreground/90 hover:bg-accent/50"
-                  }`}
-                >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-                    <item.icon className="size-3.5" aria-hidden="true" />
-                  </span>
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {item.hint && (
-                    <span className="shrink-0 text-[11px] text-muted-foreground">{item.hint}</span>
-                  )}
-                  {i === active && (
-                    <ArrowRightIcon
-                      className="size-3.5 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
+              <div key={group} className="mb-1 last:mb-0">
+                <div className="px-2 py-1 text-[10px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+                  {group}
+                </div>
+                {grouped.map((item) => {
+                  const index = items.indexOf(item);
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        item.run(navigate);
+                        onClose();
+                      }}
+                      onMouseEnter={() => setActive(index)}
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                        index === active ? "bg-accent text-foreground" : "text-muted-foreground"
+                      }`}
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{item.label}</span>
+                        {item.hint && (
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {item.hint}
+                          </span>
+                        )}
+                      </span>
+                      <ArrowRightIcon className="size-3.5 shrink-0 opacity-40" aria-hidden="true" />
+                    </button>
+                  );
+                })}
               </div>
             );
           })}
         </div>
-        <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Kbd>↑</Kbd>
-            <Kbd>↓</Kbd> navigate
-          </span>
-          <span className="flex items-center gap-1">
-            <Kbd>↵</Kbd> select
-          </span>
-        </div>
       </div>
     </div>
+  );
+}
+
+function CommandMenuButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onClick}
+      className="h-8 w-full justify-between px-2.5 text-xs text-muted-foreground"
+    >
+      <span className="flex items-center gap-2">
+        <SearchIcon className="size-3.5" aria-hidden="true" />
+        Search…
+      </span>
+      <span className="flex items-center gap-0.5">
+        <Kbd>⌘</Kbd>
+        <Kbd>K</Kbd>
+      </span>
+    </Button>
   );
 }
 
@@ -244,7 +282,7 @@ function useCommandMenu() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((o) => !o);
+        setOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -253,21 +291,4 @@ function useCommandMenu() {
   return { open, setOpen };
 }
 
-function CommandMenuButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onClick}
-      className="w-full justify-start gap-2 text-muted-foreground"
-      aria-label="Open command menu"
-    >
-      <SearchIcon className="size-3.5" aria-hidden="true" />
-      <span className="flex-1 text-left">Search…</span>
-      <Kbd>⌘K</Kbd>
-    </Button>
-  );
-}
-
 export { CommandMenu, CommandMenuButton, useCommandMenu };
-export type { CommandItem };

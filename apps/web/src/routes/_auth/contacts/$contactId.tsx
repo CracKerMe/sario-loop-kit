@@ -264,7 +264,8 @@ function ContactDetailPage() {
               <ActivityIcon className="size-4 text-primary" aria-hidden="true" />
               Recent engine activity
               <Link
-                to="/logs"
+                to="/settings/$tab"
+                params={{ tab: "logs" }}
                 className="ml-auto text-[11px] font-normal text-primary hover:underline"
               >
                 Open logs

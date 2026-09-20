@@ -22,7 +22,6 @@ import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
 import { CommunityTemplateGallery } from "@/features/email-editor";
 import { parseAiError } from "@/features/ai/CopilotShell";
-import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
 import { api, type EmailTemplateDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/templates/")({
@@ -233,8 +232,8 @@ function TemplatesPage() {
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
-        title="Templates"
-        description="Email bodies for journeys, campaigns, and the transactional API. Edit in the visual editor (or HTML for legacy templates)."
+        title="Emails"
+        description="Reusable email bodies for automations, broadcasts, and the transactional API."
         actions={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setTxnOpen(true)}>
@@ -248,18 +247,11 @@ function TemplatesPage() {
               }}
             >
               <PlusIcon data-icon="inline-start" />
-              New template
+              New email
             </Button>
           </div>
         }
       />
-
-      <div className="mb-4 max-w-3xl">
-        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Sending paths
-        </div>
-        <MessagingPathPicker compact />
-      </div>
 
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -280,13 +272,14 @@ function TemplatesPage() {
           <span className="mx-auto mb-3 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
             <MailIcon className="size-5" aria-hidden="true" />
           </span>
-          <div className="text-sm font-medium">No templates yet</div>
+          <div className="text-sm font-medium">No emails yet</div>
           <p className="mx-auto mt-1 max-w-xs text-xs text-muted-foreground">
-            Templates are the email bodies your journey email nodes send. Create your first one.
+            Email bodies used by automations, broadcasts, and the transactional API. Create your
+            first one.
           </p>
           <Button size="sm" className="mt-4" onClick={() => setCreating(true)}>
             <PlusIcon data-icon="inline-start" />
-            New template
+            New email
           </Button>
         </div>
       )}

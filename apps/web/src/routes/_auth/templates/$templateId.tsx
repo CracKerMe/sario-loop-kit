@@ -97,7 +97,7 @@ function TemplateEditorPage() {
             onClick={() => navigate({ to: "/templates" })}
             className="relative -ml-2 mb-8"
           >
-            <ArrowLeftIcon data-icon="inline-start" /> Templates
+            <ArrowLeftIcon data-icon="inline-start" /> Emails
           </Button>
           <div className="relative max-w-2xl">
             <div className="mb-3 grid size-10 place-items-center rounded-xl bg-primary/12 text-primary">
