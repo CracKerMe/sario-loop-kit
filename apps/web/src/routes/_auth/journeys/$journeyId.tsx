@@ -850,11 +850,11 @@ function JourneyEditorPage() {
                         <ActivityIcon className="size-5" aria-hidden="true" />
                       </div>
                       <div className="text-sm font-medium">
-                        {runs.length === 0 ? "No runs yet" : "No runs match"}
+                        {runs.length === 0 ? "No activity yet" : "No runs match"}
                       </div>
                       <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                         {runs.length === 0
-                          ? "Publish the journey, then POST a contact with an API key to enroll them."
+                          ? "Publish this automation and add contacts to see runs here."
                           : "Try a different status filter or search query."}
                       </p>
                     </div>

@@ -1,6 +1,8 @@
 import {
   createEmailTemplate,
+  deleteEmailTemplate,
   EmailDocValidationError,
+  findTemplateUsages,
   getEmailTemplate,
   listContactPropertyKeys,
   listEmailTemplates,
@@ -144,6 +146,35 @@ emailTemplatesRouter.put("/:id", async (c) => {
   } catch (error) {
     return invalidDoc(c, error);
   }
+});
+
+/**
+ * Pre-flight usage check: returns which campaigns and journeys reference this
+ * template, so the frontend can show a warning before deleting. The client
+ * calls this *before* the DELETE to render the confirmation dialog.
+ */
+emailTemplatesRouter.get("/:id/usage", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const template = await getEmailTemplate(db, workspaceId, c.req.param("id"));
+  if (!template) return c.json({ error: "not_found" }, 404);
+
+  const usage = await findTemplateUsages(db, workspaceId, c.req.param("id"));
+  return c.json({ usage });
+});
+
+/**
+ * DELETE /v1/email-templates/:id
+ *
+ * Deletes an email template. The client must call GET /:id/usage first and
+ * only proceed with deletion after the user confirms (or when there are no
+ * usages). This route itself does NOT block on usages — it trusts the
+ * frontend's confirmation flow — but it will return 404 for missing templates.
+ */
+emailTemplatesRouter.delete("/:id", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const removed = await deleteEmailTemplate(db, workspaceId, c.req.param("id"));
+  if (!removed) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 /**

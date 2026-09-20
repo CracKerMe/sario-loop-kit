@@ -7,8 +7,8 @@ import {
   type EmailDocJson,
 } from "@loopkit/email-doc";
 import type { Db } from "@loopkit/db";
-import { emailTemplate } from "@loopkit/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { emailTemplate, campaign, journey, journeyVersion } from "@loopkit/db/schema";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 export { EmailDocValidationError };
 
@@ -211,6 +211,90 @@ export async function createEmailTemplate(
     .returning();
   if (!row) throw new Error("createEmailTemplate: insert returned no row");
   return row as EmailTemplateRow;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Usage detection                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface TemplateUsage {
+  campaigns: { id: string; name: string; status: string }[];
+  journeys: { id: string; name: string; status: string }[];
+}
+
+/**
+ * Finds all campaigns and journeys that reference a given template.
+ *
+ * - Campaigns: `campaign.templateId` is a plain text column (deliberately not
+ *   a FK) — a sent campaign must outlive template deletion.
+ * - Journeys: template IDs live inside the journey's `graph` JSONB column,
+ *   in nodes of type `"email"` where `data.templateId` matches.
+ */
+export async function findTemplateUsages(
+  db: Db,
+  workspaceId: string,
+  templateId: string,
+): Promise<TemplateUsage> {
+  // Campaigns referencing this template
+  const matchingCampaigns = await db
+    .select({ id: campaign.id, name: campaign.name, status: campaign.status })
+    .from(campaign)
+    .where(and(eq(campaign.workspaceId, workspaceId), eq(campaign.templateId, templateId)));
+
+  // Journeys referencing this template in their graph JSONB.
+  // The graph lives on `journeyVersion`, not `journey` itself, so we
+  // search version rows and join back to the journey for name/status.
+  const matchingJourneys = await db
+    .select({ id: journey.id, name: journey.name, status: journey.status })
+    .from(journey)
+    .innerJoin(
+      journeyVersion,
+      and(
+        eq(journeyVersion.journeyId, journey.id),
+        eq(journeyVersion.version, journey.publishedVersion),
+      ),
+    )
+    .where(
+      and(
+        eq(journey.workspaceId, workspaceId),
+        sql` EXISTS (
+          SELECT 1 FROM jsonb_array_elements(${journeyVersion.graph}->'nodes') AS node
+          WHERE node->>'type' = 'email'
+            AND node->'data'->>'templateId' = ${templateId}
+        )`,
+      ),
+    );
+
+  return {
+    campaigns: matchingCampaigns,
+    journeys: matchingJourneys,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Delete                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Deletes an email template. Returns `null` if not found.
+ *
+ * This does NOT check for usages — the caller (typically the API route) is
+ * responsible for calling `findTemplateUsages` first and refusing the delete
+ * if the template is still referenced, or proceeding with user confirmation.
+ */
+export async function deleteEmailTemplate(
+  db: Db,
+  workspaceId: string,
+  id: string,
+): Promise<boolean> {
+  const existing = await getEmailTemplate(db, workspaceId, id);
+  if (!existing) return false;
+
+  const rows = await db
+    .delete(emailTemplate)
+    .where(and(eq(emailTemplate.id, id), eq(emailTemplate.workspaceId, workspaceId)))
+    .returning({ id: emailTemplate.id });
+  return rows.length > 0;
 }
 
 export async function updateEmailTemplate(

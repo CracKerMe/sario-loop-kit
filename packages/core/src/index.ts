@@ -184,7 +184,9 @@ export {
 export { ensureUserWorkspace } from "./workspaces";
 export {
   createEmailTemplate,
+  deleteEmailTemplate,
   EmailDocValidationError,
+  findTemplateUsages,
   getEmailTemplate,
   listEmailTemplates,
   previewEmailDoc,
@@ -193,6 +195,7 @@ export {
   type EmailTemplateRow,
   type EmailTemplateSource,
   type RenderedEmailDoc,
+  type TemplateUsage,
 } from "./emailTemplates";
 export {
   getDashboardStats,

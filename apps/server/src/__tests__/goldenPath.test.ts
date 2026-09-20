@@ -257,7 +257,7 @@ describe("Phase 4 golden path", () => {
 
     await waitFor("run to settle after exit", async () => {
       const [r] = await db.select().from(journeyRun).where(eq(journeyRun.id, run!.id)).limit(1);
-      return Boolean(r?.exitedAt) || r?.status === "completed" || r?.status === "succeeded";
+      return Boolean(r?.exitedAt) || r?.status === "completed";
     });
   });
 

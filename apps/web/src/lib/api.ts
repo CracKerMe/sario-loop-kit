@@ -220,6 +220,14 @@ export type EmailTemplateDto = {
   name: string;
   subject: string;
   html: string;
+  /**
+   * What produced `html`: `"tiptap"` is the visual editor and the only value
+   * with a structured `doc` behind it; `"html"` is a hand-written body. The
+   * list needs it to label a card "Visual editor / Raw HTML", so it is part of
+   * the list payload even though `doc` is not.
+   */
+  source: string;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -792,6 +800,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  /** Pre-flight usage check: which campaigns/journeys reference this template. */
+  getTemplateUsage: (id: string) =>
+    request<{
+      usage: {
+        campaigns: { id: string; name: string; status: string }[];
+        journeys: { id: string; name: string; status: string }[];
+      };
+    }>(`/v1/email-templates/${id}/usage`),
+  /** Delete an email template. Client should call getTemplateUsage first. */
+  deleteTemplate: (id: string) =>
+    request<{ ok: true }>(`/v1/email-templates/${id}`, { method: "DELETE" }),
 
   /* Visual (doc-based) email editor -------------------------------- */
   /** Fetch a single template with its structured `doc` (may be null for HTML-only templates). */

@@ -223,6 +223,26 @@ function DashboardPage() {
         />
       </div>
 
+      {stats && emailTotal === 0 && activeAutomations === 0 && (
+        <Card className="lk-fade-up mt-4 border-primary/20 bg-primary/5">
+          <CardContent className="flex flex-col items-center gap-3 py-8 text-center sm:flex-row sm:text-left">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <RouteIcon className="size-6" aria-hidden="true" />
+            </span>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold">Welcome to Loopkit!</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Create your first automation to start sending emails on autopilot.
+              </p>
+            </div>
+            <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
+              <PlusIcon data-icon="inline-start" />
+              Create automation
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="mt-6">
         <div className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           What do you want to do?

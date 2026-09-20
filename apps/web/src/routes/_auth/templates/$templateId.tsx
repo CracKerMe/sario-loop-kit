@@ -15,11 +15,24 @@ import {
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_auth/templates/$templateId")({
+  /**
+   * `?visual=true` converts a raw-HTML template into a structured one and opens
+   * the visual editor, in one navigation. It is the same conversion the chooser
+   * below offers as "Start visual editor" — just pre-decided, for callers that
+   * already know which editor they want (the Emails list card).
+   *
+   * A boolean, not `visual=1`: TanStack JSON-encodes search values, so a
+   * numeric-looking string round-trips as `visual=%221%22`.
+   */
+  validateSearch: (search: Record<string, unknown>): { visual?: boolean } => ({
+    visual: search.visual === true ? true : undefined,
+  }),
   component: TemplateEditorPage,
 });
 
 function TemplateEditorPage() {
   const { templateId } = Route.useParams();
+  const { visual } = Route.useSearch();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<FullEmailTemplateDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +44,13 @@ function TemplateEditorPage() {
       try {
         const res = await api.getTemplate(templateId);
         if (!cancelled) {
-          setTemplate(res.template);
+          // Nothing is written here: the conversion is committed by the first
+          // save inside the editor, which is what keeps a wrong click harmless.
+          setTemplate(
+            visual === true && !res.template.doc
+              ? { ...res.template, doc: emptyEmailDoc() }
+              : res.template,
+          );
           setError(null);
         }
       } catch (e) {
@@ -51,7 +70,7 @@ function TemplateEditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [templateId]);
+  }, [templateId, visual]);
 
   if (loading) {
     return (

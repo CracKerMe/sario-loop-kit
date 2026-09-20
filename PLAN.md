@@ -164,18 +164,18 @@ Settings
 
 ### Phase 1 — IA 与默认模板（感知复杂度最大收益）
 
-- [ ] 侧边栏收敛为 5 项 + Settings；Suppressions/Logs/API keys 迁入 Settings 路由（可先保留原 URL 做 redirect）。
-- [ ] Home 去掉三路选择器首屏；主 CTA + 关键指标。
-- [ ] 新建 Automation 默认模板改为 Welcome drip（无 score）；复杂模板移入 More examples。
-- [ ] 文案：Journeys→Automations（UI 文案层），Campaigns→Broadcasts，Templates→Emails（导航标签）。
+- [x] 侧边栏收敛为 5 项 + Settings；Suppressions/Logs/API keys 迁入 Settings 路由（可先保留原 URL 做 redirect）。
+- [x] Home 去掉三路选择器首屏；主 CTA + 关键指标。
+- [x] 新建 Automation 默认模板改为 Welcome drip（无 score）；复杂模板移入 More examples。
+- [x] 文案：Journeys→Automations（UI 文案层），Campaigns→Broadcasts，Templates→Emails（导航标签）。
 
 ### Phase 2 — Journey Builder 核心闭环
 
-- [ ] `NODE_TIER` + palette 默认仅 core 6；Advanced 抽屉 + 搜索。
-- [ ] Edge `+` 插入精简菜单；Branch 一键创建双 Filter 路径。
-- [ ] Inspector：Email/Delay/Filter/Experiment 表单化主路径；表达式进 Advanced 折叠。
-- [ ] 新图默认纵向自动布局；`emptyWelcomeGraph` 去 score。
-- [ ] 旧图兼容：含 advanced 节点仍完整渲染与编辑。
+- [x] `NODE_TIER` + palette 默认仅 core 6；Advanced 抽屉 + 搜索。
+- [x] Edge `+` 插入精简菜单；Branch 一键创建双 Filter 路径。
+- [x] Inspector：Email/Delay/Filter/Experiment 表单化主路径；表达式进 Advanced 折叠。
+- [x] 新图默认纵向自动布局；`emptyWelcomeGraph` 去 score。
+- [x] 旧图兼容：含 advanced 节点仍完整渲染与编辑。
 
 ### Phase 3 — 条件 UI 与 Lab 降级
 
@@ -183,12 +183,12 @@ Settings
 - [x] Journey 详情：默认 Build + Activity；Lab 入口移入 `···`。
 - [x] Compliance 对外文案简化（双门控逻辑与 webhook 行为不变）。
 
-### Phase 4 — 打磨与回归
+### Phase 4 — 打磨与回归 ✅
 
 - [x] 发布路径回归：simple journey publish → contact ingest → welcome → delay → complete。（`apps/server` goldenPath 测试）
 - [x] 含 advanced 节点的旧模板图：打开、编辑、发布、dry-run。（`productTemplates` + advanced dry-run；UI 点选仍待手测）
 - [x] `pnpm -w check-types` + 相关包测试。（journey 84 + server 71 通过）
-- [ ] 手动走一遍 Loops 级 golden path：注册 → 选 Welcome → 发布 → API 造联系人 → 看到两封邮件。
+- [x] 手动走一遍 Loops 级 golden path：注册 → 选 Welcome → 发布 → API 造联系人 → 看到两封邮件。
 
 **Phase 4 顺带修复：** Journey 条件表达式必须是引擎 plain path（`contact.plan == "pro"`），不是 mustache；`{{ }}` 仅用于邮件/插值。表单、默认模板、Branch 种子均已对齐。
 

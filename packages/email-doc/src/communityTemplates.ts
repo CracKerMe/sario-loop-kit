@@ -270,6 +270,56 @@ export const COMMUNITY_EMAIL_TEMPLATES: readonly CommunityEmailTemplate[] = [
   },
 
   {
+    id: "getting-started",
+    label: "Getting started guide",
+    description: "A numbered walkthrough that activates new users in one sitting.",
+    category: "onboarding",
+    subject: "Let's get you started",
+    tags: ["onboarding", "activation", "guide"],
+    doc: doc([
+      section([
+        heading(1, [text("Let's get you started, "), tag("contact.firstName")]),
+        p(
+          "You've got the account — now here are the three things that turn it into something you actually use.",
+        ),
+      ]),
+      section(
+        [
+          paragraph([bold("1 · Set up your workspace")]),
+          p(
+            "Give it a name, invite your team, and connect the tools you already use. Takes about two minutes.",
+          ),
+          divider("dashed", "#d4d4d8"),
+          paragraph([bold("2 · Create your first project")]),
+          p(
+            "Pick a template or start blank. The first project is where everything clicks — you'll see how the pieces fit together.",
+          ),
+          divider("dashed", "#d4d4d8"),
+          paragraph([bold("3 · Invite a teammate")]),
+          p(
+            "Sharing the workspace early means you're not the only one who knows where things are when you need help.",
+          ),
+        ],
+        { backgroundColor: "#fafafa" },
+      ),
+      section([button("Open my workspace", "https://example.com/workspace", "primary", "center")], {
+        paddingY: "sm",
+      }),
+      section(
+        [
+          paragraph([
+            muted("Stuck? "),
+            link("Reply to this email", "mailto:support@example.com"),
+            muted(" and a real person will help."),
+          ]),
+        ],
+        { paddingY: "sm" },
+      ),
+      marketingFooter("our product"),
+    ]),
+  },
+
+  {
     id: "product-launch",
     label: "Product launch",
     description: "Centred hero, a short case for the change, one button.",
@@ -358,6 +408,146 @@ export const COMMUNITY_EMAIL_TEMPLATES: readonly CommunityEmailTemplate[] = [
   },
 
   {
+    id: "event-invite",
+    label: "Event invitation",
+    description: "Date, time and place stated plainly, with an RSVP button.",
+    category: "announcement",
+    subject: "You're invited: a live walkthrough",
+    tags: ["event", "webinar", "invite", "rsvp"],
+    doc: doc([
+      section([
+        heading(1, [text("You're invited")]),
+        paragraph([
+          text("Hi "),
+          tag("contact.firstName"),
+          text(
+            ", we're running a live 30-minute walkthrough followed by open questions. No slides.",
+          ),
+        ]),
+      ]),
+      section(
+        [
+          paragraph([bold("When: "), text("Thursday, 3 April · 15:00–15:30 UTC")]),
+          paragraph([bold("Where: "), text("Online — the link arrives when you register.")]),
+          paragraph([bold("Cost: "), text("Free. A recording goes to everyone who registers.")]),
+        ],
+        { backgroundColor: "#f4f4f5" },
+      ),
+      section([button("Save my seat", "https://example.com/register")]),
+      section([
+        paragraph([
+          muted("Can't make that time? Register anyway and we'll send you the recording."),
+        ]),
+      ]),
+      marketingFooter("our events"),
+    ]),
+  },
+
+  {
+    id: "holiday-promo",
+    label: "Holiday promotion",
+    description: "A seasonal offer with a bold headline and a clear call to action.",
+    category: "announcement",
+    subject: "A little something for the season",
+    tags: ["promo", "sale", "seasonal"],
+    doc: doc([
+      section(
+        [
+          paragraph([muted("SEASONAL OFFER")], "center"),
+          heading(1, [text("A little something for the season")], "center"),
+          paragraph(
+            [
+              text("Hi "),
+              tag("contact.firstName"),
+              text(", we're marking the occasion with something we think you'll enjoy."),
+            ],
+            "center",
+          ),
+        ],
+        { backgroundColor: "#18181b", paddingY: "lg" },
+      ),
+      section(
+        [
+          paragraph([bold("The offer: "), text("20% off any plan, this week only.")]),
+          paragraph([bold("The code: "), text("SEASON20 — apply it at checkout.")]),
+          paragraph([
+            bold("The fine print: "),
+            text("Works on new subscriptions and upgrades. Expires Sunday at midnight."),
+          ]),
+        ],
+        { backgroundColor: "#fafafa" },
+      ),
+      section([button("Shop now", "https://example.com/shop", "primary", "center")]),
+      section(
+        [
+          paragraph(
+            [
+              muted("Not your thing? "),
+              link("Unsubscribe", UNSUBSCRIBE_HREF),
+              muted(" — no pressure."),
+            ],
+            "center",
+          ),
+        ],
+        { paddingY: "sm" },
+      ),
+    ]),
+  },
+
+  {
+    id: "monthly-roundup",
+    label: "Monthly roundup",
+    description: "Three curated reads with summaries, built for monthly reuse.",
+    category: "newsletter",
+    subject: "Your monthly roundup",
+    tags: ["digest", "monthly", "blog"],
+    doc: doc([
+      section(
+        [
+          paragraph([muted("MONTHLY ROUNDUP")], "center"),
+          heading(1, [text("Three things worth your time this month")], "center"),
+        ],
+        { backgroundColor: "#18181b", paddingY: "lg" },
+      ),
+      section([
+        paragraph([
+          text("Hi "),
+          tag("contact.firstName"),
+          text(", the month in review — three reads we think you'll find useful."),
+        ]),
+      ]),
+      section([
+        heading(3, [link("The first article headline", "https://example.com/article-1")]),
+        p(
+          "A couple of sentences on why this matters. Focus on what the reader gets, not what the piece covers.",
+        ),
+        divider("solid", "#e4e4e7"),
+        heading(3, [link("The second article headline", "https://example.com/article-2")]),
+        p(
+          "Keep each summary roughly the same length — a roundup reads as scannable because the blocks are even.",
+        ),
+        divider("solid", "#e4e4e7"),
+        heading(3, [link("The third article headline", "https://example.com/article-3")]),
+        p("End on the lightest item. It is the one people forward to a friend."),
+      ]),
+      section(
+        [
+          paragraph(
+            [
+              text("Want to see more? "),
+              link("Visit our blog", "https://example.com/blog"),
+              text(" for the full archive."),
+            ],
+            "center",
+          ),
+        ],
+        { backgroundColor: "#f4f4f5", paddingY: "sm" },
+      ),
+      marketingFooter("our newsletter"),
+    ]),
+  },
+
+  {
     id: "newsletter-digest",
     label: "Newsletter digest",
     description: "A short intro plus three linked stories. Built to be reused weekly.",
@@ -411,42 +601,6 @@ export const COMMUNITY_EMAIL_TEMPLATES: readonly CommunityEmailTemplate[] = [
   },
 
   {
-    id: "event-invite",
-    label: "Event invitation",
-    description: "Date, time and place stated plainly, with an RSVP button.",
-    category: "announcement",
-    subject: "You're invited: a live walkthrough",
-    tags: ["event", "webinar", "invite", "rsvp"],
-    doc: doc([
-      section([
-        heading(1, [text("You're invited")]),
-        paragraph([
-          text("Hi "),
-          tag("contact.firstName"),
-          text(
-            ", we're running a live 30-minute walkthrough followed by open questions. No slides.",
-          ),
-        ]),
-      ]),
-      section(
-        [
-          paragraph([bold("When: "), text("Thursday, 3 April · 15:00–15:30 UTC")]),
-          paragraph([bold("Where: "), text("Online — the link arrives when you register.")]),
-          paragraph([bold("Cost: "), text("Free. A recording goes to everyone who registers.")]),
-        ],
-        { backgroundColor: "#f4f4f5" },
-      ),
-      section([button("Save my seat", "https://example.com/register")]),
-      section([
-        paragraph([
-          muted("Can't make that time? Register anyway and we'll send you the recording."),
-        ]),
-      ]),
-      marketingFooter("our events"),
-    ]),
-  },
-
-  {
     id: "receipt",
     label: "Receipt",
     description: "A clean transactional receipt with an itemised summary.",
@@ -481,6 +635,88 @@ export const COMMUNITY_EMAIL_TEMPLATES: readonly CommunityEmailTemplate[] = [
       section([
         paragraph([
           muted("Questions about this charge? Reply to this email and we'll look into it."),
+        ]),
+      ]),
+    ]),
+  },
+
+  {
+    id: "order-confirmation",
+    label: "Order confirmation",
+    description: "A clean order summary with item details and delivery estimate.",
+    category: "transactional",
+    subject: "Order confirmed ✓",
+    tags: ["order", "receipt", "ecommerce"],
+    doc: doc([
+      section([
+        heading(2, [text("Order confirmed")]),
+        paragraph([
+          text("Hi "),
+          tag("contact.firstName"),
+          text(", thanks — we've got your order and it's being prepared."),
+        ]),
+      ]),
+      section(
+        [
+          paragraph([bold("Order #"), text("10482")]),
+          paragraph([bold("Placed "), text("3 April 2026")]),
+          divider("solid", "#e4e4e7"),
+          paragraph([text("Pro plan · annual")]),
+          paragraph([muted("USD 96.00")]),
+          divider("solid", "#e4e4e7"),
+          paragraph([text("Additional seats × 3")]),
+          paragraph([muted("USD 36.00")]),
+          divider("solid", "#e4e4e7"),
+          paragraph([bold("Total "), text("USD 132.00")]),
+          paragraph([muted("Estimated delivery: 5–7 business days.")]),
+        ],
+        { backgroundColor: "#fafafa" },
+      ),
+      section([button("View order details", "https://example.com/order", "secondary")], {
+        paddingY: "sm",
+      }),
+      section([
+        paragraph([
+          muted("Questions about this order? "),
+          link("Contact support", "mailto:support@example.com"),
+          muted(" and we'll sort it out."),
+        ]),
+      ]),
+    ]),
+  },
+
+  {
+    id: "shipping-update",
+    label: "Shipping update",
+    description: "Tracking information with a direct link to follow the delivery.",
+    category: "transactional",
+    subject: "Your order is on its way",
+    tags: ["shipping", "tracking", "delivery"],
+    doc: doc([
+      section([
+        heading(2, [text("Your order is on its way")]),
+        paragraph([
+          text("Hi "),
+          tag("contact.firstName"),
+          text(", your order has shipped and is heading your way."),
+        ]),
+      ]),
+      section(
+        [
+          paragraph([bold("Order #"), text("10482")]),
+          paragraph([bold("Carrier "), text("USPS")]),
+          paragraph([bold("Tracking "), text("9400111899223100012345")]),
+          divider("solid", "#e4e4e7"),
+          paragraph([bold("Estimated delivery "), text("Friday, 10 April")]),
+        ],
+        { backgroundColor: "#fafafa" },
+      ),
+      section([button("Track my package", "https://example.com/track")]),
+      section([
+        paragraph([
+          muted("Need to change something? "),
+          link("Edit your order", "https://example.com/order"),
+          muted(" before it ships."),
         ]),
       ]),
     ]),
@@ -648,6 +884,66 @@ export const COMMUNITY_EMAIL_TEMPLATES: readonly CommunityEmailTemplate[] = [
             link("Unsubscribe", UNSUBSCRIBE_HREF),
             muted("."),
           ]),
+        ],
+        { paddingY: "sm" },
+      ),
+    ]),
+  },
+
+  {
+    id: "referral-invite",
+    label: "Referral invite",
+    description: "A personal invite that rewards both the sender and the recipient.",
+    category: "lifecycle",
+    subject: "{{contact.firstName}}, you've got a friend on the inside",
+    tags: ["referral", "invite", "viral"],
+    doc: doc([
+      section([
+        paragraph([muted("FROM A FRIEND")], "center"),
+        heading(1, [text("You've been invited")], "center"),
+        paragraph(
+          [
+            text("Hi "),
+            tag("contact.firstName"),
+            text(
+              ", someone you know thinks you'd get a lot out of this — and they're willing to put a reward on it.",
+            ),
+          ],
+          "center",
+        ),
+      ]),
+      section(
+        [
+          paragraph([
+            bold("The offer: "),
+            text(
+              "Both of you get one month free when you sign up. No credit card required to start.",
+            ),
+          ]),
+          paragraph([
+            bold("What you get: "),
+            text(
+              "Everything in the Pro plan — unlimited projects, priority support, and the full API.",
+            ),
+          ]),
+          paragraph([
+            bold("How it works: "),
+            text("Click the button, create your account, and the credit is applied automatically."),
+          ]),
+        ],
+        { backgroundColor: "#fafafa" },
+      ),
+      section([button("Accept my invite", "https://example.com/invite", "primary", "center")]),
+      section(
+        [
+          paragraph(
+            [
+              muted("Not interested? "),
+              link("Unsubscribe", UNSUBSCRIBE_HREF),
+              muted(" — no hard feelings."),
+            ],
+            "center",
+          ),
         ],
         { paddingY: "sm" },
       ),

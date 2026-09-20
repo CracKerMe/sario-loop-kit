@@ -16,6 +16,15 @@ export const Route = createFileRoute("/_auth/journeys/new")({
   component: NewJourneyPage,
 });
 
+/** Short flow preview for each template. */
+const TEMPLATE_FLOW_PREVIEWS: Record<string, string> = {
+  "blank-welcome": "Trigger → Email → Delay → Email → Exit",
+  "onboarding-branch": "Trigger → Email → Delay → Branch → Email × 2 → Exit",
+  winback: "Trigger → Email → Delay → Filter → Email → Exit",
+  "marketing-ab-score-hours": "Trigger → Email → A/B → Score → Delay → Goal → Exit",
+  "standard-welcome-sequence": "Trigger → Email → Delay → Email → Exit",
+};
+
 function NewJourneyPage() {
   const navigate = useNavigate();
   const [templateId, setTemplateId] = useState<JourneyTemplateId>("blank-welcome");
@@ -92,6 +101,11 @@ function NewJourneyPage() {
               >
                 <span className="block text-xs font-medium">{t.name}</span>
                 <span className="block text-[10px] text-muted-foreground">{t.description}</span>
+                {TEMPLATE_FLOW_PREVIEWS[t.id] && (
+                  <span className="mt-1 block text-[10px] text-muted-foreground/60">
+                    {TEMPLATE_FLOW_PREVIEWS[t.id]}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -126,6 +140,11 @@ function NewJourneyPage() {
                 >
                   <span className="block text-xs font-medium">{t.name}</span>
                   <span className="block text-[10px] text-muted-foreground">{t.description}</span>
+                  {TEMPLATE_FLOW_PREVIEWS[t.id] && (
+                    <span className="mt-1 block text-[10px] text-muted-foreground/60">
+                      {TEMPLATE_FLOW_PREVIEWS[t.id]}
+                    </span>
+                  )}
                 </button>
               );
             })}
