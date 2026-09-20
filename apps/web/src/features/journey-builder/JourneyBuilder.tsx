@@ -28,6 +28,8 @@ import {
   EyeIcon,
   GripVerticalIcon,
   Loader2Icon,
+  Maximize2Icon,
+  NetworkIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PencilIcon,
@@ -61,6 +63,7 @@ import {
   graphToFlow,
   type BuilderNodeType,
 } from "./graph";
+import { autoLayoutNodes } from "./layout";
 import { NODE_ICONS, createNodeTypes } from "./nodes";
 import { VariablePicker } from "./VariablePicker";
 import {
@@ -577,22 +580,49 @@ export function JourneyBuilder({
   // Copilot output replaces the working canvas. Baseline is intentionally
   // left untouched: the applied graph counts as unsaved work so the normal
   // save/publish flow (and its dirty guard) takes over from here.
+  const fitViewToGraph = useCallback(() => {
+    // Double rAF: wait until node DOM has painted at the new positions.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        rfInstance?.fitView({ padding: 0.15, duration: 320 });
+      });
+    });
+  }, [rfInstance]);
+
+  const handleAutoLayout = useCallback(() => {
+    if (nodes.length === 0) return;
+    const next = autoLayoutNodes(nodes, edges);
+    setNodes(next);
+    setSelected((s) => (s ? (next.find((n) => n.id === s.id) ?? s) : s));
+    fitViewToGraph();
+    toast.success("节点已自动排版");
+  }, [nodes, edges, fitViewToGraph]);
+
+  const handleFitView = useCallback(() => {
+    if (nodes.length === 0) return;
+    fitViewToGraph();
+  }, [nodes.length, fitViewToGraph]);
+
+  // Copilot output replaces the working canvas. Baseline is intentionally
+  // left untouched: the applied graph counts as unsaved work so the normal
+  // save/publish flow (and its dirty guard) takes over from here.
   const applyCopilotResult = useCallback(
     (g: JourneyGraphDto, result: CopilotResultDto) => {
       const flow = graphToFlow(g);
-      const nextNodes = flow.nodes.map((n) =>
+      const prefilled = flow.nodes.map((n) =>
         n.type === "email" && !(n.data as { templateId?: string }).templateId
           ? { ...n, data: { ...(n.data as object), templateId: templates[0]?.id ?? "" } }
           : n,
       );
+      const nextNodes = autoLayoutNodes(prefilled, flow.edges);
       setNodes(nextNodes);
       setEdges(flow.edges);
       setSelected(null);
       setCopilotOpen(false);
-      requestAnimationFrame(() => rfInstance?.fitView({ padding: 0.15 }));
+      fitViewToGraph();
       toast.success(`Copilot 旅程已套用（${result.graph.nodes.length} 个节点，记得保存草稿）`);
     },
-    [templates, rfInstance],
+    [templates, fitViewToGraph],
   );
 
   const onConnect = useCallback((connection: Connection) => {
@@ -861,17 +891,19 @@ export function JourneyBuilder({
 
   return (
     <div
-      className="grid h-full min-h-0"
-      style={{ gridTemplateColumns: `auto minmax(0,1fr) ${inspectorWidth}px` }}
+      className="grid h-full min-h-0 overflow-hidden"
+      style={{
+        gridTemplateColumns: `${paletteOpen ? "248px" : "48px"} minmax(0, 1fr) ${inspectorWidth}px`,
+        gridTemplateRows: "minmax(0, 1fr)",
+      }}
     >
-      {/* Palette */}
+      {/* Palette — min-h-0 + overflow so the node list scrolls inside the viewport. */}
       <aside
         className={cn(
-          "flex flex-col border-r border-border bg-muted/20 transition-[width] duration-200",
-          paletteOpen ? "w-[212px]" : "w-12",
+          "flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-muted/20",
         )}
       >
-        <div className="flex items-center gap-1 border-b border-border/70 px-2 py-2">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/70 px-2 py-2">
           {paletteOpen && (
             <div className="relative min-w-0 flex-1">
               <SearchIcon
@@ -909,7 +941,7 @@ export function JourneyBuilder({
         </div>
 
         {paletteOpen ? (
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
             {(() => {
               const groups = new Map<string, BuilderNodeType[]>();
               for (const type of paletteItems) {
@@ -920,7 +952,7 @@ export function JourneyBuilder({
               }
               return [...groups.entries()].map(([cat, types]) => (
                 <div key={cat} className="mb-3">
-                  <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                  <div className="mb-1 px-1 text-[10px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
                     {NODE_CATEGORY_LABELS[cat] ?? cat}
                   </div>
                   <div className="grid gap-1">
@@ -935,23 +967,23 @@ export function JourneyBuilder({
                           onDragStart={(e) => onDragStart(e, type)}
                           onClick={() => insertNode(type)}
                           title={meta.description}
-                          className="group flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition-all duration-150 hover:border-border hover:bg-card hover:shadow-sm focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing"
+                          className="group flex cursor-grab items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition-all duration-150 hover:border-border hover:bg-card hover:shadow-sm focus-visible:ring-1 focus-visible:ring-ring active:cursor-grabbing"
                         >
                           <GripVerticalIcon
-                            className="size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+                            className="mt-0.5 size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
                             aria-hidden="true"
                           />
                           <span
-                            className="grid size-6 shrink-0 place-items-center rounded-md transition-transform duration-150 group-hover:scale-105"
+                            className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md transition-transform duration-150 group-hover:scale-105"
                             style={{ background: `${meta.color}22`, color: meta.color }}
                           >
                             <Icon className="size-3" aria-hidden="true" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium text-foreground/90">
+                            <span className="block text-xs leading-snug font-medium text-foreground/90">
                               {meta.label}
                             </span>
-                            <span className="block truncate text-[10px] text-muted-foreground">
+                            <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
                               {meta.description}
                             </span>
                           </span>
@@ -971,7 +1003,7 @@ export function JourneyBuilder({
             </p>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto py-2">
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain py-2">
             {(Object.keys(NODE_META) as BuilderNodeType[])
               .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
               .map((type) => {
@@ -986,7 +1018,7 @@ export function JourneyBuilder({
                     onClick={() => insertNode(type)}
                     title={`${meta.label} — ${meta.description}`}
                     aria-label={`Add ${meta.label}`}
-                    className="grid size-8 place-items-center rounded-lg transition-colors hover:bg-card"
+                    className="grid size-8 shrink-0 place-items-center rounded-lg transition-colors hover:bg-card"
                     style={{ color: meta.color }}
                   >
                     <Icon className="size-3.5" aria-hidden="true" />
@@ -998,8 +1030,8 @@ export function JourneyBuilder({
       </aside>
 
       {/* Canvas column */}
-      <div className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background/60 px-3 py-2">
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background/60 px-3 py-2">
           {!journeyId && !controlledName && (
             <Input
               value={name}
@@ -1020,6 +1052,26 @@ export function JourneyBuilder({
           )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAutoLayout}
+              disabled={nodes.length === 0}
+              title="Auto-layout nodes top-down and fit the view"
+            >
+              <NetworkIcon data-icon="inline-start" />
+              Auto layout
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleFitView}
+              disabled={nodes.length === 0}
+              title="Zoom to show all nodes"
+            >
+              <Maximize2Icon data-icon="inline-start" />
+              Fit view
+            </Button>
             <div
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
@@ -1125,22 +1177,40 @@ export function JourneyBuilder({
           </ReactFlow>
 
           <div className="pointer-events-none absolute right-3 bottom-3 flex flex-col items-end gap-2">
-            <button
-              type="button"
-              className="pointer-events-auto rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
-              onClick={() => setShowMiniMap((v) => !v)}
-            >
-              {showMiniMap ? "Hide map" : "Show map"}
-            </button>
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                className="rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                onClick={handleAutoLayout}
+                disabled={nodes.length === 0}
+              >
+                Auto layout
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                onClick={handleFitView}
+                disabled={nodes.length === 0}
+              >
+                Fit view
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+                onClick={() => setShowMiniMap((v) => !v)}
+              >
+                {showMiniMap ? "Hide map" : "Show map"}
+              </button>
+            </div>
             <div className="pointer-events-none rounded-md border border-border bg-card/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
-              Drag to connect · ⌫ delete · ⌘S save
+              Auto layout + fit · ⌫ delete · ⌘S save
             </div>
           </div>
         </div>
       </div>
 
       {/* Inspector */}
-      <aside className="relative flex min-h-0 flex-col overflow-hidden border-l border-border bg-muted/10">
+      <aside className="relative flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-muted/10">
         <div
           role="separator"
           aria-orientation="vertical"
