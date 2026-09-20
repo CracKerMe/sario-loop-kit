@@ -373,7 +373,7 @@ function JourneysPage() {
             <EmptyTitle>No journeys yet</EmptyTitle>
             <EmptyDescription>
               Automations are multi-step email sequences (waits, branches, event wake-ups). For a
-              one-shot broadcast to an audience, create a Campaign instead. For backend-triggered
+              one-shot campaign to an audience, create a Campaign instead. For backend-triggered
               mail, use the Transactional API.
             </EmptyDescription>
           </EmptyHeader>

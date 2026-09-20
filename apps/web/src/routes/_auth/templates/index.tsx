@@ -405,7 +405,7 @@ function TemplatesPage() {
     <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Emails"
-        description="Reusable email bodies for automations, broadcasts, and the transactional API."
+        description="Reusable email bodies for automations, campaigns, and the transactional API."
         actions={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setTxnOpen(true)}>
@@ -455,7 +455,7 @@ function TemplatesPage() {
           </span>
           <div className="text-sm font-medium">No emails yet</div>
           <p className="mx-auto mt-1 max-w-xs text-xs text-muted-foreground">
-            Email bodies used by automations, broadcasts, and the transactional API. Create your
+            Email bodies used by automations, campaigns, and the transactional API. Create your
             first one.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -819,7 +819,7 @@ function TemplatesPage() {
           <div className="grid gap-3">
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
               This template is still referenced by the following resources and may break active
-              automations or broadcasts.
+              automations or campaigns.
             </div>
 
             {deleteUsage.campaigns.length > 0 && (

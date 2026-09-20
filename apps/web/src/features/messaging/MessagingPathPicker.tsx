@@ -31,7 +31,7 @@ export const MESSAGING_PATHS: Path[] = [
   },
   {
     id: "campaign",
-    title: "Broadcast",
+    title: "Campaign",
     blurb: "One email to a saved audience.",
     when: "Announcements, newsletters.",
     href: "/campaigns",

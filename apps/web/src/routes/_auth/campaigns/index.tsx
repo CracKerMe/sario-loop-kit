@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
-import { CampaignCard } from "@/features/broadcasts/campaign-card";
+import { CampaignCard } from "@/features/campaigns/campaign-card";
 import {
   EmailComposerFields,
   type EmailComposerValue,
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_auth/campaigns/")({
 });
 
 /**
- * A broadcast, unlike a journey, has a progress state — so this page polls
+ * A campaign, unlike a journey, has a progress state — so this page polls
  * while anything is `sending`. The read endpoint also reconciles against
  * `email_send` on each poll (the engine sends asynchronously, so the drain
  * genuinely cannot know when a send succeeded), which is why the counter
@@ -85,7 +85,7 @@ function CampaignsPage() {
   /**
    * The edit entry for anything already launched. Only a draft can be updated
    * in place (see `updateCampaign`), so the honest way to "edit" a sent or
-   * sending broadcast is to fork it: copy the composition into a fresh draft
+   * sending campaign is to fork it: copy the composition into a fresh draft
    * and open the editor on that. The card labels the entry "Edit a copy" so
    * the copy is never a surprise.
    */
@@ -97,7 +97,7 @@ function CampaignsPage() {
       await load();
       openEdit(campaign);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not copy this broadcast");
+      toast.error(e instanceof Error ? e.message : "Could not copy this campaign");
     } finally {
       setBusyId(null);
     }
@@ -152,7 +152,7 @@ function CampaignsPage() {
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
-        title="Broadcasts"
+        title="Campaigns"
         description="One-off emails to a saved audience"
         actions={
           <div className="flex items-center gap-2">
@@ -161,7 +161,7 @@ function CampaignsPage() {
             </Button>
             <Button size="sm" onClick={openCreate}>
               <PlusIcon data-icon="inline-start" />
-              New broadcast
+              New campaign
             </Button>
           </div>
         }
@@ -213,9 +213,9 @@ function CampaignsPage() {
           <span className="mx-auto mb-3 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
             <SendIcon className="size-5" aria-hidden="true" />
           </span>
-          <div className="text-sm font-medium">No broadcasts yet</div>
+          <div className="text-sm font-medium">No campaigns yet</div>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
-            A broadcast sends one email to everyone in an audience. Recipients are resolved once at
+            A campaign sends one email to everyone in an audience. Recipients are resolved once at
             launch. For multi-step sequences, use an automation instead.
           </p>
           <div className="mx-auto mt-4 max-w-2xl">
@@ -223,7 +223,7 @@ function CampaignsPage() {
           </div>
           <Button size="sm" className="mt-4" onClick={openCreate}>
             <PlusIcon data-icon="inline-start" />
-            New broadcast
+            New campaign
           </Button>
         </div>
       )}

@@ -129,14 +129,14 @@ const QUICK_ACTIONS: {
     icon: RouteIcon,
   },
   {
-    title: "Send a broadcast",
+    title: "Send a campaign",
     body: "One email to a saved audience — announcements and newsletters.",
     to: "/campaigns",
     icon: SendIcon,
   },
   {
     title: "Write an email",
-    body: "Reusable email bodies used by automations and broadcasts.",
+    body: "Reusable email bodies used by automations and campaigns.",
     to: "/templates",
     icon: MailIcon,
   },
@@ -182,7 +182,7 @@ function DashboardPage() {
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/campaigns" })}>
               <SendIcon data-icon="inline-start" />
-              Broadcast
+              Campaign
             </Button>
             <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
               <PlusIcon data-icon="inline-start" />

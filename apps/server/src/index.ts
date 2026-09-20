@@ -143,7 +143,7 @@ for (const path of ["/v1/suppressions", "/v1/suppressions/*"] as const) {
 }
 app.route("/v1/suppressions", suppressionsRouter);
 
-// Campaigns: session-only. A broadcast is not something an ingestion key
+// Campaigns: session-only. A campaign is not something an ingestion key
 // should be able to trigger.
 for (const path of ["/v1/audiences", "/v1/audiences/*"] as const) {
   app.use(path, requireAuth({ allow: ["session"] }));

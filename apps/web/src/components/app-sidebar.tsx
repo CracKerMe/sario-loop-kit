@@ -29,7 +29,7 @@ const PRIMARY_NAV: PrimaryNav[] = [
   { to: "/dashboard", label: "Home", icon: HomeIcon },
   { to: "/contacts", label: "Contacts", icon: UsersIcon },
   { to: "/journeys", label: "Automations", icon: RouteIcon },
-  { to: "/campaigns", label: "Broadcasts", icon: SendIcon },
+  { to: "/campaigns", label: "Campaigns", icon: SendIcon },
   { to: "/templates", label: "Emails", icon: MailIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];

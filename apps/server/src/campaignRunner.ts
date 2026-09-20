@@ -22,7 +22,7 @@ import { getEngine } from "./loopkitRuntime";
  *
  * ## Why an in-process drain is acceptable here
  *
- * A broadcast drain that runs on `setTimeout(0)` inside the API process
+ * A campaign drain that runs on `setTimeout(0)` inside the API process
  * would normally be a scalability smell — a second replica would start a
  * competing drain and double-send. That is precisely the case P0-1's
  * advisory lock makes impossible: `apps/server` refuses to start as a second
@@ -61,7 +61,7 @@ function startSendFor(engine: NonNullable<ReturnType<typeof getEngine>>): StartC
  *
  * `engine.register()` persists the definition on every call, so doing this
  * per recipient would write a `wf_workflow_version` row per recipient (10k
- * rows for a 10k broadcast) for an identical definition. Registering once is
+ * rows for a 10k campaign) for an identical definition. Registering once is
  * both cheaper and the honest statement of intent: one workflow, many
  * instances.
  *

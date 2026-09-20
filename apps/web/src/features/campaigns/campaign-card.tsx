@@ -25,7 +25,7 @@ import { formatRelativeTime } from "@/lib/format";
 import type { CampaignDto, EmailTemplateDto } from "@/lib/api";
 
 /**
- * One broadcast in the Broadcasts list.
+ * One campaign in the Campaigns list.
  *
  * ## Shared language with the Emails grid
  *
@@ -44,7 +44,7 @@ import type { CampaignDto, EmailTemplateDto } from "@/lib/api";
  * interactive elements. Clicking anywhere on a draft is cheap and reversible —
  * it opens a dialog.
  *
- * A launched broadcast is not editable: the server refuses it, because editing
+ * A launched campaign is not editable: the server refuses it, because editing
  * a campaign after it fanned out would make its own report a lie ("some
  * recipients got the old subject"). So its edit entry is an explicit
  * **Edit a copy** button instead of an ambient click-anywhere surface — the
@@ -75,7 +75,7 @@ export function CampaignCard({
   onDelete,
 }: {
   campaign: CampaignDto;
-  /** The email this broadcast sends, when it still resolves. Used for the badge. */
+  /** The email this campaign sends, when it still resolves. Used for the badge. */
   template?: EmailTemplateDto;
   busy?: boolean;
   onEdit: () => void;
@@ -94,7 +94,7 @@ export function CampaignCard({
   const canDuplicate = campaign.status === "sent" || campaign.status === "cancelled";
   const canDelete = isDraft || canDuplicate;
 
-  const editLabel = isDraft ? "Edit broadcast" : "Edit a copy";
+  const editLabel = isDraft ? "Edit campaign" : "Edit a copy";
 
   // Progress is measured against resolved recipients, not the audience: a
   // campaign that has not launched yet has no recipient list to report on.
@@ -313,7 +313,7 @@ export function CampaignCard({
               </span>
             )}
             <span className="text-[10px] text-muted-foreground">
-              {/* A launched broadcast is dated by when it went out; a draft by
+              {/* A launched campaign is dated by when it went out; a draft by
                   the last time someone touched it. */}
               {campaign.launchedAt
                 ? `Launched ${formatRelativeTime(campaign.launchedAt)}`
@@ -335,7 +335,7 @@ export function CampaignCard({
             className="pointer-events-none absolute right-3.5 bottom-3 z-20 inline-flex translate-y-1.5 items-center gap-1.5 rounded-full border border-border/70 bg-card/95 px-3 py-1.5 text-[11px] font-medium opacity-0 shadow-lg shadow-black/10 backdrop-blur-sm transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
           >
             <PencilIcon className="size-3 text-primary" aria-hidden="true" />
-            Edit broadcast
+            Edit campaign
           </span>
         )}
       </div>

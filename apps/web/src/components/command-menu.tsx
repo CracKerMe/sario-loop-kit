@@ -58,8 +58,8 @@ const COMMANDS: CommandItem[] = [
     run: (n) => void n({ to: "/journeys" }),
   },
   {
-    id: "go-broadcasts",
-    label: "Broadcasts",
+    id: "go-campaigns",
+    label: "Campaigns",
     hint: "One-shot to an audience",
     group: "Go to",
     icon: SendIcon,

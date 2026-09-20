@@ -241,7 +241,7 @@ export function SuppressionsPanel() {
         open={adding}
         onClose={() => setAdding(false)}
         title="Block an address"
-        description="This address will be skipped by every automation and broadcast."
+        description="This address will be skipped by every automation and campaign."
       >
         <form
           className="grid gap-3"

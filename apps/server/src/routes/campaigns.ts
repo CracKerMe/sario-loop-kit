@@ -20,7 +20,7 @@ import { reconcileCampaign, resumeCampaign, startCampaign } from "../campaignRun
 import type { AuthVariables } from "../middleware/auth";
 
 /**
- * Campaign surface. Session-only: a broadcast is not something an ingestion
+ * Campaign surface. Session-only: a campaign is not something an ingestion
  * API key should be able to trigger, and there is no per-key send scope that
  * would make that safe.
  *
