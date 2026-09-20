@@ -348,7 +348,7 @@ function SplitRoutesEditor({
               next[i] = { ...route, expression: v };
               onChange(next);
             }}
-            placeholder='{{ contact.plan }} == "pro"'
+            placeholder='contact.plan == "pro"'
           />
         </div>
       ))}
@@ -682,7 +682,7 @@ export function JourneyBuilder({
             id: yesId,
             type: "filter",
             position: { x: pos.x - 150, y: pos.y + 140 },
-            data: { expression: '{{ contact.plan }} == "pro"' },
+            data: { expression: 'contact.plan == "pro"' },
           },
           {
             id: noId,
@@ -756,7 +756,7 @@ export function JourneyBuilder({
             id: yesId,
             type: "filter",
             position: { x: pos.x - 150, y: pos.y + 140 },
-            data: { expression: '{{ contact.plan }} == "pro"' },
+            data: { expression: 'contact.plan == "pro"' },
           },
           {
             id: noId,

@@ -11,7 +11,7 @@ Loopkit 引擎能力已经很强，但**产品表面把引擎概念全部平铺�
 | 发送路径 | 首页就展示三路选择器（Lifecycle / Broadcast / Transactional） | 同样三类，但**不教育用户先选路径**，直接从 Emails 或 Loops 进入 |
 | 新建 Journey 默认模板 | 默认选中 **Welcome + A/B + Score + Hours**（实验 + 打分 + 营业时段 + goal） | 从空白或简单模板起步；复杂 playbook 是示例不是默认 |
 | Builder 交互 | 自由画布 + 左侧全量节点面板 + 2200 行 Inspector | 线性路径为主；**悬停箭头点 `+` 插入**；分支自动挂 Audience filter |
-| 条件配置 | 原始表达式 `{{ contact.plan }} == "pro"` | 属性选择器 + 受众过滤 UI |
+| 条件配置 | 原始表达式 `contact.plan == "pro"` | 属性选择器 + 受众过滤 UI |
 | Journey 详情页 | Builder / **Lab**（Preview→Simulate→Optimize→Canary→Migrate）/ Runs / Funnel | Build / Metrics；测试用 `@example.com` 即可 |
 | 默认模板内容 | score、A/B、timeWindow、notify 一上来就齐 | 触发 → 邮件 → 定时器 → 结束 |
 
@@ -107,7 +107,7 @@ flowchart TB
 - **Journey 内 Filter/Branch 主 UI**：属性选择器（联系人字段）+ 运算符（是/不是/大于/包含/存在）+ 值；生成的仍是 `SegmentFilter` 或简单 expression，**编译层不变**。
 - **Audiences**：保留 saved segment；新建时主 UI 是同一属性选择器；「Edit as JSON / advanced AST」进 Advanced。
 - **describeRows 自然语言预览**（已有人群编辑器优点）**提升到 journey filter 侧边栏**，降低表达式恐惧。
-- 原始 `{{ contact.plan }} == "pro"` 表达式能力保留，作为 Advanced，不删除。
+- 原始 `contact.plan == "pro"` 表达式能力保留，作为 Advanced，不删除。（引擎条件用 plain path，`{{ }}` 仅用于邮件/插值）
 
 ## 默认模板与 Home
 
@@ -185,10 +185,12 @@ Settings
 
 ### Phase 4 — 打磨与回归
 
-- [ ] 发布路径回归：simple journey publish → contact ingest → welcome → delay → complete。
-- [ ] 含 advanced 节点的旧模板图：打开、编辑、发布、dry-run。
-- [x] `pnpm -w check-types` + 相关包测试。（journey 79 + server 69 通过）
+- [x] 发布路径回归：simple journey publish → contact ingest → welcome → delay → complete。（`apps/server` goldenPath 测试）
+- [x] 含 advanced 节点的旧模板图：打开、编辑、发布、dry-run。（`productTemplates` + advanced dry-run；UI 点选仍待手测）
+- [x] `pnpm -w check-types` + 相关包测试。（journey 84 + server 71 通过）
 - [ ] 手动走一遍 Loops 级 golden path：注册 → 选 Welcome → 发布 → API 造联系人 → 看到两封邮件。
+
+**Phase 4 顺带修复：** Journey 条件表达式必须是引擎 plain path（`contact.plan == "pro"`），不是 mustache；`{{ }}` 仅用于邮件/插值。表单、默认模板、Branch 种子均已对齐。
 
 ## 非目标
 

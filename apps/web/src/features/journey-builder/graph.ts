@@ -216,11 +216,11 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
         method: "POST",
       };
     case "branch":
-      return { expression: '{{ contact.plan }} == "pro"' };
+      return { expression: 'contact.plan == "pro"' };
     case "split":
       return {
         routes: [
-          { name: "vip", expression: "{{ contact.vip }} == true" },
+          { name: "vip", expression: "contact.vip == true" },
           { name: "other", expression: "true" },
         ],
       };
@@ -232,7 +232,7 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
         ],
       };
     case "filter":
-      return { expression: "{{ contact.subscribed }} == true" };
+      return { expression: "contact.subscribed == true" };
     case "timeWindow":
       return { days: [1, 2, 3, 4, 5], startHour: 9, endHour: 18, label: "Business hours" };
     case "waitEvent":
@@ -365,7 +365,7 @@ export function onboardingBranchGraph(): JourneyGraphDto {
         id: "branch_paid",
         type: "branch",
         position: { x: 360, y: 400 },
-        data: { expression: '{{ contact.plan }} == "paid"' },
+        data: { expression: 'contact.plan == "paid"' },
       },
       {
         id: "email_paid",
@@ -424,7 +424,7 @@ export function winbackGraph(): JourneyGraphDto {
         id: "filter_active",
         type: "filter",
         position: { x: 280, y: 400 },
-        data: { expression: "{{ contact.active }} == true" },
+        data: { expression: "contact.active == true" },
       },
       {
         id: "email_last",

@@ -53,7 +53,7 @@ export type ParsedCondition = {
   value: string;
 };
 
-const PROP = String.raw`contact\.([\w.]+)`;
+const PROP = String.raw`(?:\{\{\s*)?contact\.([\w.]+)(?:\s*\}\})?`;
 const STR = String.raw`"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'`;
 const NUM = String.raw`(-?\d+(?:\.\d+)?)`;
 const BOOL = String.raw`\b(true|false)\b`;
@@ -63,7 +63,7 @@ export function parseConditionExpression(expr: string): ParsedCondition | null {
   if (!raw) return null;
 
   const compare = new RegExp(
-    String.raw`^\{\{\s*${PROP}\s*\}\}\s*(==|!=|>=|<=|>|<|contains)\s*(?:${STR}|${NUM}|${BOOL})\s*$`,
+    String.raw`^${PROP}\s*(==|!=|>=|<=|>|<|contains)\s*(?:${STR}|${NUM}|${BOOL})\s*$`,
   );
   const m = raw.match(compare);
   if (m) {
@@ -85,10 +85,11 @@ export function parseConditionExpression(expr: string): ParsedCondition | null {
   return null;
 }
 
+/** Engine conditions are plain paths (`contact.plan == "pro"`), not mustache. */
 export function buildConditionExpression(c: ParsedCondition): string {
   const property = c.property.trim() || "plan";
   const op = OP_OPTIONS.find((o) => o.id === c.op) ?? OP_OPTIONS[0]!;
-  const path = `{{ contact.${property} }}`;
+  const path = `contact.${property}`;
   if (op.id === "gt" || op.id === "gte" || op.id === "lt" || op.id === "lte") {
     const num = c.value.trim();
     return `${path} ${op.token} ${num === "" ? "0" : num}`;
@@ -409,7 +410,7 @@ export function ConditionExpressionField({ expression, onChange, propertyKeys, h
             value={expression}
             onChange={(e) => onChange(e.target.value)}
             className="min-h-[88px] font-mono text-xs"
-            placeholder='{{ contact.plan }} == "pro"'
+            placeholder='contact.plan == "pro"'
           />
           {hint && <p className="text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
         </>
