@@ -1,14 +1,20 @@
+import { AiConfigError, AiGraphError, generateSegmentAudience } from "@loopkit/ai";
 import {
   AudienceValidationError,
   countAudienceMembers,
   createAudience,
   deleteAudience,
+  describeSegmentFilter,
   getAudience,
   listAudiences,
+  listContactPropertyKeys,
   resolveAudienceContacts,
   updateAudience,
+  validateSegmentFilter,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
+import { contactEvent } from "@loopkit/db/schema";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -75,6 +81,90 @@ audiencesRouter.post("/", async (c) => {
     return c.json(result, 201);
   } catch (error) {
     return validationResponse(c, error);
+  }
+});
+
+const copilotSchema = z.object({
+  /** What the operator wants, in their own words. */
+  request: z.string().trim().min(3).max(2000),
+  /** Optional calendar override for tests / deterministic relative phrases. */
+  today: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
+/**
+ * P3.6 audience copilot: natural language → guarded SegmentFilter AST.
+ *
+ * Workspace context is gathered server-side so the model only sees this
+ * workspace's property key names and event names — never contact values.
+ * The response filter has already cleared @loopkit/ai's guard; we re-run
+ * core's validateSegmentFilter as the non-bypassable write-path authority
+ * before handing the AST back. Saving still goes through createAudience,
+ * which validates again.
+ *
+ * Registered before `/:id` so the path is not swallowed by the id route.
+ */
+audiencesRouter.post("/copilot", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = copilotSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [propertyKeys, eventRows] = await Promise.all([
+    listContactPropertyKeys(db, workspaceId),
+    db
+      .selectDistinct({ name: contactEvent.name })
+      .from(contactEvent)
+      .where(eq(contactEvent.workspaceId, workspaceId))
+      .limit(80),
+  ]);
+
+  try {
+    const result = await generateSegmentAudience({
+      request: parsed.data.request,
+      propertyKeys,
+      events: eventRows.map((e) => e.name),
+      today: parsed.data.today ?? new Date().toISOString().slice(0, 10),
+      language: "简体中文",
+    });
+
+    const validation = validateSegmentFilter(result.result.filter);
+    if (!validation.ok) {
+      return c.json(
+        {
+          error: "ai_guard_rejected",
+          issues: validation.errors,
+          message: "segment filter rejected",
+        },
+        502,
+      );
+    }
+
+    return c.json({
+      name: result.result.name,
+      summary: describeSegmentFilter(result.result.filter),
+      modelSummary: result.result.summary,
+      filter: result.result.filter,
+      model: result.model,
+      attempts: result.attempts,
+      usage: result.usage,
+    });
+  } catch (error) {
+    if (error instanceof AiConfigError) {
+      return c.json({ error: "ai_not_configured", message: error.message }, 503);
+    }
+    if (error instanceof AiGraphError) {
+      return c.json(
+        { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+        502,
+      );
+    }
+    return c.json(
+      { error: "ai_unavailable", message: error instanceof Error ? error.message : String(error) },
+      500,
+    );
   }
 });
 

@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
+import { AudienceCopilot } from "@/features/audiences/AudienceCopilot";
 import { AudienceFilterBuilder } from "@/features/audiences/AudienceFilterBuilder";
 import {
   emptyFieldRow,
@@ -25,7 +26,13 @@ import {
   type GroupMode,
   type Row,
 } from "@/features/audiences/filter";
-import { api, type AudienceWithCountsDto, type ContactDto } from "@/lib/api";
+import {
+  api,
+  type AudienceCopilotResultDto,
+  type AudienceWithCountsDto,
+  type ContactDto,
+  type SegmentFilterDto,
+} from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/audiences/")({
   component: AudiencesPage,
@@ -50,6 +57,13 @@ function AudiencesPage() {
   const [name, setName] = useState("");
   const [rows, setRows] = useState<Row[]>([emptyFieldRow()]);
   const [mode, setMode] = useState<GroupMode>("and");
+  /**
+   * Advanced AI-generated filter that the flat builder cannot represent
+   * (nesting / not). When set, create uses this AST directly — the same
+   * createAudience path, which re-validates server-side.
+   */
+  const [aiFilter, setAiFilter] = useState<SegmentFilterDto | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -116,6 +130,24 @@ function AudiencesPage() {
     setRows([emptyFieldRow()]);
     setMode("and");
     setEditBlocked(false);
+    setAiFilter(null);
+    setAiSummary(null);
+  };
+
+  const applyAiFilter = (result: AudienceCopilotResultDto) => {
+    if (name.trim().length === 0) setName(result.name);
+    const parsed = parseRows(result.filter);
+    if (parsed) {
+      // Flat enough for the visual builder — load it so the operator can
+      // keep editing conditions before saving.
+      setRows(parsed.rows);
+      setMode(parsed.mode);
+      setAiFilter(null);
+      setAiSummary(null);
+    } else {
+      setAiFilter(result.filter);
+      setAiSummary(result.summary);
+    }
   };
 
   const openCreate = () => {
@@ -140,7 +172,7 @@ function AudiencesPage() {
   };
 
   const submit = async () => {
-    const filter = rowsToFilter(rows, mode);
+    const filter = aiFilter ?? rowsToFilter(rows, mode);
     if (!filter) {
       toast.error("Add at least one complete condition");
       return;
@@ -367,14 +399,41 @@ function AudiencesPage() {
               void submit();
             }}
           >
-            <AudienceFilterBuilder
-              name={name}
-              onNameChange={setName}
-              rows={rows}
-              onRowsChange={setRows}
-              mode={mode}
-              onModeChange={setMode}
-            />
+            {!editing && (
+              <AudienceCopilot
+                onApply={applyAiFilter}
+                appliedSummary={aiSummary}
+                onClear={() => {
+                  setAiFilter(null);
+                  setAiSummary(null);
+                  setRows([emptyFieldRow()]);
+                  setMode("and");
+                }}
+              />
+            )}
+            {!aiFilter && (
+              <AudienceFilterBuilder
+                name={name}
+                onNameChange={setName}
+                rows={rows}
+                onRowsChange={setRows}
+                mode={mode}
+                onModeChange={setMode}
+              />
+            )}
+            {aiFilter && (
+              <div className="grid gap-1.5">
+                <label htmlFor="aud-name-ai" className="text-sm font-medium">
+                  Name
+                </label>
+                <Input
+                  id="aud-name-ai"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Audience name"
+                />
+              </div>
+            )}
             <Button type="submit" disabled={submitting || name.trim().length === 0}>
               {submitting && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
               {editing ? "Save changes" : "Create audience"}

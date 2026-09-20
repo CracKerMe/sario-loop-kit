@@ -60,3 +60,20 @@ export {
   type JourneyOptimizationInput,
   type JourneyOptimizationProposal,
 } from "./journeyOptimization";
+export { generateSegmentAudience } from "./generateSegmentFilter";
+export {
+  MAX_SEGMENT_CHILDREN,
+  MAX_SEGMENT_DEPTH,
+  SEGMENT_TOOL_NAME,
+  buildSegmentRepairPrompt,
+  buildSegmentSystemPrompt,
+  buildSegmentUserPrompt,
+  guardSegmentAudience,
+  segmentAudienceZod,
+  segmentToolParameters,
+  type AiSegmentFilter,
+  type AiSegmentOperator,
+  type AiSegmentValue,
+  type GeneratedSegmentAudience,
+  type SegmentGenerationInput,
+} from "./segmentFilter";

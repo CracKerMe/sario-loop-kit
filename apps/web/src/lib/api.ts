@@ -407,6 +407,19 @@ export type AudienceWithCountsDto = AudienceDto & {
   summary: string;
 };
 
+/** P3.6 audience copilot: NL → guarded SegmentFilter AST. */
+export type AudienceCopilotResultDto = {
+  name: string;
+  /** One-line summary from core describeSegmentFilter (not the model). */
+  summary: string;
+  /** Model's own restatement, for the review card. */
+  modelSummary: string;
+  filter: SegmentFilterDto;
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
 /* ------------------------------------------------------------------ */
 /* Campaigns                                                           */
 /* ------------------------------------------------------------------ */
@@ -828,6 +841,12 @@ export const api = {
     request<{ memberCount: number; sendableCount: number }>("/v1/audiences/preview", {
       method: "POST",
       body: JSON.stringify({ filter }),
+    }),
+  /** Natural language → guarded SegmentFilter (P3.6). */
+  audienceCopilot: (input: { request: string; today?: string }) =>
+    request<AudienceCopilotResultDto>("/v1/audiences/copilot", {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
 
   /* Campaigns ------------------------------------------------------- */
