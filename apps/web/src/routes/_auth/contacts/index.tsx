@@ -330,9 +330,8 @@ function ContactsPage() {
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs">
           <FilterIcon className="size-3.5 text-sky-600 dark:text-sky-300" aria-hidden="true" />
           <span>
-            Showing members of audience <strong>{audienceName || audienceId}</strong> (frozen
-            snapshot at load; mailable-first resolution may exclude suppressed addresses depending
-            on endpoint defaults).
+            Showing members of audience <strong>{audienceName || audienceId}</strong>. Contacts who
+            unsubscribed or were suppressed are not mailable.
           </span>
           <Link
             to="/contacts"

@@ -468,8 +468,8 @@ function CampaignsPage() {
               {selectedAudience && (
                 <p className="text-[11px] text-muted-foreground">
                   {selectedAudience.memberCount.toLocaleString()} match ·{" "}
-                  {selectedAudience.sendableCount.toLocaleString()} can receive mail. The gap is
-                  unsubscribed and suppressed contacts, which are excluded at launch.
+                  {selectedAudience.sendableCount.toLocaleString()} can receive. Unsubscribed and
+                  suppressed contacts are skipped automatically.
                 </p>
               )}
             </div>

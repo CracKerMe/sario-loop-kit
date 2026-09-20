@@ -1891,13 +1891,13 @@ export function JourneyBuilder({
               {(selected.type === "branch" || selected.type === "filter") && (
                 <InspectorField
                   label="Condition"
-                  hint="true continues · false routes to the other handle"
+                  hint="true continues · false takes the other path"
                 >
                   <ConditionExpressionField
                     expression={String((selected.data as { expression?: string }).expression ?? "")}
                     onChange={(v) => updateSelectedData({ expression: v })}
                     propertyKeys={contactPropertyKeys}
-                    hint='Example: {{ contact.plan }} == "pro"'
+                    hint="Form uses the same contact fields as Audiences. Advanced expressions stay available."
                   />
                 </InspectorField>
               )}

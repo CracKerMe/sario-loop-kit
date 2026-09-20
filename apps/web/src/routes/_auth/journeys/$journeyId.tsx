@@ -1,4 +1,12 @@
 import { Button } from "@loopkit/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@loopkit/ui/components/dropdown-menu";
 import { Input } from "@loopkit/ui/components/input";
 import { Skeleton } from "@loopkit/ui/components/skeleton";
 import { cn } from "@loopkit/ui/lib/utils";
@@ -10,11 +18,15 @@ import {
   BarChart3Icon,
   CopyIcon,
   FlaskConicalIcon,
-  GitBranchIcon,
   Loader2Icon,
+  MoreHorizontalIcon,
   PauseIcon,
+  PlayIcon,
   RefreshCwIcon,
+  RocketIcon,
   SearchIcon,
+  ShuffleIcon,
+  SparklesIcon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
@@ -22,10 +34,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
-import { JourneyLab, type LabStageId } from "@/features/journey-builder/JourneyLab";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
+import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
+import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
+import { OptimizeDialog } from "@/features/journey-builder/OptimizeDialog";
+import { SimulateDialog } from "@/features/journey-builder/SimulateDialog";
 import {
   api,
   type FunnelEntryDto,
@@ -39,14 +54,15 @@ export const Route = createFileRoute("/_auth/journeys/$journeyId")({
   component: JourneyEditorPage,
 });
 
-const TABS = [
+/** Primary surface stays Loops-simple. Lab ops live behind ··· → Test & release. */
+const PRIMARY_TABS = [
   { id: "builder", label: "Builder", icon: WorkflowIcon },
-  { id: "lab", label: "Lab", icon: FlaskConicalIcon },
-  { id: "runs", label: "Runs", icon: GitBranchIcon },
-  { id: "funnel", label: "Funnel", icon: BarChart3Icon },
+  { id: "activity", label: "Activity", icon: ActivityIcon },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type TabId = "builder" | "activity";
+type ActivityView = "runs" | "funnel";
+type LabStageId = "preview" | "simulate" | "optimize" | "migrate";
 
 const FUNNEL_STATUS_STYLES: Record<string, string> = {
   succeeded: "bg-emerald-500",
@@ -301,6 +317,7 @@ function JourneyEditorPage() {
   const [funnelCounts, setFunnelCounts] = useState<Record<string, number>>({});
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
+  const [activityView, setActivityView] = useState<ActivityView>("runs");
   const [labStage, setLabStage] = useState<LabStageId | null>(null);
   const [canary, setCanary] = useState<JourneyCanaryStatusDto | null>(null);
   const [canaryBusy, setCanaryBusy] = useState(false);
@@ -384,8 +401,8 @@ function JourneyEditorPage() {
   }, [loadRuns]);
 
   useEffect(() => {
-    if (tab === "funnel") void loadFunnel();
-  }, [tab, loadFunnel]);
+    if (tab === "activity" && activityView === "funnel") void loadFunnel();
+  }, [tab, activityView, loadFunnel]);
 
   const pause = async () => {
     setPausing(true);
@@ -473,18 +490,6 @@ function JourneyEditorPage() {
                   variant="outline"
                   size="sm"
                   className="h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    setTab("lab");
-                    setLabStage("preview");
-                  }}
-                  disabled={!graph}
-                >
-                  Lab
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-[11px]"
                   disabled={!builderMeta || builderMeta.saving || !builderMeta.dirty}
                   onClick={() => void controlsRef.current?.saveDraft()}
                 >
@@ -503,20 +508,6 @@ function JourneyEditorPage() {
                 </Button>
               </>
             )}
-            {status === "published" && tab !== "lab" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => {
-                  setTab("lab");
-                  setLabStage("optimize");
-                }}
-                disabled={!graph}
-              >
-                Optimize
-              </Button>
-            )}
             {status === "published" && (
               <Button
                 variant="outline"
@@ -533,11 +524,60 @@ function JourneyEditorPage() {
                 Pause
               </Button>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-7 rounded-md"
+                    aria-label="More journey actions"
+                  />
+                }
+              >
+                <MoreHorizontalIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-52 bg-card">
+                <DropdownMenuLabel>Test &amp; release</DropdownMenuLabel>
+                <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("preview")}>
+                  <PlayIcon data-icon="inline-start" />
+                  Preview path
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("simulate")}>
+                  <FlaskConicalIcon data-icon="inline-start" />
+                  Simulate cohort
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!graph || status !== "published"}
+                  onClick={() => setLabStage("optimize")}
+                >
+                  <SparklesIcon data-icon="inline-start" />
+                  Optimize…
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!graph || status !== "published"}
+                  onClick={() => setLabStage("migrate")}
+                >
+                  <ShuffleIcon data-icon="inline-start" />
+                  Migrate runs…
+                </DropdownMenuItem>
+                {canary?.canary && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled>
+                      <RocketIcon data-icon="inline-start" />
+                      Canary {canary.canary.status} @ {canary.canary.percent}%
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
-        {/* Canary strip — single line, only outside Lab tab. */}
-        {canary?.canary && tab !== "lab" && (
+        {/* Canary strip — release ops stay visible without opening Lab. */}
+        {canary?.canary && (
           <div
             className={cn(
               "flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 px-3 py-1 text-[11px]",
@@ -590,17 +630,13 @@ function JourneyEditorPage() {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Primary tabs — Lab/ops live in ···, not here. */}
         <div className="flex items-center gap-1 px-2 pb-1.5">
-          {TABS.map(({ id, label, icon: Icon }) => {
+          {PRIMARY_TABS.map(({ id, label, icon: Icon }) => {
             const badge =
-              id === "runs"
-                ? runs.length || totalRuns
-                : id === "funnel"
-                  ? funnelGroups.length || null
-                  : id === "lab"
-                    ? null
-                    : builderMeta?.nodeCount || graph?.nodes.length || null;
+              id === "activity"
+                ? runs.length || totalRuns || funnelGroups.length || null
+                : builderMeta?.nodeCount || graph?.nodes.length || null;
             return (
               <button
                 key={id}
@@ -638,274 +674,349 @@ function JourneyEditorPage() {
             }}
           />
         </div>
-      ) : tab === "lab" ? (
-        <div className="min-h-0 flex-1 overflow-hidden p-2">
-          <JourneyLab
-            journeyId={journeyId}
-            graph={graph}
-            status={status}
-            publishedVersion={publishedVersion}
-            dirty={builderMeta?.dirty ?? false}
-            canary={canary}
-            canaryBusy={canaryBusy}
-            onCanaryAction={canaryAction}
-            onOptimizeAccepted={() => void loadRuns()}
-            onMigrated={() => void loadRuns()}
-            openStage={labStage}
-            onOpenStage={setLabStage}
-            className="h-full"
-          />
-        </div>
-      ) : tab === "runs" ? (
+      ) : (
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mx-auto w-full max-w-5xl">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[200px] flex-1">
-                <SearchIcon
-                  className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <Input
-                  value={runQuery}
-                  onChange={(e) => setRunQuery(e.target.value)}
-                  placeholder="Search by email, contact, or instance…"
-                  className="pl-8"
-                  aria-label="Search runs"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={runsLoading}
-                onClick={async () => {
-                  await loadRuns();
-                  toast.success("Runs refreshed");
-                }}
-              >
-                <RefreshCwIcon
-                  data-icon="inline-start"
-                  className={cn(runsLoading && "animate-spin")}
-                />
-                Refresh
-              </Button>
-            </div>
-
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {RUN_STATUS_FILTERS.map((id) => {
-                const count = id === "all" ? runStatusCounts.all : (runStatusCounts[id] ?? 0);
-                return (
+              <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+                {(
+                  [
+                    { id: "runs" as const, label: "Runs", icon: ActivityIcon },
+                    { id: "funnel" as const, label: "Funnel", icon: BarChart3Icon },
+                  ] as const
+                ).map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setRunStatus(id)}
-                    aria-pressed={runStatus === id}
+                    onClick={() => setActivityView(id)}
+                    aria-pressed={activityView === id}
                     className={cn(
-                      "rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                      runStatus === id
-                        ? "border-primary/40 bg-primary/10 text-primary"
-                        : "border-border bg-card text-muted-foreground hover:text-foreground",
+                      "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      activityView === id
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {id}
-                    <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                    <Icon className="size-3.5" aria-hidden="true" />
+                    {label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+
+              {activityView === "runs" && (
+                <>
+                  <div className="relative min-w-[200px] flex-1">
+                    <SearchIcon
+                      className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      value={runQuery}
+                      onChange={(e) => setRunQuery(e.target.value)}
+                      placeholder="Search by email, contact, or instance…"
+                      className="pl-8"
+                      aria-label="Search runs"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={runsLoading}
+                    onClick={async () => {
+                      await loadRuns();
+                      toast.success("Runs refreshed");
+                    }}
+                  >
+                    <RefreshCwIcon
+                      data-icon="inline-start"
+                      className={cn(runsLoading && "animate-spin")}
+                    />
+                    Refresh
+                  </Button>
+                </>
+              )}
+              {activityView === "funnel" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  disabled={funnelLoading}
+                  onClick={async () => {
+                    await loadFunnel();
+                    toast.success("Funnel refreshed");
+                  }}
+                >
+                  <RefreshCwIcon
+                    data-icon="inline-start"
+                    className={cn(funnelLoading && "animate-spin")}
+                  />
+                  Refresh
+                </Button>
+              )}
             </div>
 
-            <div className="lk-fade-up overflow-hidden rounded-xl border border-border bg-card">
-              {runsLoading && runs.length === 0 && (
-                <div className="grid gap-2 p-4">
-                  {[0, 1, 2].map((i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
+            {activityView === "runs" && (
+              <>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {RUN_STATUS_FILTERS.map((id) => {
+                    const count = id === "all" ? runStatusCounts.all : (runStatusCounts[id] ?? 0);
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setRunStatus(id)}
+                        aria-pressed={runStatus === id}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                          runStatus === id
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border bg-card text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {id}
+                        <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="lk-fade-up overflow-hidden rounded-xl border border-border bg-card">
+                  {runsLoading && runs.length === 0 && (
+                    <div className="grid gap-2 p-4">
+                      {[0, 1, 2].map((i) => (
+                        <Skeleton key={i} className="h-10 w-full" />
+                      ))}
+                    </div>
+                  )}
+                  {!runsLoading || runs.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                            <th className="px-3 py-2 font-medium">Contact</th>
+                            <th className="px-3 py-2 font-medium">Status</th>
+                            <th className="px-3 py-2 font-medium">Entered</th>
+                            <th className="px-3 py-2 font-medium">Duration</th>
+                            <th className="px-3 py-2 font-medium">Instance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredRuns.map((r) => (
+                            <tr
+                              key={r.id}
+                              tabIndex={0}
+                              onClick={() => setOpenRun(r.instanceId)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setOpenRun(r.instanceId);
+                                }
+                              }}
+                              className="cursor-pointer border-b border-border/60 outline-none transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-accent/40"
+                            >
+                              <td className="px-3 py-2.5">
+                                <div className="font-medium">{r.email ?? r.contactId}</div>
+                                <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                  {r.contactId.slice(0, 10)}…
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <StatusBadge status={r.status} />
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <div className="text-foreground/90">
+                                  {formatRelativeTime(r.enteredAt)}
+                                </div>
+                                <div className="mt-0.5 text-[10px] text-muted-foreground">
+                                  {formatDateTime(r.enteredAt)}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+                                {formatDuration(r.enteredAt, r.exitedAt)}
+                              </td>
+                              <td className="px-3 py-2.5 font-mono text-[10px] text-muted-foreground">
+                                {r.instanceId.slice(0, 12)}…
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  {!runsLoading && filteredRuns.length === 0 && (
+                    <div className="px-4 py-12 text-center">
+                      <div className="mx-auto mb-2 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
+                        <ActivityIcon className="size-5" aria-hidden="true" />
+                      </div>
+                      <div className="text-sm font-medium">
+                        {runs.length === 0 ? "No runs yet" : "No runs match"}
+                      </div>
+                      <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                        {runs.length === 0
+                          ? "Publish the journey, then POST a contact with an API key to enroll them."
+                          : "Try a different status filter or search query."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {activityView === "funnel" && (
+              <>
+                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    { label: "Total runs", value: totalRuns },
+                    { label: "Funnel entries", value: totalFunnelSteps },
+                    { label: "Nodes with data", value: funnelGroups.length },
+                    {
+                      label: "Failed",
+                      value:
+                        funnelCounts.failed ??
+                        funnel
+                          .filter((f) => f.status === "failed")
+                          .reduce((a, e) => a + e.count, 0),
+                    },
+                  ].map((s) => (
+                    <div
+                      key={s.label}
+                      className="rounded-xl border border-border bg-card px-3 py-2.5"
+                    >
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {s.label}
+                      </div>
+                      <div className="mt-1 text-xl font-semibold tabular-nums">{s.value}</div>
+                    </div>
                   ))}
                 </div>
-              )}
-              {!runsLoading || runs.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                        <th className="px-3 py-2 font-medium">Contact</th>
-                        <th className="px-3 py-2 font-medium">Status</th>
-                        <th className="px-3 py-2 font-medium">Entered</th>
-                        <th className="px-3 py-2 font-medium">Duration</th>
-                        <th className="px-3 py-2 font-medium">Instance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRuns.map((r) => (
-                        <tr
-                          key={r.id}
-                          tabIndex={0}
-                          onClick={() => setOpenRun(r.instanceId)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setOpenRun(r.instanceId);
-                            }
-                          }}
-                          className="cursor-pointer border-b border-border/60 outline-none transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-accent/40"
-                        >
-                          <td className="px-3 py-2.5">
-                            <div className="font-medium">{r.email ?? r.contactId}</div>
-                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                              {r.contactId.slice(0, 10)}…
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <StatusBadge status={r.status} />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <div className="text-foreground/90">
-                              {formatRelativeTime(r.enteredAt)}
-                            </div>
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              {formatDateTime(r.enteredAt)}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
-                            {formatDuration(r.enteredAt, r.exitedAt)}
-                          </td>
-                          <td className="px-3 py-2.5 font-mono text-[10px] text-muted-foreground">
-                            {r.instanceId.slice(0, 12)}…
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
 
-              {!runsLoading && filteredRuns.length === 0 && (
-                <div className="px-4 py-12 text-center">
-                  <div className="mx-auto mb-2 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
-                    <ActivityIcon className="size-5" aria-hidden="true" />
+                {funnelLoading && (
+                  <div className="grid gap-3">
+                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-24 w-full" />
                   </div>
-                  <div className="text-sm font-medium">
-                    {runs.length === 0 ? "No runs yet" : "No runs match"}
-                  </div>
-                  <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                    {runs.length === 0
-                      ? "Publish the journey, then POST a contact with an API key to enroll them."
-                      : "Try a different status filter or search query."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <div className="mx-auto w-full max-w-4xl">
-            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {[
-                { label: "Total runs", value: totalRuns },
-                { label: "Funnel entries", value: totalFunnelSteps },
-                { label: "Nodes with data", value: funnelGroups.length },
-                {
-                  label: "Failed",
-                  value:
-                    funnelCounts.failed ??
-                    funnel.filter((f) => f.status === "failed").reduce((a, e) => a + e.count, 0),
-                },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.label}
-                  </div>
-                  <div className="mt-1 text-xl font-semibold tabular-nums">{s.value}</div>
-                </div>
-              ))}
-            </div>
+                )}
 
-            {funnelLoading && (
-              <div className="grid gap-3">
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-24 w-full" />
-              </div>
-            )}
-
-            {!funnelLoading && funnelGroups.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border bg-card px-4 py-12 text-center">
-                <div className="mx-auto mb-2 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
-                  <BarChart3Icon className="size-5" aria-hidden="true" />
-                </div>
-                <div className="text-sm font-medium">No node metrics yet</div>
-                <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                  Publish the journey and let contacts flow through — funnel counts appear here per
-                  node.
-                </p>
-              </div>
-            )}
-
-            {!funnelLoading && funnelGroups.length > 0 && (
-              <div className="lk-fade-up grid gap-3">
-                {funnelGroups.map(([nodeId, entries]) => {
-                  const total = entries.reduce((acc, e) => acc + e.count, 0);
-                  const info = resolveFunnelNode(nodeId, entries[0]?.nodeType ?? "action", graph);
-                  const Icon = info.Icon;
-                  return (
-                    <div
-                      key={nodeId}
-                      className="overflow-hidden rounded-xl border border-border bg-card"
-                    >
-                      <div className="flex items-center gap-3 border-b border-border/60 px-3.5 py-3">
-                        <span
-                          className="grid size-8 shrink-0 place-items-center rounded-lg"
-                          style={{ background: `${info.color}22`, color: info.color }}
-                        >
-                          <Icon className="size-3.5" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium">{info.label}</span>
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              {nodeId}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 text-[11px] text-muted-foreground">
-                            Engine type <span className="font-mono">{info.engineType}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold tabular-nums">{total}</div>
-                          <div className="text-[10px] text-muted-foreground">
-                            step{total === 1 ? "" : "s"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="grid gap-2 px-3.5 py-3">
-                        {entries.map((e) => (
-                          <div key={`${e.nodeId}-${e.status}`} className="flex items-center gap-2">
-                            <span className="w-20 shrink-0 text-[11px] capitalize text-muted-foreground">
-                              {e.status}
-                            </span>
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full transition-all duration-500",
-                                  FUNNEL_STATUS_STYLES[e.status] ?? "bg-primary",
-                                )}
-                                style={{
-                                  width: `${Math.max((e.count / Math.max(total, 1)) * 100, 4)}%`,
-                                }}
-                              />
-                            </div>
-                            <span className="w-8 shrink-0 text-right text-[11px] font-medium tabular-nums">
-                              {e.count}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                {!funnelLoading && funnelGroups.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border bg-card px-4 py-12 text-center">
+                    <div className="mx-auto mb-2 grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground">
+                      <BarChart3Icon className="size-5" aria-hidden="true" />
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="text-sm font-medium">No node metrics yet</div>
+                    <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                      Publish the journey and let contacts flow through — funnel counts appear here
+                      per node.
+                    </p>
+                  </div>
+                )}
+
+                {!funnelLoading && funnelGroups.length > 0 && (
+                  <div className="lk-fade-up grid gap-3">
+                    {funnelGroups.map(([nodeId, entries]) => {
+                      const total = entries.reduce((acc, e) => acc + e.count, 0);
+                      const info = resolveFunnelNode(
+                        nodeId,
+                        entries[0]?.nodeType ?? "action",
+                        graph,
+                      );
+                      const Icon = info.Icon;
+                      return (
+                        <div
+                          key={nodeId}
+                          className="overflow-hidden rounded-xl border border-border bg-card"
+                        >
+                          <div className="flex items-center gap-3 border-b border-border/60 px-3.5 py-3">
+                            <span
+                              className="grid size-8 shrink-0 place-items-center rounded-lg"
+                              style={{ background: `${info.color}22`, color: info.color }}
+                            >
+                              <Icon className="size-3.5" aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-medium">{info.label}</span>
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  {nodeId}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                Engine type <span className="font-mono">{info.engineType}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold tabular-nums">{total}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                step{total === 1 ? "" : "s"}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid gap-2 px-3.5 py-3">
+                            {entries.map((e) => (
+                              <div
+                                key={`${e.nodeId}-${e.status}`}
+                                className="flex items-center gap-2"
+                              >
+                                <span className="w-20 shrink-0 text-[11px] capitalize text-muted-foreground">
+                                  {e.status}
+                                </span>
+                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all duration-500",
+                                      FUNNEL_STATUS_STYLES[e.status] ?? "bg-primary",
+                                    )}
+                                    style={{
+                                      width: `${Math.max((e.count / Math.max(total, 1)) * 100, 4)}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="w-8 shrink-0 text-right text-[11px] font-medium tabular-nums">
+                                  {e.count}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
+
+      {/* Lab ops: dialogs mount from overflow — keep capability, hide first-class chrome. */}
+      <DryRunDialog
+        open={labStage === "preview"}
+        onClose={() => setLabStage(null)}
+        journeyId={journeyId}
+        graph={graph}
+        dirty={builderMeta?.dirty ?? false}
+      />
+      <SimulateDialog
+        open={labStage === "simulate"}
+        onClose={() => setLabStage(null)}
+        journeyId={journeyId}
+        graph={graph}
+        dirty={builderMeta?.dirty ?? false}
+      />
+      <OptimizeDialog
+        open={labStage === "optimize"}
+        onClose={() => setLabStage(null)}
+        journeyId={journeyId}
+        publishedVersion={publishedVersion}
+        onAccepted={() => void loadRuns()}
+      />
+      <MigrateRunsDialog
+        open={labStage === "migrate"}
+        onClose={() => setLabStage(null)}
+        journeyId={journeyId}
+        publishedVersion={publishedVersion}
+        onMigrated={() => void loadRuns()}
+      />
 
       <RunDrawer
         instanceId={openRun}

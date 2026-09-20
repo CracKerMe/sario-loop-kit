@@ -207,7 +207,7 @@ function ContactDetailPage() {
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Mailable now</span>
               <span className="font-medium">
-                {activity?.deliverability.mailable ? "Yes" : "No — dual gates"}
+                {activity?.deliverability.mailable ? "Yes" : "No"}
               </span>
             </div>
             {activity?.deliverability.suppression?.note && (
@@ -216,8 +216,8 @@ function ContactDetailPage() {
               </p>
             )}
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              Dual gates: identity preference (subscribed) and address facts (suppression). Hard
-              bounces/complaints are operator-lifted on Compliance.
+              Mailable = subscribed and not suppressed. Lift hard bounces or spam complaints in
+              Settings → Suppressions.
             </p>
           </CardContent>
         </Card>

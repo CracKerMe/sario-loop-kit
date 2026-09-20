@@ -340,8 +340,7 @@ export function SuppressionsPanel() {
       {suppressions.length > 0 && (
         <p className="mt-4 text-[11px] text-muted-foreground">
           <Trash2Icon className="mr-1 inline size-3" aria-hidden="true" />
-          Suppression is per address, not per contact: deleting and re-importing a contact does not
-          clear it.
+          Blocks follow the email address — deleting a contact does not clear them.
         </p>
       )}
     </div>

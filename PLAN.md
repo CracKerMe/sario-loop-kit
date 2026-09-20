@@ -179,15 +179,15 @@ Settings
 
 ### Phase 3 — 条件 UI 与 Lab 降级
 
-- [ ] Filter/Branch 属性选择器复用/对齐 `AudienceFilterBuilder` 字段选项；侧栏显示自然语言描述 + live match（若可）。
-- [ ] Journey 详情：默认 Build + Activity；Lab 入口移入 `···`。
-- [ ] Compliance 对外文案简化（双门控逻辑与 webhook 行为不变）。
+- [x] Filter/Branch 属性选择器复用/对齐 `AudienceFilterBuilder` 字段选项；侧栏显示自然语言描述 + live match（若可）。
+- [x] Journey 详情：默认 Build + Activity；Lab 入口移入 `···`。
+- [x] Compliance 对外文案简化（双门控逻辑与 webhook 行为不变）。
 
 ### Phase 4 — 打磨与回归
 
 - [ ] 发布路径回归：simple journey publish → contact ingest → welcome → delay → complete。
 - [ ] 含 advanced 节点的旧模板图：打开、编辑、发布、dry-run。
-- [ ] `pnpm -w check-types` + 相关包测试。
+- [x] `pnpm -w check-types` + 相关包测试。（journey 79 + server 69 通过）
 - [ ] 手动走一遍 Loops 级 golden path：注册 → 选 Welcome → 发布 → API 造联系人 → 看到两封邮件。
 
 ## 非目标

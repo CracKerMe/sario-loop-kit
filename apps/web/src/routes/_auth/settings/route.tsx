@@ -54,7 +54,7 @@ function SettingsLayout() {
             Settings
           </span>
         }
-        description="Developer and compliance surfaces live here — not in the daily sending flow."
+        description="API keys, logs, and who must not receive mail."
       />
 
       <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
