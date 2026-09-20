@@ -1,4 +1,13 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { MouseEvent } from "react";
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  Handle,
+  Position,
+  getBezierPath,
+  type EdgeProps,
+  type NodeProps,
+} from "@xyflow/react";
 import {
   BellIcon,
   ClockIcon,
@@ -305,6 +314,7 @@ export function createNodeTypes(onDelete?: (id: string) => void) {
     trigger: Comp,
     delay: Comp,
     email: Comp,
+    sendCampaign: Comp,
     notify: Comp,
     branch: Comp,
     split: Comp,
@@ -325,3 +335,57 @@ export function createNodeTypes(onDelete?: (id: string) => void) {
 
 /** Default export kept for any legacy imports; prefer createNodeTypes. */
 export const nodeTypes = createNodeTypes();
+
+type EdgeInsertHandler = (edgeId: string, event: MouseEvent) => void;
+
+/** Stable callback the builder assigns each render; PlusEdge reads it on click. */
+export const edgeInsertBus: { current: EdgeInsertHandler | null } = { current: null };
+
+/** Loops-style edge with a midpoint + that opens a compact insert menu. */
+export function InsertEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  style,
+}: EdgeProps) {
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  return (
+    <>
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
+      <EdgeLabelRenderer>
+        <button
+          type="button"
+          aria-label="Insert node on this path"
+          className="nodrag nopan grid size-5 place-items-center rounded-full border border-border bg-card text-[13px] leading-none text-muted-foreground shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
+          style={{
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            pointerEvents: "all",
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            edgeInsertBus.current?.(id, e);
+          }}
+        >
+          +
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+export const edgeTypes = {
+  insert: InsertEdge,
+};

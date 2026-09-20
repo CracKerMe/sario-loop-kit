@@ -26,6 +26,7 @@ import {
   AlertTriangleIcon,
   CheckCircle2Icon,
   EyeIcon,
+  ChevronDownIcon,
   GripVerticalIcon,
   Loader2Icon,
   Maximize2Icon,
@@ -55,16 +56,18 @@ import {
 } from "@/lib/api";
 import { CopilotDialog } from "./CopilotDialog";
 import {
-  NODE_CATEGORY_LABELS,
   NODE_META,
   defaultNodeData,
   emptyWelcomeGraph,
   flowToGraph,
   graphToFlow,
+  nodeTier,
+  paletteNodeTypes,
   type BuilderNodeType,
 } from "./graph";
 import { autoLayoutNodes } from "./layout";
-import { NODE_ICONS, createNodeTypes } from "./nodes";
+import { ConditionExpressionField } from "./ConditionExpressionField";
+import { NODE_ICONS, createNodeTypes, edgeInsertBus, edgeTypes } from "./nodes";
 import { VariablePicker } from "./VariablePicker";
 import {
   CONTACT_PROPERTY_FLAT_ALIAS_NOTE,
@@ -459,6 +462,8 @@ export function JourneyBuilder({
   const [baseline, setBaseline] = useState<string>("");
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(true);
+  const [paletteAdvancedOpen, setPaletteAdvancedOpen] = useState(false);
+  const [edgeMenu, setEdgeMenu] = useState<{ edgeId: string; x: number; y: number } | null>(null);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -631,6 +636,7 @@ export function JourneyBuilder({
         {
           ...connection,
           id: `e_${connection.source}_${connection.target}_${connection.sourceHandle ?? "out"}`,
+          type: "insert",
           markerEnd: { type: MarkerType.ArrowClosed },
         },
         eds,
@@ -638,22 +644,10 @@ export function JourneyBuilder({
     );
   }, []);
 
-  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelected(params.nodes[0] ?? null);
-  }, []);
-
-  const deleteNode = useCallback((nodeId: string) => {
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
-    setSelected((s) => (s?.id === nodeId ? null : s));
-  }, []);
-
-  const nodeTypes = useMemo(() => createNodeTypes(deleteNode), [deleteNode]);
-
   const insertNode = useCallback(
     (type: BuilderNodeType, position?: { x: number; y: number }) => {
       if (type === "trigger" && nodes.some((n) => n.type === "trigger")) {
-        toast.error("This journey already has a trigger");
+        toast.error("This automation already has a trigger");
         return;
       }
       const id = nextNodeId(type);
@@ -676,11 +670,168 @@ export function JourneyBuilder({
         position: pos,
         data: defaultNodeData(type),
       };
-      setNodes((prev) => [...prev, node]);
+      const nextNodes: Node[] = [node];
+      const nextEdges: Edge[] = [];
+
+      // Loops-style branch: one click seeds dual Filter paths (true / false).
+      if (type === "branch") {
+        const yesId = nextNodeId("filter");
+        const noId = nextNodeId("filter");
+        nextNodes.push(
+          {
+            id: yesId,
+            type: "filter",
+            position: { x: pos.x - 150, y: pos.y + 140 },
+            data: { expression: '{{ contact.plan }} == "pro"' },
+          },
+          {
+            id: noId,
+            type: "filter",
+            position: { x: pos.x + 150, y: pos.y + 140 },
+            data: { expression: "true" },
+          },
+        );
+        nextEdges.push(
+          {
+            id: `e_${id}_${yesId}_true`,
+            source: id,
+            target: yesId,
+            sourceHandle: "true",
+            type: "insert",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+          {
+            id: `e_${id}_${noId}_false`,
+            source: id,
+            target: noId,
+            sourceHandle: "false",
+            type: "insert",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+        );
+      }
+
+      setNodes((prev) => [...prev, ...nextNodes]);
+      if (nextEdges.length) setEdges((prev) => [...prev, ...nextEdges]);
       setSelected(node);
     },
     [nodes, rfInstance],
   );
+
+  const insertOnEdge = useCallback(
+    (edgeId: string, type: BuilderNodeType) => {
+      if (type === "trigger") {
+        toast.error("Trigger must stay at the start of the path");
+        return;
+      }
+      const edge = edges.find((e) => e.id === edgeId);
+      if (!edge) return;
+      const source = nodes.find((n) => n.id === edge.source);
+      const target = nodes.find((n) => n.id === edge.target);
+      const id = nextNodeId(type);
+      const sx = source?.position.x ?? 0;
+      const sy = source?.position.y ?? 0;
+      const tx = target?.position.x ?? sx;
+      const ty = target?.position.y ?? sy + 140;
+      const pos = { x: (sx + tx) / 2, y: (sy + ty) / 2 };
+      const node: Node = { id, type, position: pos, data: defaultNodeData(type) };
+
+      const nextNodes: Node[] = [node];
+      const nextEdges: Edge[] = [];
+      const keepHandle = edge.sourceHandle;
+      const eIn: Edge = {
+        id: `e_${edge.source}_${id}_${keepHandle ?? "out"}`,
+        source: edge.source,
+        target: id,
+        sourceHandle: keepHandle,
+        type: "insert",
+        markerEnd: { type: MarkerType.ArrowClosed },
+      };
+
+      if (type === "branch") {
+        const yesId = nextNodeId("filter");
+        const noId = nextNodeId("filter");
+        nextNodes.push(
+          {
+            id: yesId,
+            type: "filter",
+            position: { x: pos.x - 150, y: pos.y + 140 },
+            data: { expression: '{{ contact.plan }} == "pro"' },
+          },
+          {
+            id: noId,
+            type: "filter",
+            position: { x: pos.x + 150, y: pos.y + 140 },
+            data: { expression: "true" },
+          },
+        );
+        nextEdges.push(
+          {
+            id: `e_${id}_${yesId}_true`,
+            source: id,
+            target: yesId,
+            sourceHandle: "true",
+            type: "insert",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+          {
+            id: `e_${id}_${noId}_false`,
+            source: id,
+            target: noId,
+            sourceHandle: "false",
+            type: "insert",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+        );
+        // Original downstream stays on the true path; false is free for a new branch.
+        if (target) {
+          nextEdges.push({
+            id: `e_${yesId}_${target.id}_true`,
+            source: yesId,
+            target: target.id,
+            sourceHandle: "true",
+            type: "insert",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          });
+        }
+      } else if (target) {
+        nextEdges.push({
+          id: `e_${id}_${target.id}_out`,
+          source: id,
+          target: target.id,
+          type: "insert",
+          markerEnd: { type: MarkerType.ArrowClosed },
+        });
+      }
+
+      setNodes((prev) => [...prev, ...nextNodes]);
+      setEdges((prev) => [...prev.filter((e) => e.id !== edgeId), eIn, ...nextEdges]);
+      setSelected(node);
+      setEdgeMenu(null);
+    },
+    [edges, nodes],
+  );
+
+  useEffect(() => {
+    edgeInsertBus.current = (edgeId, event) => {
+      setEdgeMenu({ edgeId, x: event.clientX, y: event.clientY });
+    };
+    return () => {
+      edgeInsertBus.current = null;
+    };
+  }, []);
+
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    setSelected(params.nodes[0] ?? null);
+  }, []);
+
+  const deleteNode = useCallback((nodeId: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelected((s) => (s?.id === nodeId ? null : s));
+  }, []);
+
+  const nodeTypes = useMemo(() => createNodeTypes(deleteNode), [deleteNode]);
 
   const onDragStart = useCallback((event: React.DragEvent, type: BuilderNodeType) => {
     event.dataTransfer.setData(DRAG_MIME, type);
@@ -871,14 +1022,14 @@ export function JourneyBuilder({
     [inspectorWidth],
   );
 
-  const paletteItems = (Object.keys(NODE_META) as BuilderNodeType[])
-    .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
-    .filter((t) => {
-      const q = paletteQuery.trim().toLowerCase();
-      if (!q) return true;
-      const meta = NODE_META[t];
-      return meta.label.toLowerCase().includes(q) || t.toLowerCase().includes(q);
-    });
+  const paletteTypes = paletteNodeTypes({
+    query: paletteQuery,
+    showAdvanced: paletteAdvancedOpen,
+    hasTrigger: nodes.some((n) => n.type === "trigger"),
+  });
+  const corePalette = paletteTypes.filter((t) => nodeTier(t) === "core");
+  const advancedPalette = paletteTypes.filter((t) => nodeTier(t) === "advanced");
+  const searching = paletteQuery.trim().length > 0;
 
   if (loading) {
     return (
@@ -944,7 +1095,7 @@ export function JourneyBuilder({
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
             {(() => {
               const groups = new Map<string, BuilderNodeType[]>();
-              for (const type of paletteItems) {
+              for (const type of corePalette) {
                 const cat = NODE_META[type].category;
                 const list = groups.get(cat) ?? [];
                 list.push(type);
@@ -953,7 +1104,7 @@ export function JourneyBuilder({
               return [...groups.entries()].map(([cat, types]) => (
                 <div key={cat} className="mb-3">
                   <div className="mb-1 px-1 text-[10px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-                    {NODE_CATEGORY_LABELS[cat] ?? cat}
+                    {cat === "trigger" ? "Start" : cat === "logic" ? "Split" : "Step"}
                   </div>
                   <div className="grid gap-1">
                     {types.map((type) => {
@@ -994,18 +1145,82 @@ export function JourneyBuilder({
                 </div>
               ));
             })()}
-            {paletteItems.length === 0 && (
+
+            {corePalette.length === 0 && advancedPalette.length === 0 && (
               <p className="px-2 py-4 text-[11px] text-muted-foreground">No nodes match.</p>
             )}
+
+            <div className="mt-1 border-t border-border/70 pt-2">
+              <button
+                type="button"
+                onClick={() => setPaletteAdvancedOpen((v) => !v)}
+                className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <span>
+                  Advanced
+                  {!searching && (
+                    <span className="ml-1 font-normal text-muted-foreground/70">
+                      · waitEvent, score, webhook…
+                    </span>
+                  )}
+                </span>
+                <ChevronDownIcon
+                  className={cn(
+                    "size-3.5 transition-transform",
+                    (paletteAdvancedOpen || searching) && "rotate-180",
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+              {(paletteAdvancedOpen || searching) && advancedPalette.length > 0 && (
+                <div className="mt-1 grid gap-1">
+                  {advancedPalette.map((type) => {
+                    const meta = NODE_META[type];
+                    const Icon = NODE_ICONS[type];
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, type)}
+                        onClick={() => insertNode(type)}
+                        title={meta.description}
+                        className="group flex cursor-grab items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition-all duration-150 hover:border-border hover:bg-card active:cursor-grabbing"
+                      >
+                        <GripVerticalIcon
+                          className="mt-0.5 size-3 shrink-0 text-muted-foreground/30"
+                          aria-hidden="true"
+                        />
+                        <span
+                          className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md"
+                          style={{ background: `${meta.color}18`, color: meta.color }}
+                        >
+                          <Icon className="size-3" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs leading-snug text-foreground/80">
+                            {meta.label}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+                            {meta.description}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <p className="mt-2 border-t border-border/70 px-1 pt-3 text-[10px] leading-relaxed text-muted-foreground">
-              Drag onto the canvas or click to insert. Node ids become engine TaskNode ids at
-              publish.
+              Core steps stay visible. Advanced nodes remain on existing graphs — open Advanced to
+              add them.
             </p>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain py-2">
-            {(Object.keys(NODE_META) as BuilderNodeType[])
-              .filter((t) => t !== "trigger" || nodes.every((n) => n.type !== "trigger"))
+            {corePalette
+              .filter((type) => nodeTier(type) === "core")
               .map((type) => {
                 const meta = NODE_META[type];
                 const Icon = NODE_ICONS[type];
@@ -1025,6 +1240,15 @@ export function JourneyBuilder({
                   </button>
                 );
               })}
+            <button
+              type="button"
+              title="Open palette for advanced nodes"
+              aria-label="Open node palette"
+              onClick={() => setPaletteOpen(true)}
+              className="grid size-8 shrink-0 place-items-center rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <PlusIcon className="size-3.5" aria-hidden="true" />
+            </button>
           </div>
         )}
       </aside>
@@ -1143,6 +1367,7 @@ export function JourneyBuilder({
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onInit={setRfInstance}
             onNodesChange={(changes) => {
               setNodes((nds) => applyNodeChanges(changes, nds));
@@ -1175,6 +1400,67 @@ export function JourneyBuilder({
               />
             )}
           </ReactFlow>
+
+          {edgeMenu && (
+            <div
+              className="fixed z-50 w-52 overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+              style={{
+                left: Math.min(edgeMenu.x, window.innerWidth - 220),
+                top: Math.min(edgeMenu.y, window.innerHeight - 320),
+              }}
+            >
+              <div className="border-b border-border/70 px-2.5 py-2">
+                <div className="text-[11px] font-semibold">Insert on this path</div>
+                <div className="text-[10px] text-muted-foreground">Core steps first</div>
+              </div>
+              <div className="max-h-64 overflow-y-auto p-1">
+                {paletteNodeTypes({
+                  showAdvanced: true,
+                  hasTrigger: true,
+                }).map((type) => {
+                  const meta = NODE_META[type];
+                  const Icon = NODE_ICONS[type];
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => insertOnEdge(edgeMenu.edgeId, type)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
+                    >
+                      <span
+                        className="grid size-5 shrink-0 place-items-center rounded"
+                        style={{ background: `${meta.color}22`, color: meta.color }}
+                      >
+                        <Icon className="size-3" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{meta.label}</span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {nodeTier(type) === "advanced" ? "Advanced · " : ""}
+                          {meta.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="w-full border-t border-border/70 px-2.5 py-1.5 text-left text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setEdgeMenu(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {edgeMenu && (
+            <button
+              type="button"
+              aria-label="Close insert menu"
+              className="fixed inset-0 z-40 cursor-default"
+              onClick={() => setEdgeMenu(null)}
+            />
+          )}
 
           <div className="pointer-events-none absolute right-3 bottom-3 flex flex-col items-end gap-2">
             <div className="pointer-events-auto flex items-center gap-1.5">
@@ -1604,13 +1890,14 @@ export function JourneyBuilder({
               )}
               {(selected.type === "branch" || selected.type === "filter") && (
                 <InspectorField
-                  label="Expression"
-                  hint='Example: {{ contact.plan }} == "pro" · Functions: includes, startsWith, now(), length…'
+                  label="Condition"
+                  hint="true continues · false routes to the other handle"
                 >
-                  <TextareaWithVariables
-                    variables={nodeVariables}
-                    value={String((selected.data as { expression?: string }).expression ?? "")}
+                  <ConditionExpressionField
+                    expression={String((selected.data as { expression?: string }).expression ?? "")}
                     onChange={(v) => updateSelectedData({ expression: v })}
+                    propertyKeys={contactPropertyKeys}
+                    hint='Example: {{ contact.plan }} == "pro"'
                   />
                 </InspectorField>
               )}

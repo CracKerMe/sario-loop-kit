@@ -8,6 +8,43 @@ import type { Edge, Node } from "@xyflow/react";
 
 export type BuilderNodeType = JourneyNode["type"];
 
+/** Loops-style core palette. Everything else stays available under Advanced. */
+export type NodeTier = "core" | "advanced";
+
+export const CORE_NODE_TYPES = [
+  "trigger",
+  "email",
+  "delay",
+  "filter",
+  "branch",
+  "abSplit",
+] as const satisfies readonly BuilderNodeType[];
+
+export function nodeTier(type: BuilderNodeType): NodeTier {
+  return (CORE_NODE_TYPES as readonly string[]).includes(type) ? "core" : "advanced";
+}
+
+/** Palette listing: core always; advanced only when open or when searching. */
+export function paletteNodeTypes(options: {
+  query?: string;
+  showAdvanced?: boolean;
+  hasTrigger?: boolean;
+}): BuilderNodeType[] {
+  const q = (options.query ?? "").trim().toLowerCase();
+  return (Object.keys(NODE_META) as BuilderNodeType[]).filter((type) => {
+    if (type === "trigger" && options.hasTrigger) return false;
+    const tier = nodeTier(type);
+    if (!q && tier === "advanced" && !options.showAdvanced) return false;
+    if (!q) return true;
+    const meta = NODE_META[type];
+    return (
+      meta.label.toLowerCase().includes(q) ||
+      type.toLowerCase().includes(q) ||
+      meta.description.toLowerCase().includes(q)
+    );
+  });
+}
+
 export const NODE_META: Record<
   BuilderNodeType,
   {
@@ -166,7 +203,7 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
     case "trigger":
       return { trigger: { kind: "contact_created" } };
     case "delay":
-      return { mode: "duration", ms: 5 * 60_000, value: 5, unit: "minutes" };
+      return { mode: "duration", ms: 86_400_000, value: 1, unit: "days" };
     case "email":
       return { templateId: "", subject: "", preheader: "", fromName: "", replyTo: "" };
     case "sendCampaign":
@@ -241,6 +278,7 @@ export function graphToFlow(graph: JourneyGraphDto | JourneyGraph): {
     source: e.source,
     target: e.target,
     sourceHandle: e.sourceHandle ?? undefined,
+    type: "insert",
   }));
   return { nodes, edges };
 }
