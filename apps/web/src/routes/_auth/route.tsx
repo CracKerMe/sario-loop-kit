@@ -22,11 +22,12 @@ function AppLayout() {
   const commandMenu = useCommandMenu();
 
   return (
-    <div className="flex h-svh">
+    <div className="flex h-svh overflow-hidden">
       <AppSidebar onOpenCommand={() => commandMenu.setOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileTopBar />
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        {/* Pages own their scroll: builders fill the viewport; lists scroll internally. */}
+        <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
       </div>

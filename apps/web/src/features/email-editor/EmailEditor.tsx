@@ -198,7 +198,7 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
   const allIssues = [...localIssues, ...serverIssues];
 
   return (
-    <div className="lk-fade-up email-editor-shell mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 xl:px-8">
+    <div className="lk-fade-up email-editor-shell mx-auto h-full w-full max-w-[1720px] overflow-y-auto px-4 py-5 sm:px-6 xl:px-8">
       <header className="mb-5 overflow-hidden rounded-2xl border border-border/80 bg-card/80 shadow-[0_18px_50px_-32px_color-mix(in_oklab,var(--foreground)_55%,transparent)] backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">

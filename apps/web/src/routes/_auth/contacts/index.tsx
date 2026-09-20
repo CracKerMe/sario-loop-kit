@@ -268,7 +268,7 @@ function ContactsPage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-6xl px-4 py-6 md:px-7">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-6xl overflow-y-auto px-4 py-6 md:px-7">
       <PageHeader
         title="Contacts"
         description={

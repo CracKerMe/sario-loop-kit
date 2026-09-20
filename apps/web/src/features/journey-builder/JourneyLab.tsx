@@ -1,7 +1,8 @@
 /**
- * Journey Lab — one pipeline for validation and release ops that used to be
- * five peer toolbar buttons: Preview → Simulate → Optimize → Canary → Migrate.
- * Dialogs stay domain-specific; this component owns IA and stage affordances.
+ * Journey Lab — compact stage strip for validation and release ops:
+ * Preview → Simulate → Optimize → Canary → Migrate.
+ * Dialogs stay domain-specific; this component owns IA only.
+ * Keep chrome thin: long copy lives in the dialogs, not here.
  */
 import { Button } from "@loopkit/ui/components/button";
 import { cn } from "@loopkit/ui/lib/utils";
@@ -19,39 +20,24 @@ export type LabStageId = "preview" | "simulate" | "optimize" | "canary" | "migra
 const STAGES: {
   id: LabStageId;
   label: string;
-  hint: string;
+  short: string;
   icon: typeof PlayIcon;
   requiresPublished?: boolean;
 }[] = [
-  {
-    id: "preview",
-    label: "1 · Preview",
-    hint: "Dry-run latest graph for one contact; show what would send.",
-    icon: PlayIcon,
-  },
-  {
-    id: "simulate",
-    label: "2 · Simulate",
-    hint: "Sample contacts, aggregate branch drop-offs, optional AI insight.",
-    icon: FlaskConicalIcon,
-  },
-  {
-    id: "optimize",
-    label: "3 · Optimize",
-    hint: "AI proposal from funnel + delivery metrics; accept as draft/canary/full.",
-    icon: SparklesIcon,
-  },
+  { id: "preview", label: "Preview", short: "Dry-run one contact", icon: PlayIcon },
+  { id: "simulate", label: "Simulate", short: "Cohort drop-offs + AI", icon: FlaskConicalIcon },
+  { id: "optimize", label: "Optimize", short: "AI proposal from funnel", icon: SparklesIcon },
   {
     id: "canary",
-    label: "4 · Canary",
-    hint: "Evaluate, promote, or roll back a gray release.",
+    label: "Canary",
+    short: "Gray release evaluate/promote",
     icon: RocketIcon,
     requiresPublished: true,
   },
   {
     id: "migrate",
-    label: "5 · Migrate",
-    hint: "Move in-flight runs onto a new journey version.",
+    label: "Migrate",
+    short: "Move in-flight runs",
     icon: ShuffleIcon,
     requiresPublished: true,
   },
@@ -91,50 +77,44 @@ export function JourneyLab({
   const published = status === "published";
 
   return (
-    <div className={cn("rounded-xl border border-border bg-card", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-3 py-2">
-        <div>
-          <div className="text-xs font-semibold">Journey Lab</div>
-          <div className="text-[11px] text-muted-foreground">
-            Validate → simulate → optimize → gray-release → migrate. Nothing here sends mail except
-            an explicit canary/full publish you accept.
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">
-        {STAGES.map((stage) => {
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-hidden", className)}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+          Lab
+        </span>
+        {STAGES.map((stage, index) => {
           const Icon = stage.icon;
-          const disabled =
-            !graph || (stage.requiresPublished === true && !published) || stage.id === "canary"
-              ? !graph || !published
-              : !graph;
+          const disabled = !graph || (stage.requiresPublished === true && !published);
           return (
             <button
               key={stage.id}
               type="button"
               disabled={disabled}
+              title={stage.short}
               onClick={() => onOpenStage(stage.id)}
               className={cn(
-                "rounded-lg border border-border bg-muted/20 p-2.5 text-left transition-colors",
-                "hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40",
-                openStage === stage.id && "border-primary/50 bg-primary/10",
+                "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+                openStage === stage.id
+                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
               )}
             >
-              <div className="flex items-center gap-1.5 text-[11px] font-medium">
-                <Icon className="size-3.5 text-primary" aria-hidden="true" />
-                {stage.label}
-              </div>
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{stage.hint}</p>
+              <span className="tabular-nums text-[10px] opacity-60">{index + 1}</span>
+              <Icon className="size-3.5 text-primary" aria-hidden="true" />
+              {stage.label}
             </button>
           );
         })}
+        <span className="ml-auto hidden text-[10px] text-muted-foreground lg:inline">
+          Nothing sends unless you accept canary/full publish
+        </span>
       </div>
 
       {canary?.canary && (
         <div
           className={cn(
-            "mx-3 mb-3 rounded-lg border px-3 py-2 text-xs",
+            "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
             canary.canary.status === "active"
               ? "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200"
               : canary.canary.status === "promoted"
@@ -142,44 +122,52 @@ export function JourneyLab({
                 : "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
           )}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">
-              Canary {canary.canary.status}: v{canary.canary.baselineVersion} → v
-              {canary.canary.canaryVersion} @ {canary.canary.percent}%
+          <span className="font-medium">
+            Canary {canary.canary.status}: v{canary.canary.baselineVersion} → v
+            {canary.canary.canaryVersion} @ {canary.canary.percent}%
+          </span>
+          {canary.comparison && (
+            <span className="min-w-0 truncate tabular-nums opacity-90">
+              {canary.comparison.reason}
             </span>
-            {canary.comparison && (
-              <span className="tabular-nums opacity-90">{canary.comparison.reason}</span>
-            )}
-            {canary.canary.status === "active" && onCanaryAction && (
-              <span className="ml-auto flex items-center gap-1">
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={canaryBusy}
-                  onClick={() => void onCanaryAction("evaluate")}
-                >
-                  Evaluate
-                </Button>
-                <Button
-                  size="xs"
-                  disabled={canaryBusy}
-                  onClick={() => void onCanaryAction("promote")}
-                >
-                  Promote
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={canaryBusy}
-                  onClick={() => void onCanaryAction("rollback")}
-                >
-                  Rollback
-                </Button>
-              </span>
-            )}
-          </div>
+          )}
+          {canary.canary.status === "active" && onCanaryAction && (
+            <span className="ml-auto flex items-center gap-1">
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={canaryBusy}
+                onClick={() => void onCanaryAction("evaluate")}
+              >
+                Evaluate
+              </Button>
+              <Button
+                size="xs"
+                disabled={canaryBusy}
+                onClick={() => void onCanaryAction("promote")}
+              >
+                Promote
+              </Button>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={canaryBusy}
+                onClick={() => void onCanaryAction("rollback")}
+              >
+                Rollback
+              </Button>
+            </span>
+          )}
         </div>
       )}
+
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/15 p-4">
+        <div className="mx-auto max-w-2xl text-center text-xs text-muted-foreground">
+          {openStage === null
+            ? "Pick a stage above to preview, simulate, optimize, or manage gray release."
+            : "Dialog open — complete or close it to return to the builder."}
+        </div>
+      </div>
 
       <DryRunDialog
         open={openStage === "preview"}

@@ -126,7 +126,7 @@ function JourneysPage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-4xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Journeys"
         description={

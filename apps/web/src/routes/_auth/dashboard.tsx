@@ -152,7 +152,7 @@ function DashboardPage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
         title={
           <span className="bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">

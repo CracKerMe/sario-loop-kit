@@ -231,7 +231,7 @@ function TemplatesPage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Templates"
         description="Email bodies for journeys, campaigns, and the transactional API. Edit in the visual editor (or HTML for legacy templates)."

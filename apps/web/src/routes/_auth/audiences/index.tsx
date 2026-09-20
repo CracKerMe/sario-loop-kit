@@ -216,7 +216,7 @@ function AudiencesPage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Audiences"
         description="Saved segments, evaluated live against contacts, properties and events"

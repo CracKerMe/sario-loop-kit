@@ -44,7 +44,7 @@ function LogsPage() {
   const [tab, setTab] = useState<TabId>("runs");
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-4xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Logs"
         description="Instance search and the dead-letter queue — find where a contact is stuck, or what failed permanently"

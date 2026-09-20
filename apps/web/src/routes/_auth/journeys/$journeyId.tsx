@@ -13,7 +13,6 @@ import {
   GitBranchIcon,
   Loader2Icon,
   PauseIcon,
-  PlayIcon,
   RefreshCwIcon,
   SearchIcon,
   WorkflowIcon,
@@ -435,64 +434,57 @@ function JourneyEditorPage() {
   const totalRuns = Object.entries(runCounts).reduce((acc, [, v]) => acc + v, 0);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Journey chrome */}
-      <div className="border-b border-border bg-background/70 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {/* Compact journey chrome — keep under ~100px so the body fills the viewport. */}
+      <div className="shrink-0 border-b border-border bg-background/70 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => void navigate({ to: "/journeys" })}
-            className="text-muted-foreground"
+            className="h-7 px-2 text-muted-foreground"
           >
             <ArrowLeftIcon data-icon="inline-start" />
             Journeys
           </Button>
           <div className="h-4 w-px bg-border" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-sm font-semibold tracking-tight">{journeyName}</h1>
-              <StatusBadge status={status} />
-              {builderMeta?.dirty && tab === "builder" && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                  Unsaved changes
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-              {totalRuns > 0 ? (
-                Object.entries(runCounts)
-                  .filter(([, v]) => v > 0)
-                  .map(([k, v]) => (
-                    <span key={k} className="inline-flex items-center gap-1">
-                      <StatusBadge status={k} className="border-0 bg-transparent px-0 py-0" />
-                      <strong className="font-semibold tabular-nums text-foreground">{v}</strong>
-                    </span>
-                  ))
-              ) : (
-                <span>No runs yet</span>
-              )}
-            </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <h1 className="truncate text-sm font-semibold tracking-tight">{journeyName}</h1>
+            <StatusBadge status={status} />
+            {builderMeta?.dirty && tab === "builder" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                Unsaved changes
+              </span>
+            )}
+            <span className="text-[11px] text-muted-foreground">
+              {totalRuns > 0
+                ? Object.entries(runCounts)
+                    .filter(([, v]) => v > 0)
+                    .map(([k, v]) => `${v} ${k}`)
+                    .join(" · ")
+                : "No runs yet"}
+            </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {tab === "builder" && (
               <>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-7 px-2 text-[11px]"
                   onClick={() => {
                     setTab("lab");
                     setLabStage("preview");
                   }}
                   disabled={!graph}
                 >
-                  <PlayIcon data-icon="inline-start" />
-                  Journey Lab
+                  Lab
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-7 px-2 text-[11px]"
                   disabled={!builderMeta || builderMeta.saving || !builderMeta.dirty}
                   onClick={() => void controlsRef.current?.saveDraft()}
                 >
@@ -500,6 +492,7 @@ function JourneyEditorPage() {
                 </Button>
                 <Button
                   size="sm"
+                  className="h-7 px-2 text-[11px]"
                   disabled={!builderMeta || builderMeta.saving || !builderMeta.validation.valid}
                   onClick={() => void controlsRef.current?.publish()}
                 >
@@ -510,15 +503,11 @@ function JourneyEditorPage() {
                 </Button>
               </>
             )}
-            {tab === "lab" && (
-              <p className="text-[11px] text-muted-foreground">
-                Use the Lab stages below — preview, simulate, optimize, canary, migrate.
-              </p>
-            )}
-            {status === "published" && (
+            {status === "published" && tab !== "lab" && (
               <Button
                 variant="outline"
                 size="sm"
+                className="h-7 px-2 text-[11px]"
                 onClick={() => {
                   setTab("lab");
                   setLabStage("optimize");
@@ -529,7 +518,13 @@ function JourneyEditorPage() {
               </Button>
             )}
             {status === "published" && (
-              <Button variant="outline" size="sm" disabled={pausing} onClick={() => void pause()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={pausing}
+                onClick={() => void pause()}
+              >
                 {pausing ? (
                   <Loader2Icon data-icon="inline-start" className="animate-spin" />
                 ) : (
@@ -541,98 +536,71 @@ function JourneyEditorPage() {
           </div>
         </div>
 
-        {tab === "lab" && (
-          <div className="px-3 pt-3">
-            <JourneyLab
-              journeyId={journeyId}
-              graph={graph}
-              status={status}
-              publishedVersion={publishedVersion}
-              dirty={builderMeta?.dirty ?? false}
-              canary={canary}
-              canaryBusy={canaryBusy}
-              onCanaryAction={canaryAction}
-              onOptimizeAccepted={() => void loadRuns()}
-              onMigrated={() => void loadRuns()}
-              openStage={labStage}
-              onOpenStage={setLabStage}
-            />
-          </div>
-        )}
-
-        {/* Canary banner remains visible outside Lab for funnel/runs tabs. */}
+        {/* Canary strip — single line, only outside Lab tab. */}
         {canary?.canary && tab !== "lab" && (
           <div
             className={cn(
-              "mx-3 mb-2 rounded-lg border px-3 py-2 text-xs",
+              "flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 px-3 py-1 text-[11px]",
               canary.canary.status === "active"
-                ? "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200"
+                ? "bg-sky-500/10 text-sky-800 dark:text-sky-200"
                 : canary.canary.status === "promoted"
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                  : "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+                  ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  : "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
             )}
           >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="font-medium">
-                Canary {canary.canary.status}: v{canary.canary.baselineVersion} → v
-                {canary.canary.canaryVersion} @ {canary.canary.percent}%
+            <span className="font-medium">
+              Canary {canary.canary.status}: v{canary.canary.baselineVersion} → v
+              {canary.canary.canaryVersion} @ {canary.canary.percent}%
+            </span>
+            {canary.comparison && (
+              <span className="min-w-0 truncate tabular-nums opacity-90">
+                {canary.comparison.reason}
               </span>
-              {canary.comparison && (
-                <span className="tabular-nums opacity-90">
-                  {canary.comparison.reason}
-                  {canary.metrics.length >= 2 && (
-                    <>
-                      {" · "}
-                      completion {(canary.metrics[1]!.completionRate * 100).toFixed(0)}% vs{" "}
-                      {(canary.metrics[0]!.completionRate * 100).toFixed(0)}%
-                    </>
-                  )}
-                </span>
-              )}
-              {canary.canary.status === "active" && (
-                <span className="ml-auto flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 bg-transparent px-2 text-[11px]"
-                    disabled={canaryBusy}
-                    onClick={() => void canaryAction("evaluate")}
-                  >
-                    Evaluate
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 bg-transparent px-2 text-[11px]"
-                    disabled={canaryBusy}
-                    onClick={() => void canaryAction("promote")}
-                  >
-                    Promote
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 bg-transparent px-2 text-[11px]"
-                    disabled={canaryBusy}
-                    onClick={() => void canaryAction("rollback")}
-                  >
-                    Rollback
-                  </Button>
-                </span>
-              )}
-            </div>
+            )}
+            {canary.canary.status === "active" && (
+              <span className="ml-auto flex items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="h-6 px-1.5 text-[10px]"
+                  disabled={canaryBusy}
+                  onClick={() => void canaryAction("evaluate")}
+                >
+                  Evaluate
+                </Button>
+                <Button
+                  size="xs"
+                  className="h-6 px-1.5 text-[10px]"
+                  disabled={canaryBusy}
+                  onClick={() => void canaryAction("promote")}
+                >
+                  Promote
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="h-6 px-1.5 text-[10px]"
+                  disabled={canaryBusy}
+                  onClick={() => void canaryAction("rollback")}
+                >
+                  Rollback
+                </Button>
+              </span>
+            )}
           </div>
         )}
 
         {/* Tabs */}
-        <div className="flex items-center gap-1 px-3 pb-2">
+        <div className="flex items-center gap-1 px-2 pb-1.5">
           {TABS.map(({ id, label, icon: Icon }) => {
             const badge =
               id === "runs"
                 ? runs.length || totalRuns
                 : id === "funnel"
                   ? funnelGroups.length || null
-                  : builderMeta?.nodeCount || graph?.nodes.length || null;
+                  : id === "lab"
+                    ? null
+                    : builderMeta?.nodeCount || graph?.nodes.length || null;
             return (
               <button
                 key={id}
@@ -640,7 +608,7 @@ function JourneyEditorPage() {
                 onClick={() => setTab(id)}
                 aria-current={tab === id ? "page" : undefined}
                 className={cn(
-                  "relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  "relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   tab === id
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
@@ -660,7 +628,7 @@ function JourneyEditorPage() {
       </div>
 
       {tab === "builder" ? (
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <JourneyBuilder
             journeyId={journeyId}
             onSaved={() => void loadRuns()}
@@ -670,8 +638,26 @@ function JourneyEditorPage() {
             }}
           />
         </div>
+      ) : tab === "lab" ? (
+        <div className="min-h-0 flex-1 overflow-hidden p-2">
+          <JourneyLab
+            journeyId={journeyId}
+            graph={graph}
+            status={status}
+            publishedVersion={publishedVersion}
+            dirty={builderMeta?.dirty ?? false}
+            canary={canary}
+            canaryBusy={canaryBusy}
+            onCanaryAction={canaryAction}
+            onOptimizeAccepted={() => void loadRuns()}
+            onMigrated={() => void loadRuns()}
+            openStage={labStage}
+            onOpenStage={setLabStage}
+            className="h-full"
+          />
+        </div>
       ) : tab === "runs" ? (
-        <div className="flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mx-auto w-full max-w-5xl">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="relative min-w-[200px] flex-1">
@@ -810,7 +796,7 @@ function JourneyEditorPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mx-auto w-full max-w-4xl">
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {[

@@ -55,7 +55,7 @@ function TemplateEditorPage() {
 
   if (loading) {
     return (
-      <div className="lk-fade-up mx-auto w-full max-w-6xl px-4 py-6">
+      <div className="lk-fade-up mx-auto h-full w-full max-w-6xl overflow-y-auto px-4 py-6">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
           Loading template…
@@ -66,7 +66,7 @@ function TemplateEditorPage() {
 
   if (error) {
     return (
-      <div className="lk-fade-up mx-auto w-full max-w-3xl px-4 py-6">
+      <div className="lk-fade-up mx-auto h-full w-full max-w-3xl overflow-y-auto px-4 py-6">
         <PageHeader
           title="Template"
           description={error}
@@ -87,7 +87,7 @@ function TemplateEditorPage() {
   // converted to a structured doc. The first visual save sets source to "tiptap".
   if (!template.doc) {
     return (
-      <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
+      <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-10 sm:px-6">
         <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-card/80 p-6 shadow-[0_30px_90px_-48px_color-mix(in_oklab,var(--foreground)_70%,transparent)] sm:p-9">
           <div className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full bg-primary/10 blur-3xl" />
           <Button

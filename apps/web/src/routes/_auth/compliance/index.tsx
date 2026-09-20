@@ -99,7 +99,7 @@ function CompliancePage() {
   };
 
   return (
-    <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-6">
+    <div className="lk-fade-up mx-auto h-full w-full max-w-5xl overflow-y-auto px-4 py-6">
       <PageHeader
         title="Suppressions"
         description="Addresses that will never receive mail from this workspace"
