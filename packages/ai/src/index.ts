@@ -47,3 +47,16 @@ export {
   type SimulationInsight,
   type SimulationInsightInput,
 } from "./simulationInsight";
+export { generateJourneyOptimization } from "./generateOptimization";
+export {
+  JOURNEY_OPTIMIZATION_TOOL_NAME,
+  buildJourneyOptimizationRepairPrompt,
+  buildJourneyOptimizationSystemPrompt,
+  buildJourneyOptimizationUserPrompt,
+  guardJourneyOptimization,
+  journeyOptimizationAnalysisZod,
+  journeyOptimizationToolParameters,
+  type JourneyOptimizationAnalysis,
+  type JourneyOptimizationInput,
+  type JourneyOptimizationProposal,
+} from "./journeyOptimization";

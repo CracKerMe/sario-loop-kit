@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./workspace";
 export * from "./contacts";
 export * from "./journeys";
+export * from "./journeyOptimization";
 export * from "./campaigns";
 export * from "./email";
 export * from "./suppressions";

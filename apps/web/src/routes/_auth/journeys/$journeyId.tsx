@@ -26,11 +26,18 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
 import { SimulateDialog } from "@/features/journey-builder/SimulateDialog";
+import { OptimizeDialog } from "@/features/journey-builder/OptimizeDialog";
 import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
-import { api, type FunnelEntryDto, type JourneyGraphDto, type JourneyRunDto } from "@/lib/api";
+import {
+  api,
+  type FunnelEntryDto,
+  type JourneyCanaryStatusDto,
+  type JourneyGraphDto,
+  type JourneyRunDto,
+} from "@/lib/api";
 import { formatDateTime, formatDuration, formatRelativeTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_auth/journeys/$journeyId")({
@@ -300,7 +307,10 @@ function JourneyEditorPage() {
   const [tab, setTab] = useState<TabId>("builder");
   const [dryRunOpen, setDryRunOpen] = useState(false);
   const [simulateOpen, setSimulateOpen] = useState(false);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
+  const [canary, setCanary] = useState<JourneyCanaryStatusDto | null>(null);
+  const [canaryBusy, setCanaryBusy] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
@@ -324,12 +334,38 @@ function JourneyEditorPage() {
       setGraph(detail.graph);
       const res = await api.journeyRuns(journeyId);
       setRuns(res.runs);
+      try {
+        setCanary(await api.journeyCanary(journeyId));
+      } catch {
+        setCanary(null);
+      }
     } catch {
       // keep previous data on soft failure
     } finally {
       setRunsLoading(false);
     }
   }, [journeyId]);
+
+  const canaryAction = async (action: "evaluate" | "promote" | "rollback") => {
+    setCanaryBusy(true);
+    try {
+      if (action === "evaluate") {
+        const res = await api.evaluateCanary(journeyId, { force: true, autoApply: false });
+        toast.success(`评估：${res.comparison.decision} — ${res.comparison.reason}`);
+      } else if (action === "promote") {
+        await api.promoteCanary(journeyId);
+        toast.success("Canary 已放量为正式版本");
+      } else {
+        await api.rollbackCanary(journeyId);
+        toast.success("Canary 已回滚，基线版本保持不变");
+      }
+      await loadRuns();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Canary 操作失败");
+    } finally {
+      setCanaryBusy(false);
+    }
+  };
 
   const loadFunnel = useCallback(async () => {
     setFunnelLoading(true);
@@ -469,6 +505,16 @@ function JourneyEditorPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => setOptimizeOpen(true)}
+                  disabled={!graph}
+                  title="基于漏斗数据提出改版并灰度上线"
+                >
+                  <SparklesIcon data-icon="inline-start" />
+                  AI optimize
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={!builderMeta || builderMeta.saving || !builderMeta.dirty}
                   onClick={() => void controlsRef.current?.saveDraft()}
                 >
@@ -492,6 +538,18 @@ function JourneyEditorPage() {
                 Migrate
               </Button>
             )}
+            {tab !== "builder" && status === "published" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOptimizeOpen(true)}
+                disabled={!graph}
+                title="基于漏斗数据提出改版并灰度上线"
+              >
+                <SparklesIcon data-icon="inline-start" />
+                AI optimize
+              </Button>
+            )}
             {status === "published" && (
               <Button variant="outline" size="sm" disabled={pausing} onClick={() => void pause()}>
                 {pausing ? (
@@ -504,6 +562,70 @@ function JourneyEditorPage() {
             )}
           </div>
         </div>
+
+        {/* Canary status banner — the P3.5 gray-release loop lives here. */}
+        {canary?.canary && (
+          <div
+            className={cn(
+              "mx-3 mb-2 rounded-lg border px-3 py-2 text-xs",
+              canary.canary.status === "active"
+                ? "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200"
+                : canary.canary.status === "promoted"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  : "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-medium">
+                Canary {canary.canary.status}: v{canary.canary.baselineVersion} → v
+                {canary.canary.canaryVersion} @ {canary.canary.percent}%
+              </span>
+              {canary.comparison && (
+                <span className="tabular-nums opacity-90">
+                  {canary.comparison.reason}
+                  {canary.metrics.length >= 2 && (
+                    <>
+                      {" · "}
+                      completion {(canary.metrics[1]!.completionRate * 100).toFixed(0)}% vs{" "}
+                      {(canary.metrics[0]!.completionRate * 100).toFixed(0)}%
+                    </>
+                  )}
+                </span>
+              )}
+              {canary.canary.status === "active" && (
+                <span className="ml-auto flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 bg-transparent px-2 text-[11px]"
+                    disabled={canaryBusy}
+                    onClick={() => void canaryAction("evaluate")}
+                  >
+                    Evaluate
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 bg-transparent px-2 text-[11px]"
+                    disabled={canaryBusy}
+                    onClick={() => void canaryAction("promote")}
+                  >
+                    Promote
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 bg-transparent px-2 text-[11px]"
+                    disabled={canaryBusy}
+                    onClick={() => void canaryAction("rollback")}
+                  >
+                    Rollback
+                  </Button>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex items-center gap-1 px-3 pb-2">
@@ -822,6 +944,14 @@ function JourneyEditorPage() {
         journeyId={journeyId}
         graph={graph}
         dirty={builderMeta?.dirty ?? false}
+      />
+
+      <OptimizeDialog
+        open={optimizeOpen}
+        onClose={() => setOptimizeOpen(false)}
+        journeyId={journeyId}
+        publishedVersion={publishedVersion}
+        onAccepted={() => void loadRuns()}
       />
 
       <MigrateRunsDialog

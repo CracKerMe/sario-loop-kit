@@ -2,17 +2,29 @@ import {
   createJourneyDraft,
   getDashboardStats,
   getInFlightVersionCounts,
+  getJourneyCanaryStatus,
   getJourneyDetail,
+  getJourneyOptimization,
   getSuppression,
   JourneyMigrationError,
+  JourneyOptimizationError,
+  acceptJourneyOptimization,
+  collectJourneyOptimizationSignals,
+  evaluateJourneyCanary,
+  graphNodeRefsForOptimization,
   listDeadLetters,
+  listJourneyOptimizations,
   listJourneyRuns,
   listNodeFunnel,
   migrateInFlightJourneyRuns,
   migrateJourneyRun,
+  persistJourneyOptimization,
+  promoteJourneyCanary,
   publishJourney,
+  rollbackJourneyCanary,
   searchInstances,
   type JourneyMigrationStrategy,
+  type OptimizationAcceptMode,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
 import {
@@ -28,6 +40,7 @@ import {
   AiConfigError,
   AiGraphError,
   generateJourneyGraph,
+  generateJourneyOptimization,
   generateSimulationInsight,
 } from "@loopkit/ai";
 import {
@@ -76,6 +89,27 @@ function migrationErrorStatus(code: string): ContentfulStatusCode {
 }
 function getMigrationCode(err: unknown): string {
   return err instanceof JourneyMigrationError ? err.code : "engine_error";
+}
+
+function optimizationErrorStatus(code: string): ContentfulStatusCode {
+  switch (code) {
+    case "not_found":
+    case "no_proposal":
+      return 404;
+    case "already_terminal":
+    case "canary_active":
+    case "no_baseline":
+    case "no_canary":
+      return 409;
+    case "publish_failed":
+      return 400;
+    default:
+      return 500;
+  }
+}
+
+function optimizationCode(err: unknown): string {
+  return err instanceof JourneyOptimizationError ? err.code : "engine_error";
 }
 
 export const journeysRouter = new Hono<{ Variables: AuthVariables }>();
@@ -547,6 +581,260 @@ journeysRouter.get("/:id/funnel", async (c) => {
   const funnel = await listNodeFunnel(db, detail.journey.workflowId);
   return c.json({ funnel, runCounts: detail.runCounts });
 });
+
+// ---------------------------------------------------------------------------
+// P3.5 — AI auto-optimization + canary release
+// ---------------------------------------------------------------------------
+
+const optimizeProposeSchema = z.object({
+  /** Optional operator constraint, e.g. "keep the same email templates". */
+  request: z.string().trim().max(2000).optional(),
+  language: z.string().trim().max(40).optional(),
+});
+
+/**
+ * Collect live funnel + delivery signals, ask the model for a complete
+ * revised graph, persist the proposal. Nothing is published — accept is a
+ * separate, explicit step.
+ */
+journeysRouter.post("/:id/optimize", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = optimizeProposeSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const collected = await collectJourneyOptimizationSignals(db, workspaceId, journeyId);
+  if (!collected) return c.json({ error: "not_found" }, 404);
+  if (!collected.graph) return c.json({ error: "no_graph" }, 400);
+
+  try {
+    const generated = await generateJourneyOptimization({
+      journeyName: collected.journey.name,
+      baselineVersion: collected.journey.publishedVersion,
+      graph: graphNodeRefsForOptimization(collected.graph),
+      signals: {
+        runCounts: collected.signals.runCounts,
+        nodes: collected.signals.nodes,
+        email: collected.signals.email,
+        inFlightByVersion: collected.signals.inFlightByVersion,
+      },
+      templates: collected.signals.templates,
+      events: collected.signals.events,
+      propertyKeys: collected.signals.propertyKeys,
+      request: parsed.data.request,
+      language: parsed.data.language,
+    });
+
+    const { id } = await persistJourneyOptimization(db, {
+      workspaceId,
+      journeyId,
+      baselineVersion: collected.journey.publishedVersion,
+      signals: collected.signals,
+      analysis: generated.result.analysis,
+      proposedGraph: generated.result.graph,
+      nodeMapping: generated.result.analysis.nodeMapping ?? null,
+      canaryPercent: generated.result.analysis.canaryPercent,
+      model: generated.model,
+      attempts: generated.attempts,
+      usage: generated.usage,
+    });
+
+    return c.json({
+      optimizationId: id,
+      analysis: generated.result.analysis,
+      graph: generated.result.graph,
+      model: generated.model,
+      attempts: generated.attempts,
+      usage: generated.usage,
+      signals: collected.signals,
+    });
+  } catch (error) {
+    const { status, body } = aiErrorResponse(error);
+    return c.json(body, status);
+  }
+});
+
+journeysRouter.get("/:id/optimizations", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const rows = await listJourneyOptimizations(db, workspaceId, c.req.param("id"));
+  return c.json({ optimizations: rows });
+});
+
+journeysRouter.get("/:id/optimizations/:optimizationId", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const row = await getJourneyOptimization(db, workspaceId, c.req.param("optimizationId"));
+  if (!row || row.journeyId !== c.req.param("id")) return c.json({ error: "not_found" }, 404);
+  return c.json({ optimization: row });
+});
+
+const acceptSchema = z.object({
+  mode: z.enum(["draft", "canary", "full"]).default("canary"),
+  canaryPercent: z.number().int().min(1).max(50).optional(),
+  autoPromote: z.boolean().optional(),
+  minRuns: z.number().int().min(1).max(10_000).optional(),
+  maxBounceRate: z.number().min(0).max(1).optional(),
+  minCompletionDelta: z.number().min(-1).max(1).optional(),
+});
+
+journeysRouter.post("/:id/optimizations/:optimizationId/accept", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = acceptSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const engineCtx = getEngine();
+  if (!engineCtx && parsed.data.mode !== "draft") {
+    return c.json({ error: "engine_not_ready" }, 503);
+  }
+
+  try {
+    const result = await acceptJourneyOptimization(
+      db,
+      engineCtx?.ctx.engine ?? null,
+      workspaceId,
+      c.req.param("optimizationId"),
+      {
+        mode: parsed.data.mode as OptimizationAcceptMode,
+        canaryPercent: parsed.data.canaryPercent,
+        autoPromote: parsed.data.autoPromote,
+        minRuns: parsed.data.minRuns,
+        maxBounceRate: parsed.data.maxBounceRate,
+        minCompletionDelta: parsed.data.minCompletionDelta,
+      },
+    );
+    return c.json(result);
+  } catch (error) {
+    const code = optimizationCode(error);
+    return c.json(
+      {
+        error: code,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      optimizationErrorStatus(code),
+    );
+  }
+});
+
+journeysRouter.get("/:id/canary", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const engineCtx = getEngine();
+  const status = await getJourneyCanaryStatus(
+    db,
+    engineCtx?.ctx.engine ?? null,
+    workspaceId,
+    c.req.param("id"),
+  );
+  if (!status) return c.json({ error: "not_found" }, 404);
+  return c.json(status);
+});
+
+const evaluateSchema = z.object({
+  force: z.boolean().optional(),
+  autoApply: z.boolean().optional(),
+});
+
+/**
+ * Compare canary vs baseline outcome metrics. With autoApply (default true)
+ * a promote/rollback decision is executed when the canary row itself has
+ * autoPromote enabled.
+ */
+journeysRouter.post("/:id/canary/evaluate", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = evaluateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const engineCtx = getEngine();
+  try {
+    const result = await evaluateJourneyCanary(
+      db,
+      engineCtx?.ctx.engine ?? null,
+      workspaceId,
+      c.req.param("id"),
+      { force: parsed.data.force, autoApply: parsed.data.autoApply },
+    );
+    if (!result) return c.json({ error: "no_canary" }, 404);
+    return c.json(result);
+  } catch (error) {
+    const code = optimizationCode(error);
+    return c.json(
+      {
+        error: code,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      optimizationErrorStatus(code),
+    );
+  }
+});
+
+journeysRouter.post("/:id/canary/promote", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const engineCtx = getEngine();
+  try {
+    const result = await promoteJourneyCanary(
+      db,
+      engineCtx?.ctx.engine ?? null,
+      workspaceId,
+      c.req.param("id"),
+    );
+    return c.json({ ok: true, result });
+  } catch (error) {
+    const code = optimizationCode(error);
+    return c.json(
+      {
+        error: code,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      optimizationErrorStatus(code),
+    );
+  }
+});
+
+journeysRouter.post("/:id/canary/rollback", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const engineCtx = getEngine();
+  try {
+    const result = await rollbackJourneyCanary(
+      db,
+      engineCtx?.ctx.engine ?? null,
+      workspaceId,
+      c.req.param("id"),
+    );
+    return c.json({ ok: true, result });
+  } catch (error) {
+    const code = optimizationCode(error);
+    return c.json(
+      {
+        error: code,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      optimizationErrorStatus(code),
+    );
+  }
+});
+
+function aiErrorResponse(error: unknown): {
+  status: ContentfulStatusCode;
+  body: Record<string, unknown>;
+} {
+  if (error instanceof AiConfigError) {
+    return { status: 503, body: { error: "ai_not_configured", message: error.message } };
+  }
+  if (error instanceof AiGraphError) {
+    return {
+      status: 502,
+      body: { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+    };
+  }
+  return {
+    status: 500,
+    body: {
+      error: "ai_unavailable",
+      message: error instanceof Error ? error.message : String(error),
+    },
+  };
+}
 
 export const runsRouter = new Hono<{ Variables: AuthVariables }>();
 

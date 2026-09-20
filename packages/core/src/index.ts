@@ -56,6 +56,27 @@ export {
   type StartJourneyRunInput,
 } from "./journeys";
 export {
+  acceptJourneyOptimization,
+  collectJourneyOptimizationSignals,
+  decideCanary,
+  evaluateJourneyCanary,
+  getActiveJourneyCanary,
+  getJourneyCanaryStatus,
+  getJourneyOptimization,
+  getVersionOutcomeMetrics,
+  graphNodeRefsForOptimization,
+  JourneyOptimizationError,
+  listJourneyOptimizations,
+  persistJourneyOptimization,
+  promoteJourneyCanary,
+  rollbackJourneyCanary,
+  type CanaryComparison,
+  type JourneyCanaryStatusDto,
+  type OptimizationAcceptMode,
+  type OptimizationSignals,
+  type VersionOutcomeMetrics,
+} from "./journeyOptimization";
+export {
   getInFlightVersionCounts,
   JourneyMigrationError,
   migrateInFlightJourneyRuns,
@@ -154,7 +175,11 @@ export {
   type UnsubscribeTokenPayload,
   type VerifiedUnsubscribeToken,
 } from "./unsubscribe";
-export { evaluateTriggersForSignal, type TriggerSignal } from "./triggerService";
+export {
+  evaluateTriggersForSignal,
+  resolveStartVersion,
+  type TriggerSignal,
+} from "./triggerService";
 export { ensureUserWorkspace } from "./workspaces";
 export {
   createEmailTemplate,

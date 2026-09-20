@@ -12,6 +12,8 @@ const TABLES = [
   schema.emailDelivery,
   schema.emailSend,
   schema.emailTemplate,
+  schema.journeyCanary,
+  schema.journeyOptimization,
   schema.journeyRun,
   schema.journeyVersion,
   schema.journey,
@@ -22,6 +24,7 @@ const TABLES = [
   schema.wfInstance,
   schema.wfWorkflow,
   schema.wfWorkflowMeta,
+  schema.wfNodeMetric,
   schema.workspace,
 ] as const;
 

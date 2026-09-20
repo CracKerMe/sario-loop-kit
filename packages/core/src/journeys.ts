@@ -262,12 +262,25 @@ export async function startJourneyRun(
   // to expose the instanceId it's about to mint back into that same
   // node's config, so this is the substitute idempotency handle (see
   // @loopkit/email's channel.ts doc comment for the full explanation).
-  const instanceId = await engine.start(input.workflowId, {
-    ...input.context,
-    journeyRunId: runId,
-  });
+  // Pin the run to the caller-selected journey version. This is load-bearing
+  // for canary: triggerService picks baseline vs canary before start, and
+  // the engine honors options.version when that version is registered.
+  // When the requested version is not in the registry (historical bookkeeping
+  // / mid-publish races) resolveVersion falls through to canary/active, but
+  // journey_run.journeyVersion keeps the product-level assignment.
+  const instanceId = await engine.start(
+    input.workflowId,
+    {
+      ...input.context,
+      journeyRunId: runId,
+    },
+    { version: String(input.journeyVersion) },
+  );
 
-  await db.update(journeyRun).set({ instanceId }).where(eq(journeyRun.id, runId));
+  await db
+    .update(journeyRun)
+    .set({ instanceId, journeyVersion: input.journeyVersion })
+    .where(eq(journeyRun.id, runId));
 
   return { started: true, runId, instanceId };
 }

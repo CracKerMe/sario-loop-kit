@@ -74,6 +74,130 @@ export type CopilotResultDto = {
   usage: { inputTokens: number; outputTokens: number };
 };
 
+export type JourneyOptimizationAnalysisDto = {
+  summary: string;
+  diagnosis: {
+    nodeId: string;
+    nodeType?: string;
+    issue: string;
+    severity: "info" | "warning" | "critical";
+  }[];
+  changes: {
+    nodeId: string;
+    action: "modify" | "add" | "remove" | "rewire";
+    description: string;
+  }[];
+  expectedImpact: {
+    metric: string;
+    direction: "increase" | "decrease" | "neutral";
+    note: string;
+  }[];
+  canaryPercent: number;
+  nodeMapping?: Record<string, string>;
+};
+
+export type JourneyOptimizationProposeDto = {
+  optimizationId: string;
+  analysis: JourneyOptimizationAnalysisDto;
+  graph: JourneyGraphDto;
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+  signals: {
+    runCounts: Record<string, number>;
+    nodes: { nodeId: string; nodeType: string | null; status: string | null; count: number }[];
+    email: {
+      sent: number;
+      delivered: number;
+      bounced: number;
+      complained: number;
+      failed: number;
+    };
+    inFlightByVersion: { version: number; runs: number }[];
+  };
+};
+
+export type JourneyOptimizationDto = {
+  id: string;
+  journeyId: string;
+  baselineVersion: number | null;
+  analysis: JourneyOptimizationAnalysisDto;
+  proposedGraph: JourneyGraphDto;
+  canaryPercent: number;
+  status: "proposed" | "accepted" | "rejected" | "canary" | "promoted" | "rolled_back";
+  targetVersion: number | null;
+  model: string | null;
+  createdAt: string;
+};
+
+export type VersionOutcomeMetricsDto = {
+  version: number;
+  runs: number;
+  running: number;
+  completed: number;
+  failed: number;
+  exited: number;
+  cancelled: number;
+  completionRate: number;
+  failureRate: number;
+  emailSent: number;
+  emailDelivered: number;
+  emailBounced: number;
+  emailComplained: number;
+  deliveryRate: number;
+  bounceRate: number;
+};
+
+export type CanaryComparisonDto = {
+  baseline: VersionOutcomeMetricsDto;
+  canary: VersionOutcomeMetricsDto;
+  completionDelta: number;
+  bounceDelta: number;
+  deliveryDelta: number;
+  decision: "promote" | "rollback" | "hold";
+  reason: string;
+  engine?: { shouldPromote: boolean; reason: string };
+};
+
+export type JourneyCanaryRowDto = {
+  journeyId: string;
+  optimizationId: string | null;
+  baselineVersion: number;
+  canaryVersion: number;
+  percent: number;
+  autoPromote: boolean;
+  minRuns: number;
+  maxBounceRate: number;
+  minCompletionDelta: number;
+  status: "active" | "promoted" | "rolled_back";
+  startedAt: string;
+  promotedAt: string | null;
+  rolledBackAt: string | null;
+  lastEvaluation: unknown;
+};
+
+export type JourneyCanaryStatusDto = {
+  canary: JourneyCanaryRowDto | null;
+  comparison: CanaryComparisonDto | null;
+  metrics: VersionOutcomeMetricsDto[];
+};
+
+export type AcceptOptimizationInput = {
+  mode: "draft" | "canary" | "full";
+  canaryPercent?: number;
+  autoPromote?: boolean;
+  minRuns?: number;
+  maxBounceRate?: number;
+  minCompletionDelta?: number;
+};
+
+export type AcceptOptimizationResultDto = {
+  optimizationId: string;
+  targetVersion: number;
+  mode: "draft" | "canary" | "full";
+  canary?: { baselineVersion: number; canaryVersion: number; percent: number };
+};
+
 export type ContactDto = {
   id: string;
   email: string;
@@ -498,6 +622,37 @@ export const api = {
     request<JourneySimulationDto>(`/v1/journeys/${id}/simulate`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  /** P3.5 — ask the model for a revised graph from live funnel metrics. */
+  journeyOptimize: (id: string, body: { request?: string; language?: string } = {}) =>
+    request<JourneyOptimizationProposeDto>(`/v1/journeys/${id}/optimize`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  journeyOptimizations: (id: string) =>
+    request<{ optimizations: JourneyOptimizationDto[] }>(`/v1/journeys/${id}/optimizations`),
+  acceptOptimization: (journeyId: string, optimizationId: string, body: AcceptOptimizationInput) =>
+    request<AcceptOptimizationResultDto>(
+      `/v1/journeys/${journeyId}/optimizations/${optimizationId}/accept`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  journeyCanary: (id: string) => request<JourneyCanaryStatusDto>(`/v1/journeys/${id}/canary`),
+  evaluateCanary: (id: string, body: { force?: boolean; autoApply?: boolean } = {}) =>
+    request<{
+      canary: JourneyCanaryRowDto;
+      comparison: CanaryComparisonDto;
+      applied: "promoted" | "rolled_back" | null;
+    }>(`/v1/journeys/${id}/canary/evaluate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  promoteCanary: (id: string) =>
+    request<{ ok: true; result: "promoted" }>(`/v1/journeys/${id}/canary/promote`, {
+      method: "POST",
+    }),
+  rollbackCanary: (id: string) =>
+    request<{ ok: true; result: "rolled_back" }>(`/v1/journeys/${id}/canary/rollback`, {
+      method: "POST",
     }),
   pauseJourney: (id: string) =>
     request<{ ok: true }>(`/v1/journeys/${id}/pause`, { method: "POST" }),
