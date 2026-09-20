@@ -4,7 +4,8 @@ import { extractMergeTagPaths, type EmailDocJson } from "@loopkit/email-doc";
 import { AlertTriangleIcon, Loader2Icon, SparklesIcon, Undo2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { ApiError, api, type CopilotEmailResultDto } from "@/lib/api";
+import { parseAiError } from "@/features/ai/CopilotShell";
+import { api, type CopilotEmailResultDto } from "@/lib/api";
 
 const textareaClass =
   "min-h-[96px] w-full resize-y rounded-md border border-input bg-input/30 p-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50";
@@ -124,20 +125,7 @@ export function EmailCopilotDialog({
       );
     } catch (err) {
       setResult(null);
-      if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string; issues?: string[] } | null;
-        if (body?.error === "ai_not_configured") {
-          setError("AI 未配置：需要在服务端环境设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY。");
-        } else if (body?.error === "ai_guard_rejected") {
-          setError(
-            `生成的内容未通过文档校验，请换个描述再试。${body.issues?.length ? `\n${body.issues.slice(0, 3).join("\n")}` : ""}`,
-          );
-        } else {
-          setError(body?.message ?? `生成失败（${err.status}）`);
-        }
-      } else {
-        setError(err instanceof Error ? err.message : "生成失败");
-      }
+      setError(parseAiError(err, "生成邮件失败"));
     } finally {
       setLoading(false);
     }

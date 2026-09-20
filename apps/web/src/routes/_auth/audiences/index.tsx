@@ -1,6 +1,6 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   DownloadIcon,
   EyeIcon,
@@ -318,6 +318,14 @@ function AudiencesPage() {
                   >
                     <EyeIcon className="size-3.5" />
                   </Button>
+                  <Link
+                    to="/contacts"
+                    search={{ audienceId: audience.id, audienceName: audience.name }}
+                    className="inline-flex h-7 items-center rounded-md px-2 text-[11px] text-primary hover:underline"
+                    title="Open contacts filtered by this audience"
+                  >
+                    Contacts
+                  </Link>
                   <Button
                     variant="ghost"
                     size="icon-sm"

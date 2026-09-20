@@ -6,6 +6,7 @@ import type { WorkflowEngine } from "ts-workflow-engine-lite";
 import type { Contact } from "./contacts";
 import { startJourneyRun } from "./journeys";
 import { getActiveJourneyCanary } from "./journeyOptimization";
+import { contactMatchesSegmentFilter } from "./segments";
 
 export type TriggerSignal =
   | { kind: "contact_created"; contact: Contact }
@@ -51,7 +52,7 @@ export async function evaluateTriggersForSignal(
     .where(and(eq(journey.workspaceId, contact.workspaceId), eq(journey.status, "published")));
 
   for (const j of published) {
-    if (!matchesTrigger(j.trigger as { kind: string; name?: string }, signal)) continue;
+    if (!(await matchesTrigger(db, j.trigger as TriggerConfig, signal, contact))) continue;
     if (j.publishedVersion === null) continue;
 
     const targetVersion = await resolveStartVersion(db, j.id, j.publishedVersion);
@@ -88,10 +89,40 @@ export async function resolveStartVersion(
   return canary.baselineVersion;
 }
 
-function matchesTrigger(trigger: { kind: string; name?: string }, signal: TriggerSignal): boolean {
-  if (signal.kind === "contact_created") return trigger.kind === "contact_created";
-  if (signal.kind === "event") return trigger.kind === "event" && trigger.name === signal.eventName;
-  return false;
+type TriggerConfig = {
+  kind: string;
+  name?: string;
+  /**
+   * Optional audience-style SegmentFilter frozen onto the journey trigger
+   * (from a saved audience or the shared segment editor). Evaluated against
+   * the contact at entry — not the journey package's property-only AST.
+   */
+  filter?: unknown;
+};
+
+async function matchesTrigger(
+  db: Db,
+  trigger: TriggerConfig,
+  signal: TriggerSignal,
+  contact: Contact,
+): Promise<boolean> {
+  if (signal.kind === "contact_created") {
+    if (trigger.kind !== "contact_created") return false;
+  } else if (signal.kind === "event") {
+    if (trigger.kind !== "event" || trigger.name !== signal.eventName) return false;
+  } else {
+    return false;
+  }
+
+  // Frozen entry filter: fail closed when present but invalid.
+  if (trigger.filter !== undefined && trigger.filter !== null) {
+    return contactMatchesSegmentFilter(db, {
+      workspaceId: contact.workspaceId,
+      contactId: contact.id,
+      filter: trigger.filter,
+    });
+  }
+  return true;
 }
 
 function buildStartContext(

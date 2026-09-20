@@ -1,14 +1,16 @@
 import { Button } from "@loopkit/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@loopkit/ui/components/card";
 import { Input } from "@loopkit/ui/components/input";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  ActivityIcon,
   ArrowLeftIcon,
   BanIcon,
   CalendarDaysIcon,
   MailIcon,
   PencilIcon,
   PlusIcon,
+  ShieldCheckIcon,
   Trash2Icon,
   UserRoundIcon,
 } from "lucide-react";
@@ -17,11 +19,15 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { Dialog } from "@/components/dialog";
+import { StatusBadge } from "@/components/status-badge";
 import { api, type ContactDto, type ContactEventDto } from "@/lib/api";
+import { formatRelativeTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_auth/contacts/$contactId")({
   component: ContactDetailPage,
 });
+
+type ActivityDto = Awaited<ReturnType<typeof api.contactActivity>>;
 
 const DEFAULT_PROPERTY_KEYS = ["firstName", "lastName", "userGroup", "source"] as const;
 
@@ -30,6 +36,7 @@ function ContactDetailPage() {
   const navigate = useNavigate();
   const [contact, setContact] = useState<ContactDto | null>(null);
   const [events, setEvents] = useState<ContactEventDto[]>([]);
+  const [activity, setActivity] = useState<ActivityDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingProperties, setEditingProperties] = useState(false);
@@ -38,9 +45,13 @@ function ContactDetailPage() {
 
   const load = async () => {
     try {
-      const res = await api.contact(contactId);
+      const [res, act] = await Promise.all([
+        api.contact(contactId),
+        api.contactActivity(contactId).catch(() => null),
+      ]);
       setContact(res.contact);
       setEvents(res.events);
+      setActivity(act);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load contact");
     } finally {
@@ -170,6 +181,50 @@ function ContactDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <ShieldCheckIcon className="size-4 text-primary" aria-hidden="true" />
+              Deliverability
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Subscription</span>
+              <span className="font-medium">
+                {(activity?.deliverability.subscribed ?? contact.subscribed)
+                  ? "Subscribed"
+                  : "Unsubscribed"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Address suppression</span>
+              {activity?.deliverability.suppression ? (
+                <span className="font-medium text-rose-600 dark:text-rose-300">
+                  {activity.deliverability.suppression.reason}
+                </span>
+              ) : (
+                <span className="font-medium text-emerald-600 dark:text-emerald-300">None</span>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Mailable now</span>
+              <span className="font-medium">
+                {activity?.deliverability.mailable ? "Yes" : "No — dual gates"}
+              </span>
+            </div>
+            {activity?.deliverability.suppression?.note && (
+              <p className="text-[11px] text-muted-foreground">
+                Note: {activity.deliverability.suppression.note}
+              </p>
+            )}
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              Dual gates: identity preference (subscribed) and address facts (suppression). Hard
+              bounces/complaints are operator-lifted on Compliance.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
               <UserRoundIcon className="size-4 text-primary" aria-hidden="true" />
               Properties
               <Button className="ml-auto" variant="ghost" size="xs" onClick={beginPropertyEdit}>
@@ -203,11 +258,84 @@ function ContactDetailPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ActivityIcon className="size-4 text-primary" aria-hidden="true" />
+              Recent engine activity
+              <Link
+                to="/logs"
+                className="ml-auto text-[11px] font-normal text-primary hover:underline"
+              >
+                Open logs
+              </Link>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Journey runs
+              </div>
+              {!activity?.runs?.length ? (
+                <p className="text-xs text-muted-foreground">No journey runs yet.</p>
+              ) : (
+                <ul className="grid gap-1.5">
+                  {activity.runs.map((run) => (
+                    <li
+                      key={run.id}
+                      className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-[11px]"
+                    >
+                      <Link
+                        to="/journeys/$journeyId"
+                        params={{ journeyId: run.journeyId }}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {run.journeyName ?? run.journeyId}
+                      </Link>
+                      <StatusBadge status={run.status} />
+                      <span className="text-muted-foreground">v{run.journeyVersion}</span>
+                      <span className="ml-auto text-muted-foreground">
+                        {formatRelativeTime(run.enteredAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Email sends
+              </div>
+              {!activity?.emails?.length ? (
+                <p className="text-xs text-muted-foreground">No email sends recorded.</p>
+              ) : (
+                <ul className="grid gap-1.5">
+                  {activity.emails.map((send) => (
+                    <li
+                      key={send.id}
+                      className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-[11px]"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium">{send.subject}</span>
+                      <StatusBadge status={send.status} />
+                      {send.templateName && (
+                        <span className="text-muted-foreground">{send.templateName}</span>
+                      )}
+                      <span className="text-muted-foreground">
+                        {formatRelativeTime(send.sentAt ?? send.createdAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CalendarDaysIcon className="size-4 text-primary" aria-hidden="true" />
-              Activity
+              Events
               <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {events.length} event{events.length === 1 ? "" : "s"}
               </span>

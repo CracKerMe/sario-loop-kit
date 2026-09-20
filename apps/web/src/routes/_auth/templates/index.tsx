@@ -1,4 +1,5 @@
 import type { CommunityEmailTemplate } from "@loopkit/email-doc";
+import { emptyEmailDoc } from "@loopkit/email-doc";
 import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
@@ -11,6 +12,7 @@ import {
   MailIcon,
   PencilIcon,
   PlusIcon,
+  SendIcon,
   SparklesIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,6 +21,8 @@ import { toast } from "sonner";
 import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
 import { CommunityTemplateGallery } from "@/features/email-editor";
+import { parseAiError } from "@/features/ai/CopilotShell";
+import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
 import { api, type EmailTemplateDto } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/templates/")({
@@ -154,6 +158,11 @@ function TemplatesPage() {
   const [createMode, setCreateMode] = useState<"community" | "blank">("community");
   /** Id of the community template currently being created, for its spinner. */
   const [usingTemplate, setUsingTemplate] = useState<string | null>(null);
+  const [txnOpen, setTxnOpen] = useState(false);
+  const [txnTo, setTxnTo] = useState("");
+  const [txnTemplateId, setTxnTemplateId] = useState("");
+  const [txnSending, setTxnSending] = useState(false);
+  const [txnResult, setTxnResult] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -225,19 +234,32 @@ function TemplatesPage() {
     <div className="lk-fade-up mx-auto w-full max-w-5xl px-4 py-6">
       <PageHeader
         title="Templates"
-        description="Reusable email bodies referenced by email nodes in journeys"
+        description="Email bodies for journeys, campaigns, and the transactional API. Edit in the visual editor (or HTML for legacy templates)."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setCreating(true);
-            }}
-          >
-            <PlusIcon data-icon="inline-start" />
-            New template
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setTxnOpen(true)}>
+              <SendIcon data-icon="inline-start" />
+              Test send
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setCreating(true);
+              }}
+            >
+              <PlusIcon data-icon="inline-start" />
+              New template
+            </Button>
+          </div>
         }
       />
+
+      <div className="mb-4 max-w-3xl">
+        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Sending paths
+        </div>
+        <MessagingPathPicker compact />
+      </div>
 
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -347,33 +369,142 @@ function TemplatesPage() {
           <ModeTab
             active={createMode === "blank"}
             onClick={() => setCreateMode("blank")}
-            icon={<FileCodeIcon className="size-3.5" />}
+            icon={<SparklesIcon className="size-3.5" />}
           >
-            Write HTML
+            Blank (visual editor)
           </ModeTab>
         </div>
 
         {createMode === "community" ? (
           <CommunityTemplateGallery onUse={useCommunityTemplate} submitting={usingTemplate} />
         ) : (
-          <TemplateForm
-            submitting={submitting}
-            submitLabel="Create template"
-            onSubmit={async (v) => {
+          <form
+            className="grid gap-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
               setSubmitting(true);
               try {
-                await api.createTemplate(v);
-                toast.success("Template created");
+                const name = (
+                  document.getElementById("tpl-blank-name") as HTMLInputElement
+                )?.value?.trim();
+                const subject = (
+                  document.getElementById("tpl-blank-subject") as HTMLInputElement
+                )?.value?.trim();
+                if (!name || !subject) throw new Error("Name and subject are required");
+                const { template } = await api.createTemplateFromDoc({
+                  name,
+                  subject,
+                  doc: emptyEmailDoc(),
+                });
+                toast.success("Template created — opening visual editor");
                 closeCreate();
-                await load();
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Create failed");
+                await navigate({
+                  to: "/templates/$templateId",
+                  params: { templateId: template.id },
+                });
+              } catch (err) {
+                toast.error(parseAiError(err, "Create failed"));
               } finally {
                 setSubmitting(false);
               }
             }}
-          />
+          >
+            <div className="grid gap-1.5">
+              <Label htmlFor="tpl-blank-name">Name</Label>
+              <Input id="tpl-blank-name" placeholder="Welcome email" required />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="tpl-blank-subject">Subject</Label>
+              <Input id="tpl-blank-subject" placeholder="Welcome aboard" required />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Creates a structured template and opens the visual editor with Email Copilot and the
+              community gallery available. Use “Edit HTML” on a card only for legacy raw-HTML
+              bodies.
+            </p>
+            <Button type="submit" disabled={submitting}>
+              {submitting && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+              Create and open editor
+            </Button>
+          </form>
         )}
+      </Dialog>
+
+      <Dialog
+        open={txnOpen}
+        onClose={() => {
+          setTxnOpen(false);
+          setTxnResult(null);
+        }}
+        title="Transactional test send"
+        description="Sends one template via POST /v1/transactional (session auth). Not a marketing path: no List-Unsubscribe; hard bounces/complaints still block."
+      >
+        <form
+          className="grid gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!txnTo || !txnTemplateId) return;
+            setTxnSending(true);
+            setTxnResult(null);
+            try {
+              const res = await api.sendTransactional({
+                to: txnTo,
+                templateId: txnTemplateId,
+                idempotencyKey: `dashboard-test-${Date.now()}`,
+              });
+              setTxnResult(
+                res.send
+                  ? `Queued ${res.send.status} → ${res.send.to}: ${res.send.subject}`
+                  : `Outcome: ${res.outcome ?? "unknown"}`,
+              );
+              toast.success("Transactional test submitted");
+            } catch (err) {
+              const msg = parseAiError(err, "Transactional send failed");
+              setTxnResult(msg);
+              toast.error(msg);
+            } finally {
+              setTxnSending(false);
+            }
+          }}
+        >
+          <div className="grid gap-1.5">
+            <Label htmlFor="txn-to">To</Label>
+            <Input
+              id="txn-to"
+              type="email"
+              value={txnTo}
+              onChange={(e) => setTxnTo(e.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="txn-template">Template</Label>
+            <select
+              id="txn-template"
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-xs"
+              value={txnTemplateId}
+              onChange={(e) => setTxnTemplateId(e.target.value)}
+              required
+            >
+              <option value="">Select template…</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {txnResult && (
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+              {txnResult}
+            </div>
+          )}
+          <Button type="submit" disabled={txnSending || !txnTo || !txnTemplateId}>
+            {txnSending && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+            Send test
+          </Button>
+        </form>
       </Dialog>
 
       <Dialog

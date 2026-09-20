@@ -689,6 +689,57 @@ export const api = {
   },
   contact: (id: string) =>
     request<{ contact: ContactDto; events: ContactEventDto[] }>(`/v1/contacts/${id}`),
+  /** Contact 360 — deliverability + recent runs/sends. */
+  contactActivity: (id: string) =>
+    request<{
+      contact: ContactDto;
+      deliverability: {
+        subscribed: boolean;
+        suppression: {
+          reason: SuppressionReasonDto;
+          source: string | null;
+          note: string | null;
+          createdAt: string;
+        } | null;
+        mailable: boolean;
+      };
+      runs: {
+        id: string;
+        instanceId: string;
+        journeyId: string;
+        journeyName: string | null;
+        status: string;
+        journeyVersion: number;
+        enteredAt: string;
+        exitedAt: string | null;
+        exitReason: string | null;
+      }[];
+      emails: {
+        id: string;
+        status: string;
+        subject: string;
+        templateId: string | null;
+        templateName: string | null;
+        campaignId: string | null;
+        journeyRunId: string | null;
+        idempotencyKey: string;
+        createdAt: string;
+        sentAt: string | null;
+      }[];
+    }>(`/v1/contacts/${id}/activity`),
+  /** Dashboard test-send for transactional path (session auth). */
+  sendTransactional: (input: {
+    to: string;
+    templateId: string;
+    subject?: string;
+    variables?: Record<string, unknown>;
+    idempotencyKey: string;
+  }) =>
+    request<{
+      send: { id: string; status: string; to: string; subject: string } | null;
+      outcome?: string;
+      duplicate?: boolean;
+    }>("/v1/transactional", { method: "POST", body: JSON.stringify(input) }),
   contactPropertyKeys: () => request<{ keys: string[] }>("/v1/contacts/property-keys"),
   replaceContactProperties: (id: string, properties: Record<string, unknown>) =>
     request<{ contact: ContactDto }>(`/v1/contacts/${id}/properties`, {

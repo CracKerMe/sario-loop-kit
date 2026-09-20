@@ -1,3 +1,4 @@
+import type { Db } from "@loopkit/db";
 import { contact, contactEvent } from "@loopkit/db/schema";
 import { and, eq, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -561,6 +562,30 @@ export function compileAudienceWhere(
   }
 
   return and(...conditions)!;
+}
+
+/**
+ * Whether one contact currently matches a SegmentFilter. Used by journey
+ * entry triggers that freeze an audience-style AST onto the trigger node.
+ * Invalid filters fail closed (no entry) rather than admitting everyone.
+ */
+export async function contactMatchesSegmentFilter(
+  db: Db,
+  input: {
+    workspaceId: string;
+    contactId: string;
+    filter: unknown;
+  },
+): Promise<boolean> {
+  const validation = validateSegmentFilter(input.filter);
+  if (!validation.ok) return false;
+  const parsed = filterSchema.parse(input.filter);
+  const where = and(
+    compileAudienceWhere(input.workspaceId, parsed),
+    eq(contact.id, input.contactId),
+  );
+  const rows = await db.select({ id: contact.id }).from(contact).where(where).limit(1);
+  return rows.length > 0;
 }
 
 /** Human-readable one-line summary, for audience cards and log lines. */

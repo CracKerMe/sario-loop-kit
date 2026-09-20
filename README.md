@@ -39,6 +39,22 @@ curl -H "Authorization: Bearer lk_live_..." \
 
 Without `RESEND_API_KEY`, emails are logged by `ConsoleEmailProvider`.
 
+## Product map (sending paths)
+
+Three products share one email channel (`packages/email`). Pick by intent — do not force-campaign a multi-step flow, and do not build a journey for a password reset.
+
+| Path | Surface | Use when |
+| --- | --- | --- |
+| **Lifecycle journey** | Dashboard → Journeys | Per-contact graph: waits, branches, event wake-ups. Lab tab = dry-run → simulate → optimize → canary → migrate. |
+| **Broadcast campaign** | Dashboard → Campaigns | One email to a saved audience. Filter frozen at launch; recipient rows are the queue. |
+| **Transactional API** | `POST /v1/transactional` (+ Templates → Test send) | Backend-triggered mail with required idempotency key. Scope `transactional:send`. |
+
+**Audiences** are saved SegmentFilter ASTs. The same editor powers audience CRUD, journey entry filters (frozen onto the trigger graph), and Contacts drill-down (`/contacts?audienceId=`).
+
+**AI assist** is a shared product surface (`CopilotShell`): journey graph, email doc, and audience filter copilots + simulate/optimize insights. Entrypoints stay in-context; error grammar is shared.
+
+**Compliance** is dual-gated by design: `contact.subscribed` (identity) + `suppression` (address facts). Contact detail shows both (Contact 360).
+
 ## API surface
 
 | Method   | Path                       | Auth               | Purpose                                      |

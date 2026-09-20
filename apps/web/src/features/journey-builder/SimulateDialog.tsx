@@ -17,7 +17,8 @@ import {
 import { useEffect, useState } from "react";
 
 import { Dialog } from "@/components/dialog";
-import { ApiError, api, type JourneySimulationDto, type JourneyGraphDto } from "@/lib/api";
+import { parseAiError } from "@/features/ai/CopilotShell";
+import { api, type JourneySimulationDto, type JourneyGraphDto } from "@/lib/api";
 
 const SAMPLE_SIZES = [10, 20, 50] as const;
 
@@ -70,21 +71,14 @@ export function SimulateDialog({
     try {
       setResult(await api.journeySimulate(journeyId, { sampleSize, insight: withInsight }));
     } catch (err) {
-      if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string; issues?: string[] } | null;
-        if (body?.error === "ai_not_configured") {
-          setError("AI 未配置：需要在服务端环境配置模型凭据（也可关闭 AI 解读仅看分布）。");
-        } else if (body?.error === "ai_guard_rejected") {
-          setError(
-            `AI 解读未通过安全校验。${body.issues?.length ? `\n${body.issues.slice(0, 3).join("\n")}` : ""}`,
-          );
-        } else if (body?.error === "no_contacts") {
-          setError("工作区没有可用联系人，无法抽样。");
-        } else {
-          setError(body?.message ?? `模拟失败（${err.status}）`);
-        }
+      const body =
+        err && typeof err === "object" && "body" in err
+          ? ((err as { body?: { error?: string } }).body ?? null)
+          : null;
+      if (body?.error === "no_contacts") {
+        setError("工作区没有可用联系人，无法抽样。");
       } else {
-        setError(err instanceof Error ? err.message : "模拟失败");
+        setError(parseAiError(err, "模拟失败"));
       }
     } finally {
       setRunning(false);

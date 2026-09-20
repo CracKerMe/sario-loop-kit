@@ -33,6 +33,7 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
 import { api, type JourneyDto } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 
@@ -371,11 +372,13 @@ function JourneysPage() {
             </EmptyMedia>
             <EmptyTitle>No journeys yet</EmptyTitle>
             <EmptyDescription>
-              Create your first lifecycle journey, design the flow in the visual builder, then
-              publish to start enrolling contacts.
+              Journeys are per-contact graphs (waits, branches, event wake-ups). For a one-shot
+              broadcast to an audience, create a Campaign instead. For backend-triggered mail, use
+              the Transactional API.
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
+          <EmptyContent className="w-full max-w-2xl">
+            <MessagingPathPicker compact className="mb-3 w-full" />
             <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
               <PlusIcon data-icon="inline-start" />
               New journey

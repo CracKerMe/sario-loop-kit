@@ -6,6 +6,7 @@ import { upsertContact } from "../contacts";
 import {
   compileAudienceWhere,
   compileSegmentFilter,
+  contactMatchesSegmentFilter,
   describeSegmentFilter,
   MAX_SEGMENT_DEPTH,
   SegmentCompileError,
@@ -391,6 +392,44 @@ describe("compileAudienceWhere — sendability filter", () => {
         }),
       );
     expect(rows).toHaveLength(4);
+  });
+});
+
+describe("contactMatchesSegmentFilter — journey entry freeze", () => {
+  beforeEach(async () => {
+    await resetTables(db);
+    await db.insert(workspace).values({ id: "ws-1", name: "test", slug: "ws-1" });
+    await seedContacts();
+  });
+
+  it("returns true when the contact matches a frozen audience AST", async () => {
+    const ids = await idsByEmail();
+    const ok = await contactMatchesSegmentFilter(db, {
+      workspaceId: "ws-1",
+      contactId: ids["pro@example.com"]!,
+      filter: { kind: "condition", field: "property.plan", operator: "eq", value: "pro" },
+    });
+    expect(ok).toBe(true);
+  });
+
+  it("returns false when the contact does not match", async () => {
+    const ids = await idsByEmail();
+    const ok = await contactMatchesSegmentFilter(db, {
+      workspaceId: "ws-1",
+      contactId: ids["free@example.com"]!,
+      filter: { kind: "condition", field: "property.plan", operator: "eq", value: "pro" },
+    });
+    expect(ok).toBe(false);
+  });
+
+  it("fails closed on an invalid filter", async () => {
+    const ids = await idsByEmail();
+    const ok = await contactMatchesSegmentFilter(db, {
+      workspaceId: "ws-1",
+      contactId: ids["pro@example.com"]!,
+      filter: { kind: "condition", field: "nope", operator: "eq", value: "x" },
+    });
+    expect(ok).toBe(false);
   });
 });
 

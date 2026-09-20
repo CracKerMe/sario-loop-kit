@@ -4,6 +4,7 @@ import {
   evaluateTriggersForSignal,
   exportContacts,
   getContactById,
+  getSuppression,
   isValidEmail,
   listContactPropertyKeys,
   listContacts,
@@ -14,7 +15,14 @@ import {
   type ContactImportRow,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
-import { contact, contactEvent } from "@loopkit/db/schema";
+import {
+  contact,
+  contactEvent,
+  emailSend,
+  emailTemplate,
+  journey,
+  journeyRun,
+} from "@loopkit/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -247,6 +255,74 @@ contactsRouter.get("/:id", async (c) => {
     .limit(50);
 
   return c.json({ contact: contactRow, events });
+});
+
+/**
+ * Contact 360: deliverability gates + recent engine activity in one read.
+ * Answers "why didn't this person get the email?" without hopping across
+ * Compliance / Journey runs / Logs.
+ */
+contactsRouter.get("/:id/activity", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const contactRow = await getContactById(db, workspaceId, c.req.param("id"));
+  if (!contactRow) return c.json({ error: "not_found" }, 404);
+
+  const suppression = await getSuppression(db, workspaceId, contactRow.email);
+
+  const runRows = await db
+    .select({
+      id: journeyRun.id,
+      instanceId: journeyRun.instanceId,
+      journeyId: journeyRun.journeyId,
+      journeyName: journey.name,
+      status: journeyRun.status,
+      journeyVersion: journeyRun.journeyVersion,
+      enteredAt: journeyRun.enteredAt,
+      exitedAt: journeyRun.exitedAt,
+      exitReason: journeyRun.exitReason,
+    })
+    .from(journeyRun)
+    .leftJoin(journey, eq(journey.id, journeyRun.journeyId))
+    .where(and(eq(journeyRun.workspaceId, workspaceId), eq(journeyRun.contactId, contactRow.id)))
+    .orderBy(desc(journeyRun.enteredAt))
+    .limit(20);
+
+  const emailRows = await db
+    .select({
+      id: emailSend.id,
+      status: emailSend.status,
+      subject: emailSend.subject,
+      templateId: emailSend.templateId,
+      templateName: emailTemplate.name,
+      campaignId: emailSend.campaignId,
+      journeyRunId: emailSend.journeyRunId,
+      idempotencyKey: emailSend.idempotencyKey,
+      createdAt: emailSend.createdAt,
+      sentAt: emailSend.sentAt,
+    })
+    .from(emailSend)
+    .leftJoin(emailTemplate, eq(emailTemplate.id, emailSend.templateId))
+    .where(and(eq(emailSend.workspaceId, workspaceId), eq(emailSend.contactId, contactRow.id)))
+    .orderBy(desc(emailSend.createdAt))
+    .limit(20);
+
+  return c.json({
+    contact: contactRow,
+    deliverability: {
+      subscribed: contactRow.subscribed,
+      suppression: suppression
+        ? {
+            reason: suppression.reason,
+            source: suppression.source,
+            note: suppression.note,
+            createdAt: suppression.createdAt,
+          }
+        : null,
+      mailable: contactRow.subscribed && !suppression,
+    },
+    runs: runRows,
+    emails: emailRows,
+  });
 });
 
 /** Dashboard-only full replacement: permits deleting individual custom keys. */

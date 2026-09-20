@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { cn } from "@loopkit/ui/lib/utils";
 import { PageHeader } from "@/components/page-header";
+import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/_auth/dashboard")({
@@ -158,7 +159,7 @@ function DashboardPage() {
             Welcome back, {firstName || "there"}
           </span>
         }
-        description="Your lifecycle engine at a glance."
+        description="Your lifecycle engine at a glance. Pick the right sending path before you build."
         actions={
           <Button size="sm" onClick={() => void navigate({ to: "/journeys/new" })}>
             <PlusIcon data-icon="inline-start" />
@@ -166,6 +167,13 @@ function DashboardPage() {
           </Button>
         }
       />
+
+      <div className="mb-6">
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Sending paths — choose once, then build
+        </div>
+        <MessagingPathPicker compact />
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
@@ -244,7 +252,12 @@ function DashboardPage() {
             <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
               1
             </span>
-            <p>Create a journey in the visual builder and publish it.</p>
+            <p>
+              Pick a path: <strong>Journey</strong> for multi-step lifecycle,{" "}
+              <strong>Campaign</strong> for one broadcast to an audience, or{" "}
+              <strong>Transactional API</strong> for backend mail. Then publish a journey or prepare
+              templates.
+            </p>
           </div>
           <div className="flex items-start gap-2.5">
             <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
@@ -270,7 +283,10 @@ function DashboardPage() {
             <span className="mt-px grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
               3
             </span>
-            <p>Watch journey runs and email sends on the journey page.</p>
+            <p>
+              Watch runs and email sends on the journey page (Lab for dry-run/optimize), campaign
+              recipients, or contact 360 activity.
+            </p>
           </div>
         </CardContent>
       </Card>

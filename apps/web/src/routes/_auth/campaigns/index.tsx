@@ -20,17 +20,17 @@ import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import {
+  EmailComposerFields,
+  type EmailComposerValue,
+} from "@/features/email-composer/EmailComposerFields";
+import { variablesForNode } from "@/features/journey-builder/variables";
+import { MessagingPathPicker } from "@/features/messaging/MessagingPathPicker";
+import {
   api,
   type AudienceWithCountsDto,
   type CampaignDto,
   type EmailTemplateDto,
 } from "@/lib/api";
-
-import {
-  EmailComposerFields,
-  type EmailComposerValue,
-} from "@/features/email-composer/EmailComposerFields";
-import { variablesForNode } from "@/features/journey-builder/variables";
 
 /** Campaigns have no graph/node context — just the global variable set. */
 const CAMPAIGN_VARIABLES = variablesForNode(undefined, [], []);
@@ -200,8 +200,12 @@ function CampaignsPage() {
           <div className="text-sm font-medium">No campaigns yet</div>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
             A campaign sends one email to everyone in an audience. Recipients are resolved once, at
-            launch, so editing the audience later cannot change who received it.
+            launch, so editing the audience later cannot change who received it. For multi-step
+            per-contact flows, build a journey instead.
           </p>
+          <div className="mx-auto mt-4 max-w-2xl">
+            <MessagingPathPicker compact />
+          </div>
           <Button size="sm" className="mt-4" onClick={openCreate}>
             <PlusIcon data-icon="inline-start" />
             New campaign

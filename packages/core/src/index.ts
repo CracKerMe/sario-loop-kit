@@ -94,6 +94,7 @@ export {
 export {
   compileAudienceWhere,
   compileSegmentFilter,
+  contactMatchesSegmentFilter,
   describeSegmentFilter,
   MAX_SEGMENT_CHILDREN,
   MAX_SEGMENT_DEPTH,

@@ -43,6 +43,8 @@ interface Props {
   onRowsChange: (rows: Row[]) => void;
   mode: GroupMode;
   onModeChange: (mode: GroupMode) => void;
+  /** Hide the name field when embedding as a pure condition editor. */
+  showName?: boolean;
 }
 
 export function AudienceFilterBuilder({
@@ -52,6 +54,7 @@ export function AudienceFilterBuilder({
   onRowsChange,
   mode,
   onModeChange,
+  showName = true,
 }: Props) {
   const [preview, setPreview] = useState<{ memberCount: number; sendableCount: number } | null>(
     null,
@@ -114,16 +117,18 @@ export function AudienceFilterBuilder({
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-1.5">
-        <Label htmlFor="aud-name">Name</Label>
-        <Input
-          id="aud-name"
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder="Trial users who never activated"
-          required
-        />
-      </div>
+      {showName && (
+        <div className="grid gap-1.5">
+          <Label htmlFor="aud-name">Name</Label>
+          <Input
+            id="aud-name"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Trial users who never activated"
+            required
+          />
+        </div>
+      )}
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">

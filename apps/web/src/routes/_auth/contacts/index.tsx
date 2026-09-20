@@ -26,7 +26,15 @@ import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
 import { api, getApiBaseUrl, type ContactDto } from "@/lib/api";
 
-export const Route = createFileRoute("/_auth/contacts/")({ component: ContactsPage });
+export const Route = createFileRoute("/_auth/contacts/")({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { audienceId?: string; audienceName?: string } => ({
+    audienceId: typeof search.audienceId === "string" ? search.audienceId : undefined,
+    audienceName: typeof search.audienceName === "string" ? search.audienceName : undefined,
+  }),
+  component: ContactsPage,
+});
 
 const AVATAR_TONES = [
   "from-violet-500/70 to-indigo-500/70",
@@ -115,6 +123,7 @@ function download(filename: string, contents: string, type = "text/csv;charset=u
 }
 
 function ContactsPage() {
+  const { audienceId, audienceName } = Route.useSearch();
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,8 +148,13 @@ function ContactsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.contacts({ query: query.trim() || undefined, status });
-      setContacts(res.contacts);
+      if (audienceId) {
+        const res = await api.audienceContacts(audienceId, { limit: 200, offset: 0 });
+        setContacts(res.contacts);
+      } else {
+        const res = await api.contacts({ query: query.trim() || undefined, status });
+        setContacts(res.contacts);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load contacts");
     } finally {
@@ -150,7 +164,7 @@ function ContactsPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), query ? 250 : 0);
     return () => window.clearTimeout(timer);
-  }, [query, status]);
+  }, [query, status, audienceId]);
   useEffect(() => setSelected([]), [contacts]);
   const allSelected =
     contacts.length > 0 && contacts.every((contact) => selected.includes(contact.id));
@@ -312,6 +326,25 @@ function ContactsPage() {
           </Button>
         </div>
       </section>
+      {audienceId && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs">
+          <FilterIcon className="size-3.5 text-sky-600 dark:text-sky-300" aria-hidden="true" />
+          <span>
+            Showing members of audience <strong>{audienceName || audienceId}</strong> (frozen
+            snapshot at load; mailable-first resolution may exclude suppressed addresses depending
+            on endpoint defaults).
+          </span>
+          <Link
+            to="/contacts"
+            className="ml-auto font-medium text-primary hover:underline"
+            onClick={() => {
+              setContacts([]);
+            }}
+          >
+            Clear audience filter
+          </Link>
+        </div>
+      )}
       {selected.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
           <span className="font-medium">{selected.length} selected</span>

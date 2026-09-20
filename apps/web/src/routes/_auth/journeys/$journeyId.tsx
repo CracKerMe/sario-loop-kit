@@ -9,14 +9,13 @@ import {
   BanIcon,
   BarChart3Icon,
   CopyIcon,
+  FlaskConicalIcon,
   GitBranchIcon,
   Loader2Icon,
   PauseIcon,
   PlayIcon,
   RefreshCwIcon,
-  ShuffleIcon,
   SearchIcon,
-  SparklesIcon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
@@ -24,10 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
-import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
-import { SimulateDialog } from "@/features/journey-builder/SimulateDialog";
-import { OptimizeDialog } from "@/features/journey-builder/OptimizeDialog";
-import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
+import { JourneyLab, type LabStageId } from "@/features/journey-builder/JourneyLab";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
@@ -46,6 +42,7 @@ export const Route = createFileRoute("/_auth/journeys/$journeyId")({
 
 const TABS = [
   { id: "builder", label: "Builder", icon: WorkflowIcon },
+  { id: "lab", label: "Lab", icon: FlaskConicalIcon },
   { id: "runs", label: "Runs", icon: GitBranchIcon },
   { id: "funnel", label: "Funnel", icon: BarChart3Icon },
 ] as const;
@@ -305,10 +302,7 @@ function JourneyEditorPage() {
   const [funnelCounts, setFunnelCounts] = useState<Record<string, number>>({});
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
-  const [dryRunOpen, setDryRunOpen] = useState(false);
-  const [simulateOpen, setSimulateOpen] = useState(false);
-  const [optimizeOpen, setOptimizeOpen] = useState(false);
-  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [labStage, setLabStage] = useState<LabStageId | null>(null);
   const [canary, setCanary] = useState<JourneyCanaryStatusDto | null>(null);
   const [canaryBusy, setCanaryBusy] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
@@ -487,30 +481,14 @@ function JourneyEditorPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setDryRunOpen(true)}
+                  onClick={() => {
+                    setTab("lab");
+                    setLabStage("preview");
+                  }}
                   disabled={!graph}
                 >
                   <PlayIcon data-icon="inline-start" />
-                  Preview run
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSimulateOpen(true)}
-                  disabled={!graph}
-                >
-                  <SparklesIcon data-icon="inline-start" />
-                  AI simulate
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setOptimizeOpen(true)}
-                  disabled={!graph}
-                  title="基于漏斗数据提出改版并灰度上线"
-                >
-                  <SparklesIcon data-icon="inline-start" />
-                  AI optimize
+                  Journey Lab
                 </Button>
                 <Button
                   variant="outline"
@@ -532,22 +510,22 @@ function JourneyEditorPage() {
                 </Button>
               </>
             )}
-            {status === "published" && (
-              <Button variant="outline" size="sm" onClick={() => setMigrateOpen(true)}>
-                <ShuffleIcon data-icon="inline-start" />
-                Migrate
-              </Button>
+            {tab === "lab" && (
+              <p className="text-[11px] text-muted-foreground">
+                Use the Lab stages below — preview, simulate, optimize, canary, migrate.
+              </p>
             )}
-            {tab !== "builder" && status === "published" && (
+            {status === "published" && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setOptimizeOpen(true)}
+                onClick={() => {
+                  setTab("lab");
+                  setLabStage("optimize");
+                }}
                 disabled={!graph}
-                title="基于漏斗数据提出改版并灰度上线"
               >
-                <SparklesIcon data-icon="inline-start" />
-                AI optimize
+                Optimize
               </Button>
             )}
             {status === "published" && (
@@ -563,8 +541,27 @@ function JourneyEditorPage() {
           </div>
         </div>
 
-        {/* Canary status banner — the P3.5 gray-release loop lives here. */}
-        {canary?.canary && (
+        {tab === "lab" && (
+          <div className="px-3 pt-3">
+            <JourneyLab
+              journeyId={journeyId}
+              graph={graph}
+              status={status}
+              publishedVersion={publishedVersion}
+              dirty={builderMeta?.dirty ?? false}
+              canary={canary}
+              canaryBusy={canaryBusy}
+              onCanaryAction={canaryAction}
+              onOptimizeAccepted={() => void loadRuns()}
+              onMigrated={() => void loadRuns()}
+              openStage={labStage}
+              onOpenStage={setLabStage}
+            />
+          </div>
+        )}
+
+        {/* Canary banner remains visible outside Lab for funnel/runs tabs. */}
+        {canary?.canary && tab !== "lab" && (
           <div
             className={cn(
               "mx-3 mb-2 rounded-lg border px-3 py-2 text-xs",
@@ -928,38 +925,6 @@ function JourneyEditorPage() {
         instanceId={openRun}
         onClose={() => setOpenRun(null)}
         onCancelled={() => void loadRuns()}
-      />
-
-      <DryRunDialog
-        open={dryRunOpen}
-        onClose={() => setDryRunOpen(false)}
-        journeyId={journeyId}
-        graph={graph}
-        dirty={builderMeta?.dirty ?? false}
-      />
-
-      <SimulateDialog
-        open={simulateOpen}
-        onClose={() => setSimulateOpen(false)}
-        journeyId={journeyId}
-        graph={graph}
-        dirty={builderMeta?.dirty ?? false}
-      />
-
-      <OptimizeDialog
-        open={optimizeOpen}
-        onClose={() => setOptimizeOpen(false)}
-        journeyId={journeyId}
-        publishedVersion={publishedVersion}
-        onAccepted={() => void loadRuns()}
-      />
-
-      <MigrateRunsDialog
-        open={migrateOpen}
-        onClose={() => setMigrateOpen(false)}
-        journeyId={journeyId}
-        publishedVersion={publishedVersion}
-        onMigrated={() => void loadRuns()}
       />
     </div>
   );

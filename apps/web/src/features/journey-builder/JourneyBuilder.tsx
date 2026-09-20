@@ -4,6 +4,7 @@ import { Label } from "@loopkit/ui/components/label";
 import { cn } from "@loopkit/ui/lib/utils";
 import { emptyEmailDoc } from "@loopkit/email-doc";
 import { Link } from "@tanstack/react-router";
+import { SegmentFilterEditor } from "@/features/segments/SegmentFilterEditor";
 import {
   Background,
   BackgroundVariant,
@@ -112,6 +113,72 @@ function unitToMs(unit: string): number {
   if (unit === "days") return 86_400_000;
   if (unit === "weeks") return 604_800_000;
   return 60_000;
+}
+
+/**
+ * Journey entry filter — freezes an audience-style SegmentFilter onto the
+ * trigger. Evaluated at entry by core triggerService; not the journey
+ * package's property-only AST.
+ */
+function TriggerEntryFilter({
+  trigger,
+  onChange,
+}: {
+  trigger: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const kind = String(trigger.kind ?? "contact_created");
+  const supportsFilter = kind === "contact_created" || kind === "event";
+  const filter = (trigger.filter ?? null) as Parameters<typeof SegmentFilterEditor>[0]["value"];
+  const summary = typeof trigger.filterSummary === "string" ? trigger.filterSummary : null;
+
+  if (!supportsFilter) {
+    return (
+      <InspectorField
+        label="Entry filter"
+        hint="Saved-audience freeze is available for contact_created / event triggers."
+      >
+        <p className="text-[11px] text-muted-foreground">Not applicable for this trigger kind.</p>
+      </InspectorField>
+    );
+  }
+
+  return (
+    <InspectorField
+      label="Entry filter"
+      hint="Optional. Reference a saved audience or build conditions. The AST is frozen onto the graph at save/publish."
+    >
+      <SegmentFilterEditor
+        value={filter}
+        showPreview={false}
+        showCopilot
+        showAudiencePicker
+        advancedFilter={null}
+        advancedSummary={summary}
+        onClearAdvanced={
+          filter
+            ? () => {
+                const next = { ...trigger };
+                delete next.filter;
+                delete next.filterSummary;
+                onChange(next);
+              }
+            : undefined
+        }
+        onChange={(nextFilter, meta) => {
+          const next = { ...trigger };
+          if (!nextFilter) {
+            delete next.filter;
+            delete next.filterSummary;
+          } else {
+            next.filter = nextFilter;
+            if (meta?.summary) next.filterSummary = meta.summary;
+          }
+          onChange(next);
+        }}
+      />
+    </InspectorField>
+  );
 }
 
 function InspectorField({
@@ -1818,6 +1885,10 @@ export function JourneyBuilder({
                       />
                     </InspectorField>
                   )}
+                  <TriggerEntryFilter
+                    trigger={(selected.data as { trigger?: Record<string, unknown> }).trigger ?? {}}
+                    onChange={(next) => updateSelectedData({ trigger: next })}
+                  />
                 </>
               )}
               {selected.type === "exit" && (

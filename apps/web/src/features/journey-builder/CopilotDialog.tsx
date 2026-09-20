@@ -3,7 +3,8 @@ import { cn } from "@loopkit/ui/lib/utils";
 import { AlertTriangleIcon, Loader2Icon, SparklesIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
 
-import { ApiError, api, type CopilotResultDto, type JourneyGraphDto } from "@/lib/api";
+import { parseAiError } from "@/features/ai/CopilotShell";
+import { api, type CopilotResultDto, type JourneyGraphDto } from "@/lib/api";
 
 import { NODE_META, type BuilderNodeType } from "./graph";
 
@@ -99,20 +100,7 @@ export function CopilotDialog({
       setResult(await api.copilotGenerate(text));
     } catch (err) {
       setResult(null);
-      if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string; issues?: string[] } | null;
-        if (body?.error === "ai_not_configured") {
-          setError("AI 未配置：需要在服务端环境设置 ANTHROPIC_API_KEY。");
-        } else if (body?.error === "ai_guard_rejected") {
-          setError(
-            `生成的旅程未通过安全校验，请换个描述再试。${body.issues?.length ? `\n${body.issues.slice(0, 3).join("\n")}` : ""}`,
-          );
-        } else {
-          setError(body?.message ?? `生成失败（${err.status}）`);
-        }
-      } else {
-        setError(err instanceof Error ? err.message : "生成失败");
-      }
+      setError(parseAiError(err, "生成旅程失败"));
     } finally {
       setLoading(false);
     }
