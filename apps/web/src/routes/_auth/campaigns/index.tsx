@@ -2,23 +2,13 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { Label } from "@loopkit/ui/components/label";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import {
-  CopyIcon,
-  Loader2Icon,
-  PauseIcon,
-  PencilIcon,
-  PlayIcon,
-  PlusIcon,
-  SendIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { Loader2Icon, PlusIcon, SendIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
+import { CampaignCard } from "@/features/broadcasts/campaign-card";
 import {
   EmailComposerFields,
   type EmailComposerValue,
@@ -90,6 +80,27 @@ function CampaignsPage() {
       fromName: c.fromName ?? "",
       replyTo: c.replyTo ?? "",
     });
+  };
+
+  /**
+   * The edit entry for anything already launched. Only a draft can be updated
+   * in place (see `updateCampaign`), so the honest way to "edit" a sent or
+   * sending broadcast is to fork it: copy the composition into a fresh draft
+   * and open the editor on that. The card labels the entry "Edit a copy" so
+   * the copy is never a surprise.
+   */
+  const openEditCopy = async (c: CampaignDto) => {
+    setBusyId(c.id);
+    try {
+      const { campaign } = await api.duplicateCampaign(c.id);
+      toast.success("Copied as a new draft — editing the copy");
+      await load();
+      openEdit(campaign);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not copy this broadcast");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const load = useCallback(async () => {
@@ -219,155 +230,33 @@ function CampaignsPage() {
 
       {!loading && campaigns.length > 0 && (
         <div className="grid gap-3">
-          {campaigns.map((c) => {
-            const done = c.sentCount + c.failedCount + c.skippedCount;
-            const percent = c.recipientCount > 0 ? Math.round((done / c.recipientCount) * 100) : 0;
-            const busy = busyId === c.id;
-            return (
-              <div key={c.id} className="rounded-xl border border-border bg-card p-3 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <SendIcon className="size-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">{c.name}</span>
-                      <StatusBadge status={c.status} />
-                    </div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {c.subject ?? "(template subject)"}
-                    </div>
-                    {c.audienceMemberCount !== null && (
-                      <div className="mt-0.5 text-[11px] text-muted-foreground/80">
-                        Audience {c.audienceMemberCount.toLocaleString()}
-                        {c.audienceSendableCount !== null &&
-                          c.audienceSendableCount < c.audienceMemberCount &&
-                          ` · ${(c.audienceMemberCount - c.audienceSendableCount).toLocaleString()} excluded at launch`}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {c.status === "draft" && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() => openEdit(c)}
-                        >
-                          <PencilIcon data-icon="inline-start" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(
-                              c.id,
-                              () => api.launchCampaign(c.id),
-                              "Campaign launched — recipients are being queued",
-                            )
-                          }
-                        >
-                          {busy ? (
-                            <Loader2Icon data-icon="inline-start" className="animate-spin" />
-                          ) : (
-                            <PlayIcon data-icon="inline-start" />
-                          )}
-                          Launch
-                        </Button>
-                      </>
-                    )}
-                    {(c.status === "sending" || c.status === "queued") && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => void run(c.id, () => api.pauseCampaign(c.id), "Paused")}
-                        >
-                          <PauseIcon data-icon="inline-start" />
-                          Pause
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(c.id, () => api.cancelCampaign(c.id), "Cancelled")
-                          }
-                        >
-                          <XIcon data-icon="inline-start" />
-                          Cancel
-                        </Button>
-                      </>
-                    )}
-                    {(c.status === "paused" || c.status === "failed") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void run(c.id, () => api.resumeCampaign(c.id), "Resumed")}
-                      >
-                        <PlayIcon data-icon="inline-start" />
-                        Resume
-                      </Button>
-                    )}
-                    {(c.status === "sent" || c.status === "cancelled") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(c.id, () => api.duplicateCampaign(c.id), "Copied as a new draft")
-                        }
-                      >
-                        <CopyIcon data-icon="inline-start" />
-                        Duplicate
-                      </Button>
-                    )}
-                    {(c.status === "draft" || c.status === "cancelled" || c.status === "sent") && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Delete ${c.name}`}
-                        disabled={busy}
-                        onClick={() => {
-                          if (!confirm(`Delete "${c.name}"?`)) return;
-                          void run(c.id, () => api.deleteCampaign(c.id), "Deleted");
-                        }}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {c.recipientCount > 0 && (
-                  <div className="mt-2.5">
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
-                      <span>{c.recipientCount.toLocaleString()} recipients</span>
-                      <span>{c.sentCount.toLocaleString()} sent</span>
-                      {c.queuedCount > 0 && <span>{c.queuedCount.toLocaleString()} in flight</span>}
-                      {c.failedCount > 0 && (
-                        <span className="text-destructive">
-                          {c.failedCount.toLocaleString()} failed
-                        </span>
-                      )}
-                      {c.skippedCount > 0 && <span>{c.skippedCount.toLocaleString()} skipped</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {campaigns.map((c) => (
+            <CampaignCard
+              key={c.id}
+              campaign={c}
+              template={templates.find((t) => t.id === c.templateId)}
+              busy={busyId === c.id}
+              onEdit={() => openEdit(c)}
+              onEditCopy={() => void openEditCopy(c)}
+              onLaunch={() =>
+                void run(
+                  c.id,
+                  () => api.launchCampaign(c.id),
+                  "Campaign launched — recipients are being queued",
+                )
+              }
+              onPause={() => void run(c.id, () => api.pauseCampaign(c.id), "Paused")}
+              onCancel={() => void run(c.id, () => api.cancelCampaign(c.id), "Cancelled")}
+              onResume={() => void run(c.id, () => api.resumeCampaign(c.id), "Resumed")}
+              onDuplicate={() =>
+                void run(c.id, () => api.duplicateCampaign(c.id), "Copied as a new draft")
+              }
+              onDelete={() => {
+                if (!confirm(`Delete "${c.name}"?`)) return;
+                void run(c.id, () => api.deleteCampaign(c.id), "Deleted");
+              }}
+            />
+          ))}
         </div>
       )}
 
