@@ -127,6 +127,7 @@ export async function runGuardedGeneration<T>(
             model,
             system: spec.system,
             messages: ms,
+            toolName: spec.toolName,
             toolDescription: spec.toolDescription,
             toolParameters: spec.toolParameters,
           });

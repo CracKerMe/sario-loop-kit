@@ -35,3 +35,15 @@ export {
   buildEmailUserPrompt,
   type EmailGenerationContext,
 } from "./emailPrompt";
+export { generateSimulationInsight } from "./generateSimulation";
+export {
+  AiGuardIssueError,
+  buildSimulationSystemPrompt,
+  buildSimulationUserPrompt,
+  guardSimulationInsight,
+  SIMULATION_INSIGHT_TOOL_NAME,
+  simulationInsightToolParameters,
+  simulationInsightZod,
+  type SimulationInsight,
+  type SimulationInsightInput,
+} from "./simulationInsight";

@@ -16,6 +16,7 @@ import {
   RefreshCwIcon,
   ShuffleIcon,
   SearchIcon,
+  SparklesIcon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
 import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
+import { SimulateDialog } from "@/features/journey-builder/SimulateDialog";
 import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { NODE_META } from "@/features/journey-builder/graph";
@@ -297,6 +299,7 @@ function JourneyEditorPage() {
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
   const [dryRunOpen, setDryRunOpen] = useState(false);
+  const [simulateOpen, setSimulateOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
@@ -453,6 +456,15 @@ function JourneyEditorPage() {
                 >
                   <PlayIcon data-icon="inline-start" />
                   Preview run
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSimulateOpen(true)}
+                  disabled={!graph}
+                >
+                  <SparklesIcon data-icon="inline-start" />
+                  AI simulate
                 </Button>
                 <Button
                   variant="outline"
@@ -799,6 +811,14 @@ function JourneyEditorPage() {
       <DryRunDialog
         open={dryRunOpen}
         onClose={() => setDryRunOpen(false)}
+        journeyId={journeyId}
+        graph={graph}
+        dirty={builderMeta?.dirty ?? false}
+      />
+
+      <SimulateDialog
+        open={simulateOpen}
+        onClose={() => setSimulateOpen(false)}
         journeyId={journeyId}
         graph={graph}
         dirty={builderMeta?.dirty ?? false}

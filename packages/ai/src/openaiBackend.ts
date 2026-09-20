@@ -12,7 +12,6 @@
  * reject the latter — the least surprising thing is to not cap output.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { GRAPH_TOOL_NAME } from "./prompt";
 import type { AiConfig } from "./client";
 
 type ContentBlock = Anthropic.Messages.ContentBlock;
@@ -36,6 +35,8 @@ export interface OpenAiTurnOptions {
   model: string;
   system: string;
   messages: MessageParam[];
+  /** The forced tool's name — the whole turn is keyed to it. */
+  toolName: string;
   /** The forced tool description / JSON schema. */
   toolDescription: string;
   toolParameters: Record<string, unknown>;
@@ -102,13 +103,16 @@ export function toChatMessages(
 }
 
 /** Map an OpenAI chat completion message back to Anthropic content blocks. */
-function toContentBlocks(message: {
-  content?: string | null;
-  tool_calls?: ChatToolCall[];
-}): ContentBlock[] {
+function toContentBlocks(
+  message: {
+    content?: string | null;
+    tool_calls?: ChatToolCall[];
+  },
+  toolName: string,
+): ContentBlock[] {
   if (message.tool_calls && message.tool_calls.length > 0) {
     return message.tool_calls.map((call, i): ContentBlock => {
-      if (call.type !== "function" || call.function?.name !== GRAPH_TOOL_NAME) {
+      if (call.type !== "function" || call.function?.name !== toolName) {
         // A wrong-tool call will simply not match extractToolInput and the
         // loop treats the turn as "did not call the tool".
         return {
@@ -127,7 +131,7 @@ function toContentBlocks(message: {
       return {
         type: "tool_use",
         id: call.id ?? `call_${i}`,
-        name: GRAPH_TOOL_NAME,
+        name: toolName,
         input,
       } as unknown as ContentBlock;
     });
@@ -136,7 +140,7 @@ function toContentBlocks(message: {
 }
 
 export async function callOpenAiForTurn(options: OpenAiTurnOptions): Promise<OpenAiTurnResult> {
-  const { config, model, system, messages, toolDescription, toolParameters } = options;
+  const { config, model, system, messages, toolName, toolDescription, toolParameters } = options;
   const doFetch = options.fetchImpl ?? fetch;
   const baseUrl = (config.baseUrl ?? DEFAULT_OPENAI_BASE_URL_PLACEHOLDER).replace(/\/+$/, "");
 
@@ -147,7 +151,7 @@ export async function callOpenAiForTurn(options: OpenAiTurnOptions): Promise<Ope
       {
         type: "function",
         function: {
-          name: GRAPH_TOOL_NAME,
+          name: toolName,
           description: toolDescription,
           parameters: toolParameters,
         },
@@ -155,7 +159,7 @@ export async function callOpenAiForTurn(options: OpenAiTurnOptions): Promise<Ope
     ],
     // Force the graph tool: a prose answer is useless and would only open a
     // path where unguarded text gets parsed downstream.
-    tool_choice: { type: "function", function: { name: GRAPH_TOOL_NAME } },
+    tool_choice: { type: "function", function: { name: toolName } },
   };
 
   const response = await doFetch(`${baseUrl}/chat/completions`, {
@@ -187,7 +191,7 @@ export async function callOpenAiForTurn(options: OpenAiTurnOptions): Promise<Ope
   }
 
   return {
-    content: toContentBlocks(choice.message),
+    content: toContentBlocks(choice.message, toolName),
     stopReason: choice.finish_reason ?? "unknown",
     usage: {
       inputTokens: data.usage?.prompt_tokens ?? 0,

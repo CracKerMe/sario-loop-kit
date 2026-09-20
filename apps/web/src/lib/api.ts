@@ -188,6 +188,39 @@ export type JourneyDryRunResultDto = {
   exitReason?: string;
 };
 
+export type SimulationInsightDto = {
+  summary: string;
+  observations: { title: string; detail: string; severity: "info" | "warning" | "critical" }[];
+  suggestions: { title: string; detail: string }[];
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+export type JourneySimulationDto = {
+  simulation: {
+    samples: number;
+    exitedCount: number;
+    truncatedCount: number;
+    endedEarlyCount: number;
+    branches: { nodeId: string; type: string; outcomes: { value: string; count: number }[] }[];
+    nodeReach: { nodeId: string; count: number }[];
+    dropOffs: { nodeId: string; count: number }[];
+    exitReasons: { reason: string; count: number }[];
+    warnings: { message: string; count: number }[];
+    errors: { nodeId: string; error: string; count: number }[];
+  };
+  perContact: {
+    contactId: string;
+    pathLength: number;
+    exited: boolean;
+    truncated: boolean;
+    warnings: string[];
+    errors: { nodeId: string; error: string }[];
+  }[];
+  insights: SimulationInsightDto | null;
+};
+
 export type DlqEntryDto = {
   id?: string;
   [key: string]: unknown;
@@ -457,6 +490,12 @@ export const api = {
     }),
   journeyDryRun: (id: string, body: { contactId: string; stopAfterNode?: string }) =>
     request<JourneyDryRunResultDto>(`/v1/journeys/${id}/dry-run`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** Cohort simulation with optional AI interpretation (see SimulateDialog). */
+  journeySimulate: (id: string, body: { sampleSize?: number; insight?: boolean }) =>
+    request<JourneySimulationDto>(`/v1/journeys/${id}/simulate`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

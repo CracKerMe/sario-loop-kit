@@ -16,6 +16,16 @@ export {
   type DryRunStep,
 } from "./dryRun";
 export { decompile, type DecompileResult } from "./decompile";
+export {
+  aggregateDryRuns,
+  describeGraphForSimulation,
+  type BranchDistribution,
+  type CohortRun,
+  type CohortSimulation,
+  type DropOff,
+  type GraphNodeRef,
+  type NodeReach,
+} from "./cohort";
 export { standardWelcomeSequenceGraph, welcomeAbScoreHoursGraph } from "./presets";
 export { validateGraph, type ValidationIssue, type ValidationResult } from "./validate";
 export { assertWhitelistedGraph, JOURNEY_NODE_TYPES } from "./whitelist";

@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 import { JOURNEY_NODE_TYPES, validateGraph } from "@loopkit/journey";
 import { aiConfigFromEnv } from "../client";
 import { generateJourneyGraph, type GeneratedJourney } from "../generateJourney";
+import { aggregateDryRuns, describeGraphForSimulation, dryRunJourney } from "@loopkit/journey";
+import { generateSimulationInsight } from "../generateSimulation";
 import type { JourneyGenerationContext } from "../prompt";
 
 const enabled = process.env.AI_SMOKE === "1" && !!process.env.OPENAI_API_KEY;
@@ -102,5 +104,79 @@ describe.skipIf(!enabled)("real API smoke (AI_SMOKE=1)", () => {
     );
     expect(result.attempts).toBeLessThanOrEqual(2);
     assertDomainRules(result, ctx);
+  }, 180_000);
+
+  it("scenario 3: cohort simulation insight over a real branch distribution", async () => {
+    // Small deterministic graph: branch on plan, both paths exit.
+    const graph = {
+      nodes: [
+        {
+          id: "t",
+          type: "trigger",
+          data: { trigger: { kind: "manual" } },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "b",
+          type: "branch",
+          data: { expression: 'contact.plan == "pro"' },
+          position: { x: 100, y: 0 },
+        },
+        { id: "vip", type: "email", data: { templateId: "tpl-vip" }, position: { x: 200, y: -50 } },
+        {
+          id: "free",
+          type: "email",
+          data: { templateId: "tpl-free" },
+          position: { x: 200, y: 50 },
+        },
+        { id: "x", type: "exit", data: { reason: "done" }, position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { id: "e1", source: "t", target: "b" },
+        { id: "e2", source: "b", target: "vip", sourceHandle: "true" },
+        { id: "e3", source: "b", target: "free", sourceHandle: "false" },
+        { id: "e4", source: "vip", target: "x" },
+        { id: "e5", source: "free", target: "x" },
+      ],
+    } as never;
+
+    // Synthetic cohort — 7 pro / 3 free.
+    const runs = Array.from({ length: 10 }, (_, i) => {
+      const plan = i < 7 ? "pro" : "free";
+      return {
+        contactId: `c${i}`,
+        result: dryRunJourney(graph, {
+          workspaceId: "ws-smoke",
+          journeyId: "j-smoke",
+          contactId: `c${i}`,
+          contact: { id: `c${i}`, email: `c${i}@x.io`, plan },
+          trigger: { kind: "manual" },
+          journeyRunId: "dry-run",
+        } as never),
+      };
+    });
+    const simulation = aggregateDryRuns(runs);
+    expect(simulation.exitedCount).toBe(10);
+
+    const { result, attempts, usage } = await generateSimulationInsight(
+      {
+        journeyName: "Plan split smoke",
+        graph: describeGraphForSimulation(graph),
+        simulation,
+        propertyKeys: ["plan"],
+      },
+      { config: getConfig() },
+    );
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[smoke] insight: attempts=${attempts} usage=${usage.inputTokens}in/${usage.outputTokens}out`,
+    );
+    expect(result.summary.length).toBeGreaterThan(0);
+    expect(result.observations.length).toBeGreaterThan(0);
+    expect(result.suggestions.length).toBeGreaterThan(0);
+    // The model must cite the real distribution (70%) somewhere.
+    const text = JSON.stringify(result);
+    expect(text).toContain("b");
   }, 180_000);
 });

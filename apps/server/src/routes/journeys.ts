@@ -24,9 +24,20 @@ import {
   journeyVersion,
 } from "@loopkit/db/schema";
 import { renderTemplate } from "@loopkit/email";
-import { AiConfigError, AiGraphError, generateJourneyGraph } from "@loopkit/ai";
-import { dryRunJourney, validateGraph, type JourneyGraph } from "@loopkit/journey";
-import { and, desc, eq } from "drizzle-orm";
+import {
+  AiConfigError,
+  AiGraphError,
+  generateJourneyGraph,
+  generateSimulationInsight,
+} from "@loopkit/ai";
+import {
+  aggregateDryRuns,
+  describeGraphForSimulation,
+  dryRunJourney,
+  validateGraph,
+  type JourneyGraph,
+} from "@loopkit/journey";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
@@ -313,6 +324,124 @@ journeysRouter.post("/:id/dry-run", async (c) => {
   }
 
   return c.json({ ...result, emailPreviews });
+});
+
+const simulateSchema = z.object({
+  sampleSize: z.number().int().min(1).max(50).optional(),
+  insight: z.boolean().optional(),
+});
+
+const SIMULATE_DEFAULT_SAMPLE = 20;
+
+/**
+ * Cohort simulation: sample real contacts, dry-run the latest saved graph
+ * for each, aggregate branch distributions and drop-offs, and (optionally)
+ * let the AI interpret the numbers. Nothing is sent and nothing is written;
+ * the AI only ever sees aggregate statistics — no contact identities, no
+ * property values. Error semantics match the copilot endpoints.
+ */
+journeysRouter.post("/:id/simulate", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = simulateSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [j] = await db
+    .select({ id: journey.id, name: journey.name })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const [version] = await db
+    .select({ graph: journeyVersion.graph })
+    .from(journeyVersion)
+    .where(eq(journeyVersion.journeyId, journeyId))
+    .orderBy(desc(journeyVersion.version))
+    .limit(1);
+  if (!version) return c.json({ error: "no_graph" }, 400);
+  const graph = version.graph as JourneyGraph;
+
+  const sampleSize = parsed.data.sampleSize ?? SIMULATE_DEFAULT_SAMPLE;
+  const sampled = await db
+    .select({
+      id: contact.id,
+      email: contact.email,
+      properties: contact.properties,
+      subscribed: contact.subscribed,
+    })
+    .from(contact)
+    .where(eq(contact.workspaceId, workspaceId))
+    .orderBy(sql`random()`)
+    .limit(sampleSize);
+  if (sampled.length === 0) return c.json({ error: "no_contacts" }, 400);
+
+  const runs = sampled.map((contactRow) => {
+    const props = contactRow.properties ?? {};
+    const context = {
+      workspaceId,
+      journeyId,
+      contactId: contactRow.id,
+      contact: { id: contactRow.id, email: contactRow.email, ...props },
+      trigger: { kind: "manual" },
+      journeyRunId: "dry-run",
+    };
+    return { contactId: contactRow.id, result: dryRunJourney(graph, context) };
+  });
+
+  const simulation = aggregateDryRuns(runs);
+
+  // Contact identities stay server-side; only aggregate statistics and
+  // property key NAMES reach the model.
+  let insights: Awaited<ReturnType<typeof generateSimulationInsight>> | null = null;
+  if (parsed.data.insight !== false) {
+    const propertyKeys = [...new Set(sampled.flatMap((s) => Object.keys(s.properties ?? {})))];
+    try {
+      insights = await generateSimulationInsight({
+        journeyName: j.name,
+        graph: describeGraphForSimulation(graph),
+        simulation,
+        propertyKeys,
+      });
+    } catch (error) {
+      if (error instanceof AiConfigError) {
+        return c.json({ error: "ai_not_configured", message: error.message }, 503);
+      }
+      if (error instanceof AiGraphError) {
+        return c.json(
+          { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+          502,
+        );
+      }
+      return c.json(
+        {
+          error: "ai_unavailable",
+          message: error instanceof Error ? error.message : String(error),
+        },
+        500,
+      );
+    }
+  }
+
+  return c.json({
+    simulation,
+    perContact: runs.map((r) => ({
+      contactId: r.contactId,
+      pathLength: r.result.executionPath.length,
+      exited: r.result.exited,
+      truncated: r.result.truncated,
+      warnings: r.result.warnings,
+      errors: r.result.errors,
+    })),
+    insights: insights
+      ? {
+          ...insights.result,
+          model: insights.model,
+          attempts: insights.attempts,
+          usage: insights.usage,
+        }
+      : null,
+  });
 });
 
 journeysRouter.post("/:id/publish", async (c) => {
