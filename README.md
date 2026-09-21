@@ -77,6 +77,7 @@ Three products share one email channel (`packages/email`). Pick by intent — do
 | GET      | `/v1/audiences/:id/contacts` | session          | Paged members                                |
 | GET/POST | `/v1/campaigns`            | session            | Broadcasts (CRUD)                            |
 | POST     | `/v1/campaigns/:id/launch` | session            | Resolve audience → materialize → drain       |
+| POST     | `/v1/campaigns/:id/schedule` \| `/unschedule` | session | Materialize now, drain later at `scheduledAt` |
 | POST     | `/v1/campaigns/:id/resume` | session            | Re-drain (crash recovery / un-pause)         |
 | POST     | `/v1/campaigns/:id/pause` \| `/cancel` | session  | Stop between batches                         |
 | GET      | `/v1/campaigns/:id/recipients` | session        | Per-recipient send outcome                   |
@@ -100,6 +101,15 @@ An audience is a stored SegmentFilter AST evaluated to SQL by `@loopkit/core`'s 
 - Numeric property comparisons are gated on `jsonb_typeof(...) = 'number'`, so one contact with `seats: "unknown"` doesn't turn a whole segment into a 500.
 
 A campaign **freezes its filter at launch**. Editing the saved segment afterwards cannot change who an in-flight broadcast goes to — otherwise the campaign's own report would be a lie.
+
+A campaign can also be **scheduled** (`POST /:id/schedule` with a `scheduledAt`) instead of launched immediately: the audience is resolved and the filter frozen at schedule time — same freeze-at-commit semantics as an immediate launch, not a live query at fire time — and a server-side poller (`apps/server`'s `campaignRunner.ts`, not the engine's `packages/timers`, since a scheduled campaign has no engine instance yet) starts the drain once due. `POST /:id/unschedule` reverts to `draft`; `POST /:id/cancel` works on a scheduled campaign directly too.
+
+## Send limits
+
+Two independent per-workspace controls sit in front of the provider, both optional and off by default:
+
+- **Rate limiting** (`SEND_MAX_CONCURRENT_PER_WORKSPACE`, `SEND_PER_MINUTE_PER_WORKSPACE`) — protects the provider connection budget. See `packages/email/src/rateLimit.ts`.
+- **Frequency capping** (`MARKETING_EMAIL_FREQUENCY_CAP`, `MARKETING_EMAIL_FREQUENCY_WINDOW_HOURS`, default window 24h) — protects the *recipient*: caps how many marketing emails one contact receives in a rolling window, across every journey and campaign combined. Transactional sends are exempt (same carve-out as suppression/unsubscribe). See `packages/email/src/frequencyCap.ts`.
 
 ## Compliance
 

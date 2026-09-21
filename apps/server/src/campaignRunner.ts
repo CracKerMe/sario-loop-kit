@@ -1,7 +1,9 @@
 import {
   drainCampaign,
+  fireCampaignSchedule,
   getCampaign,
   launchCampaign,
+  listDueCampaigns,
   listResumableCampaigns,
   refreshCampaignCounters,
   syncCampaignRecipientStatuses,
@@ -198,4 +200,56 @@ export async function resumeInterruptedCampaigns(): Promise<number> {
 export async function reconcileCampaign(campaignId: string): Promise<void> {
   await syncCampaignRecipientStatuses(db, campaignId);
   await refreshCampaignCounters(db, campaignId);
+}
+
+/**
+ * Campaign scheduler poller — same shape as `loopkitRuntime.ts`'s history
+ * sweeper: a plain `setInterval` inside the single API process, not the
+ * engine's `packages/timers` machinery. That machinery is built around an
+ * already-running engine instance (`fireOne` loads it by `instanceId`), and
+ * a `scheduled` campaign has none yet — it hasn't been handed to the engine
+ * at all. A table-backed poller needs no such prerequisite and is exactly
+ * as safe here as the history sweeper: `apps/server`'s advisory lock
+ * (instanceLock.ts) guarantees one process per database, so there is
+ * nothing to coordinate across replicas, and every campaign this poller
+ * finds is durable on disk — a restart between ticks loses nothing, the
+ * next tick just finds the same due row again.
+ */
+let campaignSchedulerTimer: NodeJS.Timeout | null = null;
+
+async function fireDueCampaign(due: { id: string; workspaceId: string }): Promise<void> {
+  const fired = await fireCampaignSchedule(db, due.id);
+  if (!fired) return; // raced with a manual cancel/unschedule between claim and fire
+  await registerCampaignWorkflow(fired);
+  void scheduleDrain(due.id);
+}
+
+/** One poll cycle: fire every due campaign. Exposed for tests. */
+export async function campaignSchedulerTick(limit = 20): Promise<number> {
+  const due = await listDueCampaigns(db, limit);
+  for (const row of due) {
+    try {
+      await fireDueCampaign(row);
+    } catch (error) {
+      console.error(`[loopkit] scheduled campaign launch failed for ${row.id}:`, error);
+    }
+  }
+  return due.length;
+}
+
+/**
+ * Starts the poller. Idempotent — a second call is a no-op, matching the
+ * history sweeper's guard.
+ */
+export function startCampaignScheduler(intervalMs = 30_000): void {
+  if (campaignSchedulerTimer) return;
+  void campaignSchedulerTick();
+  campaignSchedulerTimer = setInterval(() => void campaignSchedulerTick(), intervalMs);
+  // Never keeps the process alive on its own, same as the history sweeper.
+  campaignSchedulerTimer.unref();
+}
+
+export function stopCampaignScheduler(): void {
+  if (campaignSchedulerTimer) clearInterval(campaignSchedulerTimer);
+  campaignSchedulerTimer = null;
 }

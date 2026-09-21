@@ -11,6 +11,7 @@ import {
   ResendProvider,
   createWorkspaceSendLimiter,
   sendLimitsFromEnv,
+  type FrequencyCapConfig,
 } from "@loopkit/email";
 
 import { buildOneClickLink } from "./unsubscribeLinks";
@@ -58,6 +59,31 @@ function buildSendLimiter() {
   return limiter;
 }
 
+/**
+ * Per-contact marketing send cap (P1-4). Unset by default — an operator
+ * upgrading Loopkit must opt in explicitly; silently starting to drop mail
+ * for existing installs would be a much worse surprise than the frequency
+ * problem this exists to solve. Env:
+ *   MARKETING_EMAIL_FREQUENCY_CAP      — max marketing sends per contact
+ *                                         per window (unset/0 = unlimited)
+ *   MARKETING_EMAIL_FREQUENCY_WINDOW_HOURS — window size, default 24
+ */
+function buildFrequencyCap(): FrequencyCapConfig {
+  const maxPerWindow = Number.parseInt(process.env.MARKETING_EMAIL_FREQUENCY_CAP ?? "", 10);
+  if (!Number.isFinite(maxPerWindow) || maxPerWindow <= 0) {
+    return {};
+  }
+  const windowHours = Number.parseInt(process.env.MARKETING_EMAIL_FREQUENCY_WINDOW_HOURS ?? "", 10);
+  const config: FrequencyCapConfig = {
+    maxPerWindow,
+    windowHours: Number.isFinite(windowHours) && windowHours > 0 ? windowHours : 24,
+  };
+  console.log(
+    `[loopkit] frequency cap: ${config.maxPerWindow} marketing sends per contact per ${config.windowHours}h`,
+  );
+  return config;
+}
+
 export async function startEngine(): Promise<LoopkitEngine> {
   if (engineInstance) return engineInstance;
   if (startingPromise) return startingPromise;
@@ -68,6 +94,7 @@ export async function startEngine(): Promise<LoopkitEngine> {
     journeyActions: createJourneyCompileActions(db),
     buildUnsubscribe: buildOneClickLink,
     sendLimiter: buildSendLimiter(),
+    frequencyCap: buildFrequencyCap(),
   }).then((engine) => {
     engineInstance = engine;
     startHistorySweeper(engine);

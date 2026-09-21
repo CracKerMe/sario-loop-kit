@@ -6,6 +6,7 @@ import {
   ArrowRightIcon,
   FilterIcon,
   MailIcon,
+  MousePointerClickIcon,
   PlusIcon,
   RouteIcon,
   SendIcon,
@@ -115,6 +116,56 @@ function Distribution({ title, counts }: { title: string; counts: Record<string,
   );
 }
 
+function EngagementRates({
+  openRate,
+  clickRate,
+  delivered,
+}: {
+  openRate: number;
+  clickRate: number;
+  delivered: number;
+}) {
+  const rows = [
+    { label: "Open rate", value: openRate, style: "bg-emerald-500" },
+    { label: "Click rate", value: clickRate, style: "bg-sky-500" },
+  ];
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium">Last delivered {delivered}</span>
+      </div>
+      {delivered === 0 ? (
+        <div className="rounded-lg border border-dashed px-3 py-3 text-center text-[11px] text-muted-foreground">
+          Nothing delivered yet
+        </div>
+      ) : (
+        <div className="grid gap-1.5">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center gap-2">
+              <span className="w-20 shrink-0 truncate text-[11px] text-muted-foreground">
+                {row.label}
+              </span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-500", row.style)}
+                  style={{ width: `${Math.max(row.value * 100, row.value > 0 ? 4 : 0)}%` }}
+                />
+              </div>
+              <span className="w-10 shrink-0 text-right text-[11px] font-medium tabular-nums">
+                {(row.value * 100).toFixed(1)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+        Relies on the email provider's own open/click tracking — privacy-preserving mail clients can
+        inflate open rate. Directional, not exact.
+      </p>
+    </div>
+  );
+}
+
 const QUICK_ACTIONS: {
   title: string;
   body: string;
@@ -164,6 +215,9 @@ function DashboardPage() {
   const journeysByStatus = (stats?.journeysByStatus as Record<string, number>) ?? {};
   const emails = (stats?.emails as Record<string, number>) ?? {};
   const runsByStatus = (stats?.journeyRunsByStatus as Record<string, number>) ?? {};
+  const engagement = (stats?.engagement as
+    | { delivered: number; openRate: number; clickRate: number }
+    | undefined) ?? { delivered: 0, openRate: 0, clickRate: 0 };
   const emailTotal = (emails.sent ?? 0) + (emails.delivered ?? 0);
   const activeAutomations = journeysByStatus.published ?? 0;
 
@@ -275,7 +329,7 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -309,6 +363,22 @@ function DashboardPage() {
           </CardHeader>
           <CardContent>
             <Distribution title="By status" counts={emails} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MousePointerClickIcon className="size-4 text-primary" aria-hidden="true" />
+              Engagement
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EngagementRates
+              openRate={engagement.openRate}
+              clickRate={engagement.clickRate}
+              delivered={engagement.delivered}
+            />
           </CardContent>
         </Card>
       </div>

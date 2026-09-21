@@ -17,11 +17,13 @@ export type {
   NotificationResult,
 } from "ts-workflow-engine-lite";
 
+import { checkFrequencyCap, type FrequencyCapConfig } from "./frequencyCap";
 import type { EmailProvider, SendEmailResult } from "./provider";
 import { renderTemplate } from "./render";
 import type { SendLimiter } from "./rateLimit";
 
 export type { SendLimiter, SendSlotRelease, WorkspaceSendLimits } from "./rateLimit";
+export type { FrequencyCapConfig } from "./frequencyCap";
 
 /**
  * The shape `notification` node's `config.data` must carry for this
@@ -131,6 +133,15 @@ export interface CreateEmailChannelOptions {
    * degrades to a pass-through; the server wires one from env by default).
    */
   sendLimiter?: SendLimiter;
+  /**
+   * Per-contact marketing send cap (P1-4). Only applied when `recipientGate`
+   * is left at its default — a caller who injects a custom `recipientGate`
+   * has taken over the whole compliance decision and is expected to fold
+   * frequency capping into it themselves if they want it. Omitted or
+   * `{}` = unlimited, matching every existing deployment's current
+   * behavior (this is additive, not a breaking default).
+   */
+  frequencyCap?: FrequencyCapConfig;
 }
 
 export interface RecipientGateInput {
@@ -146,6 +157,13 @@ export interface RecipientGateInput {
    * about the mailbox, not preferences.
    */
   transactional?: boolean;
+  /**
+   * The `email_send` row id already inserted for the send being gated
+   * (the channel inserts it before running the gate — see `send()` below).
+   * Only consumed by the frequencyCap wrapper, to exclude this row from
+   * its own count; the default gate ignores it.
+   */
+  sendId?: string;
 }
 
 /**
@@ -154,7 +172,7 @@ export interface RecipientGateInput {
  */
 export interface RecipientGate {
   allowed: boolean;
-  detail?: "suppressed" | "unsubscribed";
+  detail?: "suppressed" | "unsubscribed" | "frequency_capped";
   error?: string;
 }
 
@@ -313,10 +331,42 @@ export function createEmailNotificationChannel(
     provider,
     defaultFrom,
     loadTemplate = defaultLoadTemplate,
-    recipientGate = defaultRecipientGate,
     buildUnsubscribe,
     sendLimiter,
+    frequencyCap,
   } = options;
+
+  // Only the DEFAULT gate gets the frequency cap folded in. A caller who
+  // injects their own `recipientGate` has taken over the compliance
+  // decision entirely (see CreateEmailChannelOptions' doc comment on
+  // `frequencyCap`) — wrapping a custom gate here would apply a policy the
+  // caller never asked for and cannot see.
+  const recipientGate =
+    options.recipientGate ??
+    (async (gateDb: Db, input: RecipientGateInput): Promise<RecipientGate> => {
+      const base = await defaultRecipientGate(gateDb, input);
+      if (!base.allowed) return base;
+      // Frequency capping never applies to transactional (service) mail —
+      // same carve-out as suppression/unsubscribe above it, for the same
+      // reason: a receipt or password reset is not a marketing send and
+      // must not compete with marketing traffic for the same quota.
+      if (input.transactional || !frequencyCap) return base;
+
+      const cap = await checkFrequencyCap(gateDb, {
+        workspaceId: input.workspaceId,
+        contactId: input.contactId,
+        config: frequencyCap,
+        excludeSendId: input.sendId,
+      });
+      if (!cap.allowed) {
+        return {
+          allowed: false,
+          detail: "frequency_capped",
+          error: `frequency capped: ${cap.sentInWindow} sent in the current window`,
+        };
+      }
+      return base;
+    });
 
   return {
     name: "loopkit-email",
@@ -382,6 +432,7 @@ export function createEmailNotificationChannel(
         contactId: data.contactId,
         email: message.target,
         transactional: data.transactional === true,
+        sendId,
       });
       if (!gate.allowed) {
         await db

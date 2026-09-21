@@ -19,7 +19,11 @@ import { transactionalRouter } from "./routes/transactional";
 import { webhooksRouter } from "./routes/webhooks";
 import { acquireInstanceLock } from "./instanceLock";
 import { requireAuth, requireScope, type AuthVariables } from "./middleware/auth";
-import { resumeInterruptedCampaigns } from "./campaignRunner";
+import {
+  resumeInterruptedCampaigns,
+  startCampaignScheduler,
+  stopCampaignScheduler,
+} from "./campaignRunner";
 import { startEngine, stopEngine } from "./loopkitRuntime";
 
 initLogger({
@@ -191,6 +195,11 @@ async function main() {
     console.error("[loopkit] campaign recovery pass failed:", error);
   });
 
+  // Fires `scheduled` campaigns whose scheduledAt has arrived — see
+  // campaignRunner.ts's doc comment for why this is a plain poller rather
+  // than routed through packages/timers.
+  startCampaignScheduler();
+
   const server = serve(
     {
       fetch: app.fetch,
@@ -203,6 +212,7 @@ async function main() {
 
   const shutdown = async () => {
     server.close();
+    stopCampaignScheduler();
     await stopEngine();
     await lock.release();
     process.exit(0);

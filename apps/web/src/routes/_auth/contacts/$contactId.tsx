@@ -8,6 +8,8 @@ import {
   BanIcon,
   CalendarDaysIcon,
   MailIcon,
+  MailOpenIcon,
+  MousePointerClickIcon,
   PencilIcon,
   PlusIcon,
   ShieldCheckIcon,
@@ -318,6 +320,22 @@ function ContactDetailPage() {
                     >
                       <span className="min-w-0 flex-1 truncate font-medium">{send.subject}</span>
                       <StatusBadge status={send.status} />
+                      {send.opened && (
+                        <span
+                          className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-300"
+                          title="Opened"
+                        >
+                          <MailOpenIcon className="size-3" aria-hidden="true" />
+                        </span>
+                      )}
+                      {send.clicked && (
+                        <span
+                          className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-300"
+                          title="Clicked"
+                        >
+                          <MousePointerClickIcon className="size-3" aria-hidden="true" />
+                        </span>
+                      )}
                       {send.templateName && (
                         <span className="text-muted-foreground">{send.templateName}</span>
                       )}

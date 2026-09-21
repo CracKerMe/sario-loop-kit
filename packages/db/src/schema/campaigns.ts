@@ -47,6 +47,11 @@ export const campaign = pgTable(
     name: text("name").notNull(),
     /**
      * `draft`   — being composed; nothing resolved yet
+     * `scheduled` — audience materialized and filter frozen (same as
+     *             `queued`'s materialization step), waiting for
+     *             `scheduledAt` to arrive. The campaign scheduler poller
+     *             (apps/server's campaignRunner.ts) promotes it to `queued`
+     *             and starts the drain once due — see scheduledAt below.
      * `queued`  — recipients materialized, drain not started
      * `sending` — drain in progress
      * `paused`  — drain stopped deliberately; resumable
@@ -55,7 +60,9 @@ export const campaign = pgTable(
      * `failed`  — the drain itself errored (not individual sends)
      */
     status: text("status")
-      .$type<"draft" | "queued" | "sending" | "sent" | "paused" | "cancelled" | "failed">()
+      .$type<
+        "draft" | "scheduled" | "queued" | "sending" | "sent" | "paused" | "cancelled" | "failed"
+      >()
       .notNull()
       .default("draft"),
     /** Deliberately NOT a foreign key: a sent campaign's record must outlive
@@ -88,6 +95,14 @@ export const campaign = pgTable(
     audienceMemberCount: integer("audience_member_count"),
     /** Of those, how many were mailable (subscribed, not suppressed). */
     audienceSendableCount: integer("audience_sendable_count"),
+    /**
+     * When a `scheduled` campaign should start draining. Set by
+     * `scheduleCampaign()` alongside materialization (the audience is
+     * resolved and frozen at schedule time, not at fire time — see that
+     * function's doc comment for why). Cleared when the campaign is
+     * unscheduled back to `draft`, or once it starts sending.
+     */
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
     recipientCount: integer("recipient_count").notNull().default(0),
     queuedCount: integer("queued_count").notNull().default(0),
     sentCount: integer("sent_count").notNull().default(0),
@@ -107,6 +122,11 @@ export const campaign = pgTable(
     // At most one non-terminal campaign per workspace+name? No — names are
     // labels, and blocking a re-send after a typo'd name is pure friction.
     index("campaign_ws_name_idx").on(t.workspaceId, t.name),
+    // The scheduler poller's query: "which scheduled campaigns are due".
+    // Partial so it stays tiny — most campaigns are never `scheduled`.
+    index("campaign_scheduled_idx")
+      .on(t.status, t.scheduledAt)
+      .where(sql`${t.status} = 'scheduled'`),
   ],
 );
 

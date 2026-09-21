@@ -684,4 +684,139 @@ describe("createEmailNotificationChannel", () => {
     const rows = await db.select().from(emailSend);
     expect(rows).toHaveLength(0);
   });
+
+  describe("frequency cap (P1-4)", () => {
+    it("is unlimited when no frequencyCap is configured (default, back-compat)", async () => {
+      const channel = createEmailNotificationChannel({
+        db,
+        provider,
+        defaultFrom: "fallback@loopkit.dev",
+      });
+      for (let i = 0; i < 5; i++) {
+        const result = await channel.send({
+          target: "sam@example.com",
+          subject: "Welcome!",
+          body: "template:tpl-1",
+          data: nodeData({ nodeId: `node-${i}` }),
+        });
+        expect(result.ok).toBe(true);
+        expect(result.detail).not.toBe("frequency_capped");
+      }
+      expect(provider.sends).toHaveLength(5);
+    });
+
+    it("blocks a send past the cap without touching the provider or the DLQ path", async () => {
+      const channel = createEmailNotificationChannel({
+        db,
+        provider,
+        defaultFrom: "fallback@loopkit.dev",
+        frequencyCap: { maxPerWindow: 2, windowHours: 24 },
+      });
+
+      const first = await channel.send({
+        target: "sam@example.com",
+        subject: "Welcome!",
+        body: "template:tpl-1",
+        data: nodeData({ nodeId: "node-a" }),
+      });
+      const second = await channel.send({
+        target: "sam@example.com",
+        subject: "Welcome!",
+        body: "template:tpl-1",
+        data: nodeData({ nodeId: "node-b" }),
+      });
+      const third = await channel.send({
+        target: "sam@example.com",
+        subject: "Welcome!",
+        body: "template:tpl-1",
+        data: nodeData({ nodeId: "node-c" }),
+      });
+
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+      expect(third.ok).toBe(true); // a deliberate skip is not a failure — see defaultRecipientGate's doc comment
+      expect(third.detail).toBe("frequency_capped");
+      expect(provider.sends).toHaveLength(2); // the third never reached the provider
+
+      const blockedRow = await db.select().from(emailSend).where(eq(emailSend.nodeId, "node-c"));
+      expect(blockedRow[0]?.status).toBe("failed");
+      expect(blockedRow[0]?.error).toContain("frequency capped");
+    });
+
+    it("does not apply frequency capping to a transactional send", async () => {
+      const channel = createEmailNotificationChannel({
+        db,
+        provider,
+        defaultFrom: "fallback@loopkit.dev",
+        frequencyCap: { maxPerWindow: 1, windowHours: 24 },
+      });
+
+      // Exhaust the cap with a marketing send.
+      await channel.send({
+        target: "sam@example.com",
+        subject: "Welcome!",
+        body: "template:tpl-1",
+        data: nodeData({ nodeId: "node-marketing" }),
+      });
+
+      const receipt = await channel.send({
+        target: "sam@example.com",
+        subject: "Your receipt",
+        body: "template:tpl-1",
+        data: transactionalData({ transactionalId: "receipt-1" }),
+      });
+
+      expect(receipt.ok).toBe(true);
+      expect(receipt.detail).not.toBe("frequency_capped");
+      expect(provider.sends).toHaveLength(2); // both the marketing send and the receipt went out
+    });
+
+    it("still blocks a suppressed address even when a frequencyCap is configured", async () => {
+      await addSuppression(db, {
+        workspaceId: "ws-1",
+        email: "sam@example.com",
+        reason: "hard_bounce",
+        source: "test",
+      });
+      const channel = createEmailNotificationChannel({
+        db,
+        provider,
+        defaultFrom: "fallback@loopkit.dev",
+        frequencyCap: { maxPerWindow: 5, windowHours: 24 },
+      });
+
+      const result = await channel.send({
+        target: "sam@example.com",
+        subject: "Welcome!",
+        body: "template:tpl-1",
+        data: nodeData(),
+      });
+
+      // Suppression is checked first — the failure reason must stay the
+      // more severe, permanent one, not get relabeled as a frequency skip.
+      expect(result.detail).toBe("suppressed");
+      expect(provider.sends).toHaveLength(0);
+    });
+
+    it("a caller-injected recipientGate takes over entirely — frequencyCap is not folded in", async () => {
+      const channel = createEmailNotificationChannel({
+        db,
+        provider,
+        defaultFrom: "fallback@loopkit.dev",
+        frequencyCap: { maxPerWindow: 1, windowHours: 24 },
+        recipientGate: async () => ({ allowed: true }), // always allows, ignores the cap entirely
+      });
+
+      for (let i = 0; i < 3; i++) {
+        const result = await channel.send({
+          target: "sam@example.com",
+          subject: "Welcome!",
+          body: "template:tpl-1",
+          data: nodeData({ nodeId: `node-${i}` }),
+        });
+        expect(result.detail).not.toBe("frequency_capped");
+      }
+      expect(provider.sends).toHaveLength(3);
+    });
+  });
 });

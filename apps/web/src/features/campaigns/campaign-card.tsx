@@ -8,6 +8,7 @@ import {
 } from "@loopkit/ui/components/dropdown-menu";
 import { cn } from "@loopkit/ui/lib/utils";
 import {
+  CalendarClockIcon,
   CopyIcon,
   Loader2Icon,
   MailIcon,
@@ -68,6 +69,8 @@ export function CampaignCard({
   onEdit,
   onEditCopy,
   onLaunch,
+  onSchedule,
+  onUnschedule,
   onPause,
   onCancel,
   onResume,
@@ -82,6 +85,10 @@ export function CampaignCard({
   /** Duplicate as a new draft, then open the editor on it. */
   onEditCopy: () => void;
   onLaunch: () => void;
+  /** Opens the schedule-time picker. */
+  onSchedule: () => void;
+  /** Reverts a `scheduled` campaign back to draft. */
+  onUnschedule: () => void;
   onPause: () => void;
   onCancel: () => void;
   onResume: () => void;
@@ -89,10 +96,12 @@ export function CampaignCard({
   onDelete: () => void;
 }) {
   const isDraft = campaign.status === "draft";
+  const isScheduled = campaign.status === "scheduled";
   const inFlight = campaign.status === "sending" || campaign.status === "queued";
   const canResume = campaign.status === "paused" || campaign.status === "failed";
   const canDuplicate = campaign.status === "sent" || campaign.status === "cancelled";
   const canDelete = isDraft || canDuplicate;
+  const canCancel = inFlight || isScheduled;
 
   const editLabel = isDraft ? "Edit campaign" : "Edit a copy";
 
@@ -191,9 +200,21 @@ export function CampaignCard({
             {/* z-20 keeps every real control above the stretched button's z-10. */}
             <div className="relative z-20 flex shrink-0 items-center gap-1">
               {isDraft && (
-                <Button size="sm" variant="outline" disabled={busy} onClick={onLaunch}>
-                  <PlayIcon data-icon="inline-start" />
-                  Launch
+                <>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={onLaunch}>
+                    <PlayIcon data-icon="inline-start" />
+                    Launch
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={onSchedule}>
+                    <CalendarClockIcon data-icon="inline-start" />
+                    Schedule
+                  </Button>
+                </>
+              )}
+              {isScheduled && (
+                <Button size="sm" variant="outline" disabled={busy} onClick={onUnschedule}>
+                  <CalendarClockIcon data-icon="inline-start" />
+                  Reschedule
                 </Button>
               )}
               {inFlight && (
@@ -208,7 +229,7 @@ export function CampaignCard({
                   Resume
                 </Button>
               )}
-              {!isDraft && (
+              {!isDraft && !isScheduled && (
                 <Button size="sm" variant="ghost" disabled={busy} onClick={onEditCopy}>
                   <PencilIcon data-icon="inline-start" />
                   Edit a copy
@@ -230,15 +251,27 @@ export function CampaignCard({
                   <MoreHorizontalIcon />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" sideOffset={6} className="w-48">
-                  <DropdownMenuItem onClick={isDraft ? onEdit : onEditCopy}>
+                  <DropdownMenuItem onClick={isDraft ? onEdit : onEditCopy} disabled={isScheduled}>
                     <PencilIcon />
                     {editLabel}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {isDraft && (
-                    <DropdownMenuItem onClick={onLaunch}>
-                      <PlayIcon />
-                      Launch
+                    <>
+                      <DropdownMenuItem onClick={onLaunch}>
+                        <PlayIcon />
+                        Launch
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={onSchedule}>
+                        <CalendarClockIcon />
+                        Schedule
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {isScheduled && (
+                    <DropdownMenuItem onClick={onUnschedule}>
+                      <CalendarClockIcon />
+                      Reschedule
                     </DropdownMenuItem>
                   )}
                   {inFlight && (
@@ -253,7 +286,7 @@ export function CampaignCard({
                       Resume
                     </DropdownMenuItem>
                   )}
-                  {inFlight && (
+                  {canCancel && (
                     <DropdownMenuItem onClick={onCancel}>
                       <XIcon />
                       Cancel
@@ -313,11 +346,14 @@ export function CampaignCard({
               </span>
             )}
             <span className="text-[10px] text-muted-foreground">
-              {/* A launched campaign is dated by when it went out; a draft by
-                  the last time someone touched it. */}
-              {campaign.launchedAt
-                ? `Launched ${formatRelativeTime(campaign.launchedAt)}`
-                : `Updated ${formatRelativeTime(campaign.updatedAt)}`}
+              {/* A scheduled campaign is dated by when it WILL go out; a
+                  launched one by when it went out; a draft by the last time
+                  someone touched it. */}
+              {isScheduled && campaign.scheduledAt
+                ? `Scheduled for ${new Date(campaign.scheduledAt).toLocaleString()}`
+                : campaign.launchedAt
+                  ? `Launched ${formatRelativeTime(campaign.launchedAt)}`
+                  : `Updated ${formatRelativeTime(campaign.updatedAt)}`}
             </span>
             {campaign.completedAt && (
               <span className="text-[10px] text-muted-foreground">

@@ -2,6 +2,7 @@ import { Button } from "@loopkit/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -44,6 +45,7 @@ import { SimulateDialog } from "@/features/journey-builder/SimulateDialog";
 import {
   api,
   type FunnelEntryDto,
+  type NodeEmailEngagementDto,
   type JourneyCanaryStatusDto,
   type JourneyGraphDto,
   type JourneyRunDto,
@@ -315,6 +317,7 @@ function JourneyEditorPage() {
   const [journeyName, setJourneyName] = useState("Journey");
   const [funnel, setFunnel] = useState<FunnelEntryDto[]>([]);
   const [funnelCounts, setFunnelCounts] = useState<Record<string, number>>({});
+  const [funnelEngagement, setFunnelEngagement] = useState<NodeEmailEngagementDto[]>([]);
   const [graph, setGraph] = useState<JourneyGraphDto | null>(null);
   const [tab, setTab] = useState<TabId>("builder");
   const [activityView, setActivityView] = useState<ActivityView>("runs");
@@ -383,6 +386,7 @@ function JourneyEditorPage() {
       const res = await api.journeyFunnel(journeyId);
       setFunnel(res.funnel);
       setFunnelCounts(res.runCounts ?? {});
+      setFunnelEngagement(res.emailEngagement ?? []);
       if (!graph) {
         const detail = await api.journey(journeyId);
         setGraph(detail.graph);
@@ -391,6 +395,7 @@ function JourneyEditorPage() {
       }
     } catch {
       setFunnel([]);
+      setFunnelEngagement([]);
     } finally {
       setFunnelLoading(false);
     }
@@ -448,6 +453,10 @@ function JourneyEditorPage() {
   }, [funnel]);
 
   const totalFunnelSteps = useMemo(() => funnel.reduce((acc, e) => acc + e.count, 0), [funnel]);
+  const engagementByNode = useMemo(
+    () => new Map(funnelEngagement.map((e) => [e.nodeId, e])),
+    [funnelEngagement],
+  );
   const totalRuns = Object.entries(runCounts).reduce((acc, [, v]) => acc + v, 0);
 
   return (
@@ -538,15 +547,17 @@ function JourneyEditorPage() {
                 <MoreHorizontalIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" sideOffset={6} className="w-52 bg-card">
-                <DropdownMenuLabel>Test &amp; release</DropdownMenuLabel>
-                <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("preview")}>
-                  <PlayIcon data-icon="inline-start" />
-                  Preview path
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("simulate")}>
-                  <FlaskConicalIcon data-icon="inline-start" />
-                  Simulate cohort
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Test &amp; release</DropdownMenuLabel>
+                  <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("preview")}>
+                    <PlayIcon data-icon="inline-start" />
+                    Preview path
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!graph} onClick={() => setLabStage("simulate")}>
+                    <FlaskConicalIcon data-icon="inline-start" />
+                    Simulate cohort
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   disabled={!graph || status !== "published"}
@@ -976,6 +987,26 @@ function JourneyEditorPage() {
                                 </span>
                               </div>
                             ))}
+                            {(() => {
+                              const eng = engagementByNode.get(nodeId);
+                              if (!eng || eng.delivered === 0) return null;
+                              return (
+                                <div className="mt-1 flex items-center gap-3 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                                  <span>
+                                    Opened{" "}
+                                    <span className="font-medium text-foreground tabular-nums">
+                                      {(eng.openRate * 100).toFixed(1)}%
+                                    </span>
+                                  </span>
+                                  <span>
+                                    Clicked{" "}
+                                    <span className="font-medium text-foreground tabular-nums">
+                                      {(eng.clickRate * 100).toFixed(1)}%
+                                    </span>
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

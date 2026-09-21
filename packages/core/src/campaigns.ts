@@ -22,6 +22,7 @@ import { validateSegmentFilter } from "./segments";
 
 export type CampaignStatus =
   | "draft"
+  | "scheduled"
   | "queued"
   | "sending"
   | "sent"
@@ -47,6 +48,8 @@ export interface Campaign {
   utm: { source?: string; medium?: string; campaign?: string } | null;
   audienceMemberCount: number | null;
   audienceSendableCount: number | null;
+  /** When a `scheduled` campaign should start draining. Null otherwise. */
+  scheduledAt: Date | null;
   recipientCount: number;
   queuedCount: number;
   sentCount: number;
@@ -217,24 +220,33 @@ export async function duplicateCampaign(
   });
 }
 
-/**
- * Resolves the audience and materializes the recipient list. Separated from
- * the drain on purpose: this is the O(N) part that must happen exactly once,
- * and the drain is the O(N) part that is safe to repeat.
- *
- * The audience filter is **frozen onto the campaign** here (see the
- * `campaign.filter` doc comment) — after this point, editing the saved
- * segment cannot change who this campaign goes to.
- */
-export async function launchCampaign(
-  db: Db,
-  workspaceId: string,
-  id: string,
-): Promise<{
+interface MaterializeResult {
   campaign: Campaign;
   recipients: number;
   excludedUnsendable: number;
-}> {
+}
+
+/**
+ * Resolves the audience, freezes the filter onto the campaign, and
+ * materializes the recipient list — the O(N) part that must happen exactly
+ * once. Shared by `launchCampaign` (send now) and `scheduleCampaign` (send
+ * later): both freeze the audience at the moment the operator committed to
+ * a send, not at drain time, which is what makes a campaign's own report an
+ * honest historical record instead of a live query (see `campaign.filter`'s
+ * doc comment).
+ *
+ * `finalStatus` is the only thing that differs between the two callers —
+ * `launchCampaign` lands on `queued` (drain starts immediately after),
+ * `scheduleCampaign` lands on `scheduled` (drain starts when the scheduler
+ * poller finds `scheduledAt` due).
+ */
+async function materializeCampaign(
+  db: Db,
+  workspaceId: string,
+  id: string,
+  finalStatus: "queued" | "scheduled",
+  scheduledAt?: Date,
+): Promise<MaterializeResult> {
   const existing = await getCampaign(db, workspaceId, id);
   if (!existing) throw new CampaignStateError(`campaign not found: ${id}`);
   if (existing.status === "sending") {
@@ -307,11 +319,15 @@ export async function launchCampaign(
     .update(campaign)
     .set({
       filter,
-      status: "queued",
+      status: finalStatus,
       audienceMemberCount: counts.memberCount,
       audienceSendableCount: counts.sendableCount,
       recipientCount,
+      // `launchedAt` marks "resolved and committed", which is true for a
+      // scheduled campaign too — it just hasn't drained yet. Only `queued`
+      // additionally means "the drain may start right now".
       launchedAt: existing.launchedAt ?? new Date(),
+      scheduledAt: finalStatus === "scheduled" ? (scheduledAt ?? null) : null,
     })
     .where(eq(campaign.id, id))
     .returning();
@@ -321,6 +337,105 @@ export async function launchCampaign(
     recipients: inserted,
     excludedUnsendable: Math.max(0, counts.memberCount - counts.sendableCount),
   };
+}
+
+/**
+ * Resolves the audience and materializes the recipient list, landing on
+ * `queued` — the drain should start right after this returns.
+ */
+export async function launchCampaign(
+  db: Db,
+  workspaceId: string,
+  id: string,
+): Promise<MaterializeResult> {
+  return materializeCampaign(db, workspaceId, id, "queued");
+}
+
+/**
+ * Materializes the recipient list now (same freeze-at-commit semantics as
+ * `launchCampaign`) but lands on `scheduled` instead of `queued` — the
+ * drain does not start until the scheduler poller (apps/server's
+ * campaignRunner.ts) finds this campaign due and calls
+ * `fireCampaignSchedule`.
+ *
+ * Materializing now rather than at fire time is deliberate: it surfaces a
+ * broken template or an empty audience immediately, while the operator can
+ * still fix it, instead of failing silently at 3am when nobody is watching.
+ */
+export async function scheduleCampaign(
+  db: Db,
+  workspaceId: string,
+  id: string,
+  scheduledAt: Date,
+): Promise<MaterializeResult> {
+  if (scheduledAt.getTime() <= Date.now()) {
+    throw new CampaignStateError("scheduledAt must be in the future");
+  }
+  return materializeCampaign(db, workspaceId, id, "scheduled", scheduledAt);
+}
+
+/**
+ * Reverts a `scheduled` campaign back to `draft` — "I want to change the
+ * time or the content", not "I never want to send this". The recipient
+ * rows materialized by `scheduleCampaign` are left in place (harmless,
+ * `pending`) and will be replaced by the next `launchCampaign` /
+ * `scheduleCampaign` call's `ON CONFLICT DO NOTHING` re-materialization.
+ * `cancel` (via `setCampaignStatus`) remains the "abandon it" path.
+ */
+export async function unscheduleCampaign(
+  db: Db,
+  workspaceId: string,
+  id: string,
+): Promise<Campaign | null> {
+  const existing = await getCampaign(db, workspaceId, id);
+  if (!existing) return null;
+  if (existing.status !== "scheduled") {
+    throw new CampaignStateError(`cannot unschedule a ${existing.status} campaign`);
+  }
+  const [row] = await db
+    .update(campaign)
+    .set({ status: "draft", scheduledAt: null })
+    .where(and(eq(campaign.workspaceId, workspaceId), eq(campaign.id, id)))
+    .returning();
+  return (row as Campaign | undefined) ?? null;
+}
+
+/**
+ * Promotes a due `scheduled` campaign to `queued` — the lightweight half of
+ * what `launchCampaign` does. Deliberately does NOT re-run
+ * `materializeCampaign`: the audience was already resolved and frozen when
+ * the campaign was scheduled, and re-resolving here would silently change
+ * who a "scheduled to this list" send actually reaches if the saved
+ * audience changed in the meantime. The caller (apps/server's
+ * campaignRunner.ts) still owns registering the engine workflow and
+ * starting the drain — this only flips the status the drain looks for.
+ */
+export async function fireCampaignSchedule(db: Db, id: string): Promise<Campaign | null> {
+  const [row] = await db
+    .update(campaign)
+    .set({ status: "queued", scheduledAt: null })
+    .where(and(eq(campaign.id, id), eq(campaign.status, "scheduled")))
+    .returning();
+  return (row as Campaign | undefined) ?? null;
+}
+
+/**
+ * Scheduled campaigns whose time has come, oldest first. The scheduler
+ * poller's whole query — see apps/server's campaignRunner.ts. Single
+ * process (the advisory lock in apps/server's instanceLock.ts guarantees
+ * that), so no SKIP LOCKED claiming is needed; a plain SELECT is enough and
+ * keeps this readable.
+ */
+export async function listDueCampaigns(
+  db: Db,
+  limit = 20,
+): Promise<{ id: string; workspaceId: string }[]> {
+  return db
+    .select({ id: campaign.id, workspaceId: campaign.workspaceId })
+    .from(campaign)
+    .where(and(eq(campaign.status, "scheduled"), sql`${campaign.scheduledAt} <= now()`))
+    .orderBy(campaign.scheduledAt)
+    .limit(limit);
 }
 
 /**
@@ -605,8 +720,13 @@ export async function setCampaignStatus(
   if (!existing) return null;
 
   const liveForPause = existing.status === "sending" || existing.status === "queued";
+  // `scheduled` can only be cancelled, not paused — "pause" means "stop an
+  // in-flight drain", and a scheduled campaign hasn't started draining yet
+  // (unscheduleCampaign is the right verb for "not now", cancel for "never").
   const canChange =
-    status === "paused" ? liveForPause : liveForPause || existing.status === "paused";
+    status === "paused"
+      ? liveForPause
+      : liveForPause || existing.status === "paused" || existing.status === "scheduled";
   if (!canChange) {
     const verb = status === "paused" ? "pause" : "cancel";
     throw new CampaignStateError(`cannot ${verb} a ${existing.status} campaign`);

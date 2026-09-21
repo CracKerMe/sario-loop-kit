@@ -16,6 +16,7 @@ export {
   type CreateEmailChannelOptions,
   type EmailNodeData,
   type EmailTemplateLookup,
+  type FrequencyCapConfig,
   type NotificationChannel,
   type NotificationMessage,
   type NotificationResult,

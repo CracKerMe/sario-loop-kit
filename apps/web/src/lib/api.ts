@@ -286,6 +286,26 @@ export type FunnelEntryDto = {
   count: number;
 };
 
+/**
+ * Send + open/click engagement rollup. Provider-dependent: Loopkit relies
+ * entirely on Resend's own tracking (no first-party pixel or link
+ * rewriting), so these numbers are only as trustworthy as the provider's —
+ * privacy-preserving mail clients (Apple Mail's Mail Privacy Protection,
+ * notably) routinely inflate opens. Surface that caveat wherever this is shown.
+ */
+export type EmailEngagementDto = {
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  complained: number;
+  openRate: number;
+  clickRate: number;
+};
+
+export type NodeEmailEngagementDto = EmailEngagementDto & { nodeId: string };
+
 /** One walked node from a journey dry-run (publish preview). */
 export type DryRunStepDto = {
   nodeId: string;
@@ -434,6 +454,7 @@ export type AudienceCopilotResultDto = {
 
 export type CampaignStatusDto =
   | "draft"
+  | "scheduled"
   | "queued"
   | "sending"
   | "sent"
@@ -453,6 +474,8 @@ export type CampaignDto = {
   replyTo: string | null;
   audienceMemberCount: number | null;
   audienceSendableCount: number | null;
+  /** When a `scheduled` campaign will start draining. Null otherwise. */
+  scheduledAt: string | null;
   recipientCount: number;
   queuedCount: number;
   sentCount: number;
@@ -677,11 +700,16 @@ export const api = {
     }),
   pauseJourney: (id: string) =>
     request<{ ok: true }>(`/v1/journeys/${id}/pause`, { method: "POST" }),
+  archiveJourney: (id: string) =>
+    request<{ ok: true }>(`/v1/journeys/${id}/archive`, { method: "POST" }),
+  deleteJourney: (id: string) => request<{ ok: true }>(`/v1/journeys/${id}`, { method: "DELETE" }),
   journeyRuns: (id: string) => request<{ runs: JourneyRunDto[] }>(`/v1/journeys/${id}/runs`),
   journeyFunnel: (id: string) =>
-    request<{ funnel: FunnelEntryDto[]; runCounts: Record<string, number> }>(
-      `/v1/journeys/${id}/funnel`,
-    ),
+    request<{
+      funnel: FunnelEntryDto[];
+      runCounts: Record<string, number>;
+      emailEngagement: NodeEmailEngagementDto[];
+    }>(`/v1/journeys/${id}/funnel`),
   runDetail: (instanceId: string) =>
     request<{ run: JourneyRunDto; instance: unknown }>(`/v1/runs/${instanceId}`),
   cancelRun: (instanceId: string) =>
@@ -733,6 +761,8 @@ export const api = {
         idempotencyKey: string;
         createdAt: string;
         sentAt: string | null;
+        opened: boolean;
+        clicked: boolean;
       }[];
     }>(`/v1/contacts/${id}/activity`),
   /** Dashboard test-send for transactional path (session auth). */
@@ -811,6 +841,9 @@ export const api = {
   /** Delete an email template. Client should call getTemplateUsage first. */
   deleteTemplate: (id: string) =>
     request<{ ok: true }>(`/v1/email-templates/${id}`, { method: "DELETE" }),
+  /** "How has this template performed" — separate from usage ("who references it"). */
+  getTemplateEngagement: (id: string) =>
+    request<{ engagement: EmailEngagementDto }>(`/v1/email-templates/${id}/engagement`),
 
   /* Visual (doc-based) email editor -------------------------------- */
   /** Fetch a single template with its structured `doc` (may be null for HTML-only templates). */
@@ -965,6 +998,19 @@ export const api = {
       `/v1/campaigns/${id}/launch`,
       { method: "POST" },
     ),
+  /**
+   * Resolve + materialize the audience now (same freeze-at-commit semantics
+   * as launch), but land on `scheduled` — the server-side scheduler fires it
+   * once `scheduledAt` arrives.
+   */
+  scheduleCampaign: (id: string, scheduledAt: Date) =>
+    request<{ campaign: CampaignDto; recipients: number; excludedUnsendable: number }>(
+      `/v1/campaigns/${id}/schedule`,
+      { method: "POST", body: JSON.stringify({ scheduledAt: scheduledAt.toISOString() }) },
+    ),
+  /** Reverts a `scheduled` campaign back to `draft` — change the time or content. */
+  unscheduleCampaign: (id: string) =>
+    request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/unschedule`, { method: "POST" }),
   resumeCampaign: (id: string) =>
     request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}/resume`, { method: "POST" }),
   pauseCampaign: (id: string) =>

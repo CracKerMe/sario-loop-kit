@@ -9,7 +9,9 @@ import {
   listCampaignRecipients,
   listCampaigns,
   requeuePausedCampaign,
+  scheduleCampaign,
   setCampaignStatus,
+  unscheduleCampaign,
   updateCampaign,
 } from "@loopkit/core";
 import { db } from "@loopkit/db";
@@ -180,6 +182,49 @@ campaignsRouter.post("/:id/launch", async (c) => {
   try {
     const result = await startCampaign(workspaceId, c.req.param("id"));
     return c.json(result);
+  } catch (error) {
+    return stateError(c, error);
+  }
+});
+
+const scheduleSchema = z.object({ scheduledAt: z.string().datetime() });
+
+/**
+ * Resolve + materialize the audience now (same freeze-at-commit semantics
+ * as /launch), but land on `scheduled` instead of draining immediately.
+ * The server-side scheduler poller (apps/server's campaignRunner.ts) fires
+ * it once `scheduledAt` arrives.
+ */
+campaignsRouter.post("/:id/schedule", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = scheduleSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  try {
+    const result = await scheduleCampaign(
+      db,
+      workspaceId,
+      c.req.param("id"),
+      new Date(parsed.data.scheduledAt),
+    );
+    return c.json(result);
+  } catch (error) {
+    return stateError(c, error);
+  }
+});
+
+/**
+ * Reverts a `scheduled` campaign back to `draft` — "change the time or
+ * content", not "abandon it" (that's /cancel, which also accepts a
+ * `scheduled` campaign directly).
+ */
+campaignsRouter.post("/:id/unschedule", async (c) => {
+  const { workspaceId } = c.get("auth");
+  try {
+    const reverted = await unscheduleCampaign(db, workspaceId, c.req.param("id"));
+    if (!reverted) return c.json({ error: "not_found" }, 404);
+    return c.json({ campaign: reverted });
   } catch (error) {
     return stateError(c, error);
   }

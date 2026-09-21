@@ -37,6 +37,7 @@ import {
 } from "@loopkit/journey";
 
 import { createJourneyCompileActions } from "./journeyActions";
+import { getJourneyEmailEngagement } from "./reports";
 import { assertSubJourneyReferences } from "./subJourneyValidation";
 import type { JourneyMigrationStrategy } from "./journeyMigration";
 
@@ -73,6 +74,11 @@ export interface OptimizationSignals {
     bounced: number;
     complained: number;
     failed: number;
+    /** Aggregate open/click signal across the journey's email nodes — see getJourneyEmailEngagement. */
+    opened: number;
+    clicked: number;
+    openRate: number;
+    clickRate: number;
   };
   inFlightByVersion: { version: number; runs: number }[];
   propertyKeys: string[];
@@ -204,6 +210,19 @@ export async function collectJourneyOptimizationSignals(
     .from(emailSend)
     .where(eq(emailSend.journeyId, journeyId));
 
+  // Open/click signal, aggregated across every email node in this journey —
+  // without this the model optimizes purely on completion/bounce, blind to
+  // whether anyone actually engaged with the content. See getJourneyEmailEngagement.
+  const nodeEngagement = await getJourneyEmailEngagement(db, workspaceId, journeyId);
+  const engagementTotals = nodeEngagement.reduce(
+    (acc, n) => ({
+      delivered: acc.delivered + n.delivered,
+      opened: acc.opened + n.opened,
+      clicked: acc.clicked + n.clicked,
+    }),
+    { delivered: 0, opened: 0, clicked: 0 },
+  );
+
   const versionRows = await db
     .select({
       version: journeyRun.journeyVersion,
@@ -258,6 +277,16 @@ export async function collectJourneyOptimizationSignals(
         bounced: Number(emailRow?.bounced ?? 0),
         complained: Number(emailRow?.complained ?? 0),
         failed: Number(emailRow?.failed ?? 0),
+        opened: engagementTotals.opened,
+        clicked: engagementTotals.clicked,
+        openRate:
+          engagementTotals.delivered === 0
+            ? 0
+            : engagementTotals.opened / engagementTotals.delivered,
+        clickRate:
+          engagementTotals.delivered === 0
+            ? 0
+            : engagementTotals.clicked / engagementTotals.delivered,
       },
       inFlightByVersion: versionRows.map((r) => ({
         version: r.version,

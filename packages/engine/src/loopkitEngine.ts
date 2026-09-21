@@ -3,6 +3,7 @@ import { journey as journeyTable, journeyVersion as journeyVersionTable } from "
 import {
   createEmailNotificationChannel,
   type EmailProvider,
+  type FrequencyCapConfig,
   type NotificationChannel,
   type SendLimiter,
   type UnsubscribeLink,
@@ -45,6 +46,11 @@ export interface LoopkitEngineOptions {
    * Omitted = unlimited; the server wires one from env by default.
    */
   sendLimiter?: SendLimiter;
+  /**
+   * Per-contact marketing send cap handed to the email channel (P1-4).
+   * Omitted = unlimited, same as sendLimiter's default.
+   */
+  frequencyCap?: FrequencyCapConfig;
 }
 
 export interface LoopkitEngine {
@@ -119,6 +125,7 @@ export async function createLoopkitEngine(options: LoopkitEngineOptions): Promis
     defaultFrom: options.defaultFromEmail,
     buildUnsubscribe: options.buildUnsubscribe,
     sendLimiter: options.sendLimiter,
+    frequencyCap: options.frequencyCap,
   });
   notificationManager.registerChannel(emailChannel);
 

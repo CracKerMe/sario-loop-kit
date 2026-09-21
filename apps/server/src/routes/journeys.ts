@@ -4,8 +4,10 @@ import {
   getInFlightVersionCounts,
   getJourneyCanaryStatus,
   getJourneyDetail,
+  getJourneyEmailEngagement,
   getJourneyOptimization,
   getSuppression,
+  getWorkspaceEngagement,
   JourneyMigrationError,
   JourneyOptimizationError,
   acceptJourneyOptimization,
@@ -567,6 +569,86 @@ journeysRouter.post("/:id/pause", async (c) => {
   return c.json({ ok: true });
 });
 
+journeysRouter.post("/:id/archive", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const [current] = await db
+    .select({ status: journey.status })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)))
+    .limit(1);
+  if (!current) return c.json({ error: "not_found" }, 404);
+  if (current.status === "published") {
+    return c.json(
+      { error: "must_pause_first", message: "Pause the journey before archiving it" },
+      409,
+    );
+  }
+  await db
+    .update(journey)
+    .set({ status: "archived" })
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  return c.json({ ok: true });
+});
+
+journeysRouter.delete("/:id", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const [current] = await db
+    .select({ status: journey.status })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)))
+    .limit(1);
+  if (!current) return c.json({ error: "not_found" }, 404);
+  if (current.status === "published") {
+    return c.json(
+      { error: "must_pause_first", message: "Pause the journey before deleting it" },
+      409,
+    );
+  }
+
+  const activeRuns = await db
+    .select({ id: journeyRun.id })
+    .from(journeyRun)
+    .where(and(eq(journeyRun.journeyId, journeyId), eq(journeyRun.status, "running")))
+    .limit(1);
+  if (activeRuns.length > 0) {
+    return c.json(
+      { error: "active_runs", message: "Stop or finish active runs before deleting this journey" },
+      409,
+    );
+  }
+
+  // A journey can be embedded by another journey's subJourney node. Refuse
+  // deletion rather than leaving a published parent with a broken graph.
+  const versions = await db
+    .select({ graph: journeyVersion.graph })
+    .from(journeyVersion)
+    .innerJoin(journey, eq(journey.id, journeyVersion.journeyId))
+    .where(eq(journey.workspaceId, workspaceId));
+  const referenced = versions.some(
+    ({ graph }) =>
+      Array.isArray((graph as { nodes?: unknown[] })?.nodes) &&
+      (graph as { nodes: { type?: unknown; data?: { journeyId?: unknown } }[] }).nodes.some(
+        (node) => node.type === "subJourney" && node.data?.journeyId === journeyId,
+      ),
+  );
+  if (referenced) {
+    return c.json(
+      {
+        error: "referenced_journey",
+        message: "This journey is used as a sub-journey and cannot be deleted",
+      },
+      409,
+    );
+  }
+
+  await db
+    .delete(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  return c.json({ ok: true });
+});
+
 journeysRouter.get("/:id/runs", async (c) => {
   const { workspaceId } = c.get("auth");
   const journeyId = c.req.param("id");
@@ -576,10 +658,14 @@ journeysRouter.get("/:id/runs", async (c) => {
 
 journeysRouter.get("/:id/funnel", async (c) => {
   const { workspaceId } = c.get("auth");
-  const detail = await getJourneyDetail(db, workspaceId, c.req.param("id"));
+  const journeyId = c.req.param("id");
+  const detail = await getJourneyDetail(db, workspaceId, journeyId);
   if (!detail) return c.json({ error: "not_found" }, 404);
-  const funnel = await listNodeFunnel(db, detail.journey.workflowId);
-  return c.json({ funnel, runCounts: detail.runCounts });
+  const [funnel, emailEngagement] = await Promise.all([
+    listNodeFunnel(db, detail.journey.workflowId),
+    getJourneyEmailEngagement(db, workspaceId, journeyId),
+  ]);
+  return c.json({ funnel, runCounts: detail.runCounts, emailEngagement });
 });
 
 // ---------------------------------------------------------------------------
@@ -954,8 +1040,11 @@ export const opsRouter = new Hono<{ Variables: AuthVariables }>();
 
 opsRouter.get("/stats", async (c) => {
   const { workspaceId } = c.get("auth");
-  const stats = await getDashboardStats(db, workspaceId);
-  return c.json({ stats });
+  const [stats, engagement] = await Promise.all([
+    getDashboardStats(db, workspaceId),
+    getWorkspaceEngagement(db, workspaceId),
+  ]);
+  return c.json({ stats: { ...stats, engagement } });
 });
 
 opsRouter.get("/dlq", async (c) => {

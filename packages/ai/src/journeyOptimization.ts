@@ -284,6 +284,11 @@ export interface JourneyOptimizationInput {
       bounced: number;
       complained: number;
       failed: number;
+      /** Aggregate open/click engagement across the journey's email nodes. */
+      opened: number;
+      clicked: number;
+      openRate: number;
+      clickRate: number;
     };
     inFlightByVersion?: { version: number; runs: number }[];
   };
@@ -301,12 +306,13 @@ export interface JourneyOptimizationInput {
 export function buildJourneyOptimizationSystemPrompt(): string {
   return `You are a journey optimization engine for Loopkit, a marketing automation platform.
 
-You receive: (1) a compact journey graph reference; (2) live funnel metrics from wf_node_metric plus email delivery counters; (3) workspace vocabularies (templates, events, property keys).
+You receive: (1) a compact journey graph reference; (2) live funnel metrics from wf_node_metric plus email delivery counters, INCLUDING open/click engagement rates per the aggregate email signal; (3) workspace vocabularies (templates, events, property keys).
 
 Your job: diagnose where this journey loses people, propose ONE complete revised JourneyGraph that fixes the highest-impact problems, and recommend a canary traffic share.
 
 Hard rules:
 - Ground every diagnosis claim in the provided numbers; cite node ids like "node 'xyz'". Never invent contacts, values, or statistics.
+- Low open/click rates are as diagnostic as bounces: a delivered-but-unopened email points at subject line, send time, or targeting, not at the send pipeline. Prefer that diagnosis over generic "improve the email" advice when openRate/clickRate is low relative to delivered.
 - The proposed graph MUST be a complete valid journey: exactly one trigger, every non-exit node reachable, branch handles named correctly, email templateIds taken from the provided template list when one is given.
 - Prefer surgical changes over rewrites. Keep node ids stable when a node is only modified, so in-flight remap stays cheap.
 - canaryPercent must be between 1 and 50. Start small (5–20) when risk is high.
@@ -330,7 +336,8 @@ export function buildJourneyOptimizationUserPrompt(input: JourneyOptimizationInp
     }`,
   );
   lines.push(
-    `Email funnel: sent=${s.email.sent}, delivered=${s.email.delivered}, bounced=${s.email.bounced}, complained=${s.email.complained}, failed=${s.email.failed}`,
+    `Email funnel: sent=${s.email.sent}, delivered=${s.email.delivered}, bounced=${s.email.bounced}, complained=${s.email.complained}, failed=${s.email.failed}, ` +
+      `opened=${s.email.opened} (${(s.email.openRate * 100).toFixed(1)}%), clicked=${s.email.clicked} (${(s.email.clickRate * 100).toFixed(1)}%)`,
   );
   if (s.inFlightByVersion?.length) {
     lines.push(

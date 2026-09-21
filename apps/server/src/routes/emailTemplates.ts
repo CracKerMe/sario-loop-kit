@@ -4,6 +4,7 @@ import {
   EmailDocValidationError,
   findTemplateUsages,
   getEmailTemplate,
+  getTemplateEngagement,
   listContactPropertyKeys,
   listEmailTemplates,
   previewEmailDoc,
@@ -160,6 +161,25 @@ emailTemplatesRouter.get("/:id/usage", async (c) => {
 
   const usage = await findTemplateUsages(db, workspaceId, c.req.param("id"));
   return c.json({ usage });
+});
+
+/**
+ * GET /v1/email-templates/:id/engagement
+ *
+ * "How has this template performed" — deliberately a separate endpoint from
+ * /usage ("who references it"): usage is a pre-delete safety check, this is
+ * a performance report, and conflating them would make /usage slower on
+ * every delete confirmation for a benefit only the template detail page
+ * needs. Scans every send across journeys, campaigns and transactional
+ * calls alike — see getTemplateEngagement.
+ */
+emailTemplatesRouter.get("/:id/engagement", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const template = await getEmailTemplate(db, workspaceId, c.req.param("id"));
+  if (!template) return c.json({ error: "not_found" }, 404);
+
+  const engagement = await getTemplateEngagement(db, workspaceId, c.req.param("id"));
+  return c.json({ engagement });
 });
 
 /**

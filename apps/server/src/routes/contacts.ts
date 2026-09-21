@@ -18,6 +18,7 @@ import { db } from "@loopkit/db";
 import {
   contact,
   contactEvent,
+  emailDelivery,
   emailSend,
   emailTemplate,
   journey,
@@ -306,6 +307,31 @@ contactsRouter.get("/:id/activity", async (c) => {
     .orderBy(desc(emailSend.createdAt))
     .limit(20);
 
+  // Engagement badges (opened/clicked) for this page of sends — a second,
+  // batched query rather than a join on the primary select above, so the
+  // contact's send history stays a simple indexed read even when a send
+  // has many delivery events (multiple opens/clicks).
+  const sendIds = emailRows.map((row) => row.id);
+  const engagementBySendId = new Map<string, { opened: boolean; clicked: boolean }>();
+  if (sendIds.length > 0) {
+    const deliveryRows = await db
+      .selectDistinct({ sendId: emailDelivery.sendId, type: emailDelivery.type })
+      .from(emailDelivery)
+      .where(inArray(emailDelivery.sendId, sendIds));
+    for (const row of deliveryRows) {
+      if (!row.sendId) continue;
+      const entry = engagementBySendId.get(row.sendId) ?? { opened: false, clicked: false };
+      if (row.type === "opened") entry.opened = true;
+      if (row.type === "clicked") entry.clicked = true;
+      engagementBySendId.set(row.sendId, entry);
+    }
+  }
+  const emailsWithEngagement = emailRows.map((row) => ({
+    ...row,
+    opened: engagementBySendId.get(row.id)?.opened ?? false,
+    clicked: engagementBySendId.get(row.id)?.clicked ?? false,
+  }));
+
   return c.json({
     contact: contactRow,
     deliverability: {
@@ -321,7 +347,7 @@ contactsRouter.get("/:id/activity", async (c) => {
       mailable: contactRow.subscribed && !suppression,
     },
     runs: runRows,
-    emails: emailRows,
+    emails: emailsWithEngagement,
   });
 });
 

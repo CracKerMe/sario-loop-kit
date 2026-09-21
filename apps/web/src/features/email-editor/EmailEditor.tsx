@@ -27,6 +27,7 @@ import { Skeleton } from "@loopkit/ui/components/skeleton";
 
 import { Canvas } from "./Canvas";
 import { EmailCopilotDialog } from "./EmailCopilotDialog";
+import { EmailEngagementPanel } from "./EmailEngagementPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
@@ -323,6 +324,7 @@ export function EmailEditor({ template }: { template: FullEmailTemplateDto }) {
           style={{ width: sidePanelWidth }}
         >
           <PreviewPanel html={previewHtml} loading={previewLoading} error={previewError} />
+          <EmailEngagementPanel templateId={template.id} />
           <ValidationPanel issues={allIssues} />
         </aside>
       </div>

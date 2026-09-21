@@ -62,6 +62,11 @@ function CampaignsPage() {
   const [audienceId, setAudienceId] = useState("");
   const [composer, setComposer] = useState<EmailComposerValue>(emptyComposerValue);
 
+  /** Campaign id currently being scheduled, or null when that dialog is closed. */
+  const [scheduleTarget, setScheduleTarget] = useState<CampaignDto | null>(null);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+
   const openCreate = () => {
     setEditor({ id: null });
     setName("");
@@ -144,6 +149,34 @@ function CampaignsPage() {
       toast.error(e instanceof Error ? e.message : "Action failed");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  /** Local datetime-local default: 1 hour from now, minute-precision, no seconds. */
+  function defaultScheduleValue(): string {
+    const d = new Date(Date.now() + 3_600_000);
+    d.setSeconds(0, 0);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  const openSchedule = (c: CampaignDto) => {
+    setScheduleTarget(c);
+    setScheduleAt(c.scheduledAt ? c.scheduledAt.slice(0, 16) : defaultScheduleValue());
+  };
+
+  const submitSchedule = async () => {
+    if (!scheduleTarget || !scheduleAt) return;
+    setScheduling(true);
+    try {
+      await api.scheduleCampaign(scheduleTarget.id, new Date(scheduleAt));
+      toast.success(`Scheduled for ${new Date(scheduleAt).toLocaleString()}`);
+      setScheduleTarget(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not schedule this campaign");
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -244,6 +277,10 @@ function CampaignsPage() {
                   () => api.launchCampaign(c.id),
                   "Campaign launched — recipients are being queued",
                 )
+              }
+              onSchedule={() => openSchedule(c)}
+              onUnschedule={() =>
+                void run(c.id, () => api.unscheduleCampaign(c.id), "Back to draft")
               }
               onPause={() => void run(c.id, () => api.pauseCampaign(c.id), "Paused")}
               onCancel={() => void run(c.id, () => api.cancelCampaign(c.id), "Cancelled")}
@@ -380,6 +417,42 @@ function CampaignsPage() {
             </Button>
           </form>
         )}
+      </Dialog>
+
+      <Dialog
+        open={scheduleTarget !== null}
+        onClose={() => setScheduleTarget(null)}
+        title="Schedule campaign"
+        description={
+          scheduleTarget
+            ? `"${scheduleTarget.name}" — the audience is resolved now and frozen, same as launching now. The server sends it at the time below.`
+            : undefined
+        }
+      >
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitSchedule();
+          }}
+        >
+          <div className="grid gap-1.5">
+            <Label htmlFor="camp-schedule-at">Send at</Label>
+            <Input
+              id="camp-schedule-at"
+              type="datetime-local"
+              value={scheduleAt}
+              min={defaultScheduleValue()}
+              onChange={(e) => setScheduleAt(e.target.value)}
+              required
+            />
+            <p className="text-[11px] text-muted-foreground">Your local time zone.</p>
+          </div>
+          <Button type="submit" disabled={scheduling || !scheduleAt}>
+            {scheduling && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
+            Schedule
+          </Button>
+        </form>
       </Dialog>
     </div>
   );

@@ -10,14 +10,18 @@ import {
   drainCampaign,
   duplicateCampaign,
   finalizeCampaign,
+  fireCampaignSchedule,
   getCampaign,
   getCampaignStats,
   launchCampaign,
   listCampaignRecipients,
+  listDueCampaigns,
   refreshCampaignCounters,
   requeuePausedCampaign,
+  scheduleCampaign,
   setCampaignStatus,
   syncCampaignRecipientStatuses,
+  unscheduleCampaign,
   updateCampaign,
   type StartCampaignSend,
 } from "../campaigns";
@@ -213,6 +217,170 @@ describe("campaign launch", () => {
     await db.update(campaign).set({ status: "sent" }).where(eq(campaign.id, created.id));
 
     await expect(launchCampaign(db, "ws-1", created.id)).rejects.toThrow(/duplicate it/);
+  });
+});
+
+describe("campaign scheduling", () => {
+  beforeEach(async () => {
+    await resetTables(db);
+    await seedWorkspace({ contacts: 5 });
+  });
+
+  function future(ms = 60_000): Date {
+    return new Date(Date.now() + ms);
+  }
+
+  it("materializes the audience and lands on scheduled, not queued", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Later",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+
+    const result = await scheduleCampaign(db, "ws-1", created.id, future());
+    expect(result.campaign.status).toBe("scheduled");
+    expect(result.campaign.scheduledAt).not.toBeNull();
+    expect(result.recipients).toBe(5);
+
+    // Materialized like launchCampaign — filter frozen, recipients present —
+    // just not drained yet.
+    const { total } = await listCampaignRecipients(db, { campaignId: created.id });
+    expect(total).toBe(5);
+  });
+
+  it("refuses a scheduledAt in the past", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Too late",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await expect(
+      scheduleCampaign(db, "ws-1", created.id, new Date(Date.now() - 1000)),
+    ).rejects.toThrow(CampaignStateError);
+  });
+
+  it("listDueCampaigns returns only scheduled campaigns whose time has come", async () => {
+    const aud = await seedAudience();
+    const due = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Due",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    const notYet = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Not yet",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+
+    await scheduleCampaign(db, "ws-1", due.id, future(60_000));
+    await scheduleCampaign(db, "ws-1", notYet.id, future(3_600_000));
+    // Force the "due" one's scheduledAt into the past, as if time had
+    // elapsed since scheduling — scheduleCampaign itself refuses a past
+    // time, so the poller's exact query is exercised by mutating directly.
+    await db
+      .update(campaign)
+      .set({ scheduledAt: new Date(Date.now() - 1000) })
+      .where(eq(campaign.id, due.id));
+
+    const result = await listDueCampaigns(db, 10);
+    expect(result.map((c) => c.id)).toEqual([due.id]);
+  });
+
+  it("fireCampaignSchedule flips scheduled to queued without re-resolving the audience", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Later",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await scheduleCampaign(db, "ws-1", created.id, future());
+
+    // Editing the saved segment after scheduling must not change who fires —
+    // same freeze-at-commit guarantee as launchCampaign.
+    await updateAudience(db, "ws-1", aud.id, {
+      filter: { kind: "condition", field: "email", operator: "starts_with", value: "user0" },
+    });
+
+    const fired = await fireCampaignSchedule(db, created.id);
+    expect(fired?.status).toBe("queued");
+    expect(fired?.scheduledAt).toBeNull();
+
+    const { total } = await listCampaignRecipients(db, { campaignId: created.id });
+    expect(total).toBe(5); // unchanged by the audience edit
+  });
+
+  it("fireCampaignSchedule is a no-op for a campaign that is not scheduled", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Draft",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    const result = await fireCampaignSchedule(db, created.id);
+    expect(result).toBeNull();
+  });
+
+  it("unscheduleCampaign reverts to draft and clears scheduledAt", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Later",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await scheduleCampaign(db, "ws-1", created.id, future());
+
+    const reverted = await unscheduleCampaign(db, "ws-1", created.id);
+    expect(reverted?.status).toBe("draft");
+    expect(reverted?.scheduledAt).toBeNull();
+  });
+
+  it("unscheduleCampaign refuses a campaign that is not scheduled", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Draft",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await expect(unscheduleCampaign(db, "ws-1", created.id)).rejects.toThrow(CampaignStateError);
+  });
+
+  it("setCampaignStatus can cancel a scheduled campaign directly", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Later",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await scheduleCampaign(db, "ws-1", created.id, future());
+
+    const cancelled = await setCampaignStatus(db, "ws-1", created.id, "cancelled");
+    expect(cancelled?.status).toBe("cancelled");
+  });
+
+  it("setCampaignStatus refuses to pause a scheduled campaign (nothing is draining yet)", async () => {
+    const aud = await seedAudience();
+    const created = await createCampaign(db, {
+      workspaceId: "ws-1",
+      name: "Later",
+      templateId: "tpl-1",
+      audienceId: aud.id,
+    });
+    await scheduleCampaign(db, "ws-1", created.id, future());
+
+    await expect(setCampaignStatus(db, "ws-1", created.id, "paused")).rejects.toThrow(
+      CampaignStateError,
+    );
   });
 });
 

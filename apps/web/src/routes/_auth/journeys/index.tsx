@@ -19,6 +19,7 @@ import { cn } from "@loopkit/ui/lib/utils";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ActivityIcon,
+  ArchiveIcon,
   ChevronRightIcon,
   ClockIcon,
   MoreHorizontalIcon,
@@ -26,6 +27,7 @@ import {
   PlusIcon,
   RouteIcon,
   SearchIcon,
+  Trash2Icon,
   WorkflowIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -41,7 +43,7 @@ export const Route = createFileRoute("/_auth/journeys/")({
   component: JourneysPage,
 });
 
-const STATUS_FILTERS = ["all", "published", "draft", "paused"] as const;
+const STATUS_FILTERS = ["all", "published", "draft", "paused", "archived"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 function JourneyIcon({ status }: { status: string }) {
@@ -52,9 +54,11 @@ function JourneyIcon({ status }: { status: string }) {
         status === "published" && "bg-emerald-500/10 text-emerald-500 dark:text-emerald-300",
         status === "draft" && "bg-amber-500/10 text-amber-600 dark:text-amber-300",
         status === "paused" && "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+        status === "archived" && "bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
         status !== "published" &&
           status !== "draft" &&
           status !== "paused" &&
+          status !== "archived" &&
           "bg-primary/10 text-primary",
       )}
     >
@@ -71,6 +75,7 @@ function JourneysPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pausingId, setPausingId] = useState<string | null>(null);
+  const [mutatingId, setMutatingId] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -89,11 +94,12 @@ function JourneysPage() {
   }, []);
 
   const counts = useMemo(() => {
-    const base = { all: journeys.length, published: 0, draft: 0, paused: 0 };
+    const base = { all: journeys.length, published: 0, draft: 0, paused: 0, archived: 0 };
     for (const j of journeys) {
       if (j.status === "published") base.published += 1;
       else if (j.status === "draft") base.draft += 1;
       else if (j.status === "paused") base.paused += 1;
+      else if (j.status === "archived") base.archived += 1;
     }
     return base;
   }, [journeys]);
@@ -125,6 +131,33 @@ function JourneysPage() {
     }
   };
 
+  const archive = async (journey: JourneyDto) => {
+    setMutatingId(journey.id);
+    try {
+      await api.archiveJourney(journey.id);
+      toast.success(`“${journey.name}” archived`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Archive failed");
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  const remove = async (journey: JourneyDto) => {
+    if (!window.confirm(`Delete “${journey.name}” permanently? This cannot be undone.`)) return;
+    setMutatingId(journey.id);
+    try {
+      await api.deleteJourney(journey.id);
+      toast.success(`“${journey.name}” deleted`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
   return (
     <div className="lk-fade-up mx-auto h-full w-full max-w-4xl overflow-y-auto px-4 py-6">
       <PageHeader
@@ -151,7 +184,7 @@ function JourneysPage() {
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {(
           [
             {
@@ -181,6 +214,13 @@ function JourneysPage() {
               value: counts.paused,
               icon: PauseIcon,
               tone: "text-sky-600 dark:text-sky-300",
+            },
+            {
+              id: "archived",
+              label: "Archived",
+              value: counts.archived,
+              icon: ArchiveIcon,
+              tone: "text-zinc-600 dark:text-zinc-300",
             },
           ] as const
         ).map(({ id, label, value, icon: Icon, tone }) => {
@@ -254,7 +294,9 @@ function JourneysPage() {
                   ? counts.published
                   : id === "draft"
                     ? counts.draft
-                    : counts.paused}
+                    : id === "paused"
+                      ? counts.paused
+                      : counts.archived}
             </span>
           </button>
         ))}
@@ -328,6 +370,25 @@ function JourneysPage() {
                     {j.status === "published" && (
                       <DropdownMenuItem disabled={pausingId === j.id} onClick={() => void pause(j)}>
                         Pause journey
+                      </DropdownMenuItem>
+                    )}
+                    {(j.status === "draft" || j.status === "paused") && (
+                      <DropdownMenuItem
+                        disabled={mutatingId === j.id}
+                        onClick={() => void archive(j)}
+                      >
+                        <ArchiveIcon data-icon="inline-start" />
+                        Archive journey
+                      </DropdownMenuItem>
+                    )}
+                    {j.status !== "published" && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={mutatingId === j.id}
+                        onClick={() => void remove(j)}
+                      >
+                        <Trash2Icon data-icon="inline-start" />
+                        Delete permanently
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
