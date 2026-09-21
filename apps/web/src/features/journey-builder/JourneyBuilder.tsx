@@ -304,6 +304,68 @@ function TextareaWithVariables({
   );
 }
 
+function EmailAdvancedSettings({
+  fromName,
+  replyTo,
+  variables,
+  onChange,
+}: {
+  fromName: string;
+  replyTo: string;
+  variables: JourneyVariable[];
+  onChange: (patch: { fromName?: string; replyTo?: string }) => void;
+}) {
+  // Keep existing overrides visible when reopening an older journey, while
+  // keeping low-frequency delivery settings out of the default path.
+  const [open, setOpen] = useState(Boolean(fromName || replyTo));
+
+  return (
+    <section className="rounded-lg border border-border bg-card/40">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span>
+          Advanced email settings{" "}
+          <span className="font-normal text-muted-foreground/70">· optional</span>
+        </span>
+        <ChevronDownIcon
+          className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-180")}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div className="grid gap-3 border-t border-border/70 p-3">
+          <InspectorField
+            label="From name override"
+            hint="Leave empty to use the workspace default."
+          >
+            <InputWithVariables
+              variables={variables}
+              value={fromName}
+              onChange={(value) => onChange({ fromName: value })}
+              placeholder="Optional"
+            />
+          </InspectorField>
+          <InspectorField
+            label="Reply-To override"
+            hint="Leave empty to use the workspace default."
+          >
+            <InputWithVariables
+              variables={variables}
+              value={replyTo}
+              onChange={(value) => onChange({ replyTo: value })}
+              placeholder="Optional"
+            />
+          </InspectorField>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SplitRoutesEditor({
   routes,
   onChange,
@@ -1593,22 +1655,12 @@ export function JourneyBuilder({
                       placeholder="Inbox preview text"
                     />
                   </InspectorField>
-                  <InspectorField label="From name override">
-                    <InputWithVariables
-                      variables={nodeVariables}
-                      value={String((selected.data as { fromName?: string }).fromName ?? "")}
-                      onChange={(v) => updateSelectedData({ fromName: v })}
-                      placeholder="Optional"
-                    />
-                  </InspectorField>
-                  <InspectorField label="Reply-To override">
-                    <InputWithVariables
-                      variables={nodeVariables}
-                      value={String((selected.data as { replyTo?: string }).replyTo ?? "")}
-                      onChange={(v) => updateSelectedData({ replyTo: v })}
-                      placeholder="Optional"
-                    />
-                  </InspectorField>
+                  <EmailAdvancedSettings
+                    variables={nodeVariables}
+                    fromName={String((selected.data as { fromName?: string }).fromName ?? "")}
+                    replyTo={String((selected.data as { replyTo?: string }).replyTo ?? "")}
+                    onChange={updateSelectedData}
+                  />
                 </>
               )}
               {selected.type === "sendCampaign" && (

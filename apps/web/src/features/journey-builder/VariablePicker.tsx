@@ -64,6 +64,7 @@ export function VariablePicker({
             size="icon-sm"
             className="shrink-0"
             aria-label="Insert variable"
+            title="Insert variable"
             onMouseDown={() => {
               const el = targetRef.current;
               if (el)
@@ -77,14 +78,20 @@ export function VariablePicker({
           </Button>
         }
       />
-      <DropdownMenuContent align="start" className="w-64 bg-card">
+      <DropdownMenuContent align="start" className="w-72 bg-card p-1.5">
         {groups.map(({ group, items }, i) => (
           <DropdownMenuGroup key={group}>
             {i > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuLabel>{group}</DropdownMenuLabel>
+            <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {group}
+            </DropdownMenuLabel>
             {items.map((v) => (
-              <DropdownMenuItem key={v.path} onClick={() => insert(v.path)}>
-                <code className="font-mono text-[11px]">{v.path}</code>
+              <DropdownMenuItem
+                key={v.path}
+                onClick={() => insert(v.path)}
+                className="flex min-h-9 items-center justify-between gap-3 px-2"
+              >
+                <code className="font-mono text-[11px] text-foreground">{v.path}</code>
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>

@@ -1,6 +1,5 @@
 import { Toaster } from "@loopkit/ui/components/sonner";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { createMiddleware } from "@tanstack/react-start";
 import { evlogErrorHandler } from "evlog/nitro/v3";
 import { ThemeProvider } from "next-themes";
@@ -88,7 +87,6 @@ function RootDocument() {
         >
           <Outlet />
           <Toaster richColors />
-          <TanStackRouterDevtools position="bottom-left" />
         </ThemeProvider>
         <Scripts />
       </body>

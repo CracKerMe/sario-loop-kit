@@ -2,9 +2,10 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { cn } from "@loopkit/ui/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, LayoutTemplateIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
+import { Dialog } from "@/components/dialog";
 import { JourneyBuilder } from "@/features/journey-builder/JourneyBuilder";
 import {
   JOURNEY_TEMPLATES,
@@ -25,18 +26,103 @@ const TEMPLATE_FLOW_PREVIEWS: Record<string, string> = {
   "standard-welcome-sequence": "Trigger → Email → Delay → Email → Exit",
 };
 
-function NewJourneyPage() {
-  const navigate = useNavigate();
-  const [templateId, setTemplateId] = useState<JourneyTemplateId>("blank-welcome");
+/**
+ * The template picker used to live as a bar pinned to the top of the canvas,
+ * always visible even after the user had already started building. That made
+ * "pick a starting point" look like a permanent property of the journey
+ * instead of a one-time decision. Now it is a dialog, mirroring how Emails
+ * picks a template before handing off to its editor: choose once, apply the
+ * graph, then get out of the way so the canvas is the only thing on screen.
+ */
+function TemplatePickerDialog({
+  open,
+  onClose,
+  selectedId,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedId: JourneyTemplateId;
+  onSelect: (id: JourneyTemplateId) => void;
+}) {
   const [showExamples, setShowExamples] = useState(false);
-  const template = useMemo(() => journeyTemplateById(templateId), [templateId]);
-  const [name, setName] = useState(template.name);
-
   const simpleTemplates = JOURNEY_TEMPLATES.filter((t) => t.tier === "simple");
   const exampleTemplates = JOURNEY_TEMPLATES.filter((t) => t.tier === "example");
 
+  const renderCard = (t: (typeof JOURNEY_TEMPLATES)[number]) => {
+    const active = t.id === selectedId;
+    return (
+      <button
+        key={t.id}
+        type="button"
+        onClick={() => {
+          onSelect(t.id);
+          onClose();
+        }}
+        className={cn(
+          "rounded-xl border p-3 text-left transition-colors",
+          active
+            ? "border-primary/40 bg-primary/10 text-foreground"
+            : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-foreground">{t.name}</span>
+          {active && <CheckIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
+        </div>
+        <span className="mt-0.5 block text-[11px] text-muted-foreground">{t.description}</span>
+        {TEMPLATE_FLOW_PREVIEWS[t.id] && (
+          <span className="mt-1.5 block text-[10px] text-muted-foreground/60">
+            {TEMPLATE_FLOW_PREVIEWS[t.id]}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Start from a template"
+      description="Applies a starting flow you can rearrange freely. You can change this later."
+      className="max-w-2xl"
+    >
+      <div className="grid gap-2 sm:grid-cols-2">{simpleTemplates.map(renderCard)}</div>
+
+      <button
+        type="button"
+        onClick={() => setShowExamples((v) => !v)}
+        className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        More examples
+        <ChevronDownIcon
+          className={cn("size-3.5 transition-transform", showExamples && "rotate-180")}
+          aria-hidden="true"
+        />
+      </button>
+
+      {showExamples && (
+        <div className="mt-2 grid gap-2 border-t border-border/60 pt-3 sm:grid-cols-2">
+          {exampleTemplates.map(renderCard)}
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function NewJourneyPage() {
+  const navigate = useNavigate();
+  const [templateId, setTemplateId] = useState<JourneyTemplateId>("blank-welcome");
+  const [pickerOpen, setPickerOpen] = useState(true);
+  const template = useMemo(() => journeyTemplateById(templateId), [templateId]);
+  const [name, setName] = useState(template.name);
+  /** Whether the graph should reset to the newly applied template on next render. */
+  const [appliedTemplateId, setAppliedTemplateId] = useState<JourneyTemplateId>(templateId);
+
   const selectTemplate = (id: JourneyTemplateId) => {
     setTemplateId(id);
+    setAppliedTemplateId(id);
     setName(journeyTemplateById(id).name);
   };
 
@@ -69,6 +155,15 @@ function NewJourneyPage() {
             aria-label="Automation name"
           />
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPickerOpen(true)}
+          className="text-muted-foreground"
+        >
+          <LayoutTemplateIcon data-icon="inline-start" />
+          {template.name}
+        </Button>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
             <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
@@ -81,81 +176,11 @@ function NewJourneyPage() {
         </div>
       </div>
 
-      <div className="shrink-0 border-b border-border/70 bg-muted/20 px-4 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-medium text-muted-foreground">Start from</span>
-          {simpleTemplates.map((t) => {
-            const active = t.id === templateId;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => selectTemplate(t.id)}
-                title={t.description}
-                className={cn(
-                  "rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                  active
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
-                )}
-              >
-                <span className="block text-xs font-medium">{t.name}</span>
-                <span className="block text-[10px] text-muted-foreground">{t.description}</span>
-                {TEMPLATE_FLOW_PREVIEWS[t.id] && (
-                  <span className="mt-1 block text-[10px] text-muted-foreground/60">
-                    {TEMPLATE_FLOW_PREVIEWS[t.id]}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setShowExamples((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            More examples
-            <ChevronDownIcon
-              className={cn("size-3.5 transition-transform", showExamples && "rotate-180")}
-              aria-hidden="true"
-            />
-          </button>
-        </div>
-        {showExamples && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-            {exampleTemplates.map((t) => {
-              const active = t.id === templateId;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => selectTemplate(t.id)}
-                  title={t.description}
-                  className={cn(
-                    "rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                    active
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground",
-                  )}
-                >
-                  <span className="block text-xs font-medium">{t.name}</span>
-                  <span className="block text-[10px] text-muted-foreground">{t.description}</span>
-                  {TEMPLATE_FLOW_PREVIEWS[t.id] && (
-                    <span className="mt-1 block text-[10px] text-muted-foreground/60">
-                      {TEMPLATE_FLOW_PREVIEWS[t.id]}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       <div className="min-h-0 flex-1 overflow-hidden">
-        {/* key remounts the builder when the seed template changes */}
+        {/* key remounts the builder only when a template is actually applied,
+            not on every open/close of the picker dialog */}
         <JourneyBuilder
-          key={templateId}
+          key={appliedTemplateId}
           initialName={name}
           controlledName={name}
           initialGraph={template.build()}
@@ -163,6 +188,13 @@ function NewJourneyPage() {
           onSaved={onSaved}
         />
       </div>
+
+      <TemplatePickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        selectedId={templateId}
+        onSelect={selectTemplate}
+      />
     </div>
   );
 }
