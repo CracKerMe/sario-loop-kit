@@ -18,14 +18,18 @@ export function LogoMark({ className = "size-6" }: { className?: string }) {
   );
 }
 
-export function Logo({ to = "/dashboard" }: { to?: string }) {
+/** `compact` drops the wordmark — used by the collapsed sidebar rail. */
+export function Logo({ to = "/dashboard", compact = false }: { to?: string; compact?: boolean }) {
   return (
     <Link
       to={to}
+      aria-label={compact ? "Sario Loop Kit" : undefined}
       className="group flex items-center gap-2 rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <LogoMark className="size-6 transition-transform duration-200 group-hover:rotate-12" />
-      <span className="text-sm font-semibold tracking-tight text-foreground">loopkit</span>
+      {!compact && (
+        <span className="text-sm font-semibold tracking-tight text-foreground">Sario Loop Kit</span>
+      )}
     </Link>
   );
 }

@@ -256,7 +256,28 @@ function CommandMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
-function CommandMenuButton({ onClick }: { onClick: () => void }) {
+/** `collapsed` swaps the shortcut chip row for a square icon button on the sidebar rail. */
+function CommandMenuButton({
+  onClick,
+  collapsed = false,
+}: {
+  onClick: () => void;
+  collapsed?: boolean;
+}) {
+  if (collapsed) {
+    return (
+      <Button
+        variant="outline"
+        size="icon-sm"
+        onClick={onClick}
+        aria-label="Search"
+        className="rounded-md text-muted-foreground"
+      >
+        <SearchIcon className="size-3.5" aria-hidden="true" />
+      </Button>
+    );
+  }
+
   return (
     <Button
       variant="outline"

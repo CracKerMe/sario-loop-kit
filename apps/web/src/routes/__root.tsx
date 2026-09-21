@@ -24,7 +24,7 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Loopkit — Lifecycle marketing engine",
+        title: "Sario Loop Kit — Lifecycle marketing engine",
       },
       {
         name: "description",
@@ -33,6 +33,12 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
       {
         name: "theme-color",
+        media: "(prefers-color-scheme: light)",
+        content: "#f7f6f3",
+      },
+      {
+        name: "theme-color",
+        media: "(prefers-color-scheme: dark)",
         content: "#12131a",
       },
     ],
@@ -69,15 +75,15 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 
 function RootDocument() {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
+          defaultTheme="system"
+          enableSystem
           disableTransitionOnChange
         >
           <Outlet />

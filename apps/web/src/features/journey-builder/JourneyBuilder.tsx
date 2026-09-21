@@ -29,7 +29,6 @@ import {
   ChevronDownIcon,
   GripVerticalIcon,
   Loader2Icon,
-  Maximize2Icon,
   NetworkIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -602,11 +601,6 @@ export function JourneyBuilder({
     fitViewToGraph();
     toast.success("节点已自动排版");
   }, [nodes, edges, fitViewToGraph]);
-
-  const handleFitView = useCallback(() => {
-    if (nodes.length === 0) return;
-    fitViewToGraph();
-  }, [nodes.length, fitViewToGraph]);
 
   // Copilot output replaces the working canvas. Baseline is intentionally
   // left untouched: the applied graph counts as unsaved work so the normal
@@ -1286,16 +1280,6 @@ export function JourneyBuilder({
               <NetworkIcon data-icon="inline-start" />
               Auto layout
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleFitView}
-              disabled={nodes.length === 0}
-              title="Zoom to show all nodes"
-            >
-              <Maximize2Icon data-icon="inline-start" />
-              Fit view
-            </Button>
             <div
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
@@ -1393,8 +1377,8 @@ export function JourneyBuilder({
               <MiniMap
                 pannable
                 zoomable
-                position="bottom-right"
-                className="!bg-card/90 !h-28 !w-40"
+                position="top-right"
+                className="bg-card/90! h-28! w-40!"
                 nodeColor={(n) => NODE_META[n.type as BuilderNodeType]?.color ?? "#94a3b8"}
                 maskColor="color-mix(in oklab, var(--background) 55%, transparent)"
               />
@@ -1471,14 +1455,6 @@ export function JourneyBuilder({
                 disabled={nodes.length === 0}
               >
                 Auto layout
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-border bg-card/90 px-2 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                onClick={handleFitView}
-                disabled={nodes.length === 0}
-              >
-                Fit view
               </button>
               <button
                 type="button"

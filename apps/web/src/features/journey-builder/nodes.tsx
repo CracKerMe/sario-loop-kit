@@ -371,6 +371,9 @@ export function InsertEdge({
           aria-label="Insert node on this path"
           className="nodrag nopan grid size-5 place-items-center rounded-full border border-border bg-card text-[13px] leading-none text-muted-foreground shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
           style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             pointerEvents: "all",
           }}

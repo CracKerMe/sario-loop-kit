@@ -12,23 +12,24 @@
 --------------------------------------------------------------------------- */
 
 :root {
-  --background: oklch(0.985 0.004 260);
-  --foreground: oklch(0.21 0.02 265);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 265);
+  /* Notion light — warm paper, daytime office. */
+  --background: oklch(0.973 0.004 92);
+  --foreground: oklch(0.329 0.011 91.7);
+  --card: oklch(0.988 0.003 92);
+  --card-foreground: oklch(0.329 0.011 91.7);
+  --popover: oklch(0.988 0.003 92);
+  --popover-foreground: oklch(0.329 0.011 91.7);
   --primary: oklch(0.52 0.21 273);
   --primary-foreground: oklch(0.985 0.005 273);
-  --secondary: oklch(0.96 0.007 262);
+  --secondary: oklch(0.955 0.005 91);
   --secondary-foreground: oklch(0.28 0.025 265);
-  --muted: oklch(0.962 0.006 261);
-  --muted-foreground: oklch(0.5 0.02 262);
-  --accent: oklch(0.952 0.015 273);
+  --muted: oklch(0.947 0.005 88);
+  --muted-foreground: oklch(0.569 0.005 91.5);
+  --accent: oklch(0.935 0.01 88);
   --accent-foreground: oklch(0.32 0.06 273);
   --destructive: oklch(0.55 0.22 25);
-  --border: oklch(0.908 0.008 260);
-  --input: oklch(0.902 0.009 260);
+  --border: oklch(0.9 0.008 89);
+  --input: oklch(0.893 0.009 89);
   --ring: oklch(0.52 0.21 273);
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
@@ -36,13 +37,13 @@
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0.625rem;
-  --sidebar: oklch(0.972 0.005 261);
-  --sidebar-foreground: oklch(0.21 0.02 265);
+  --sidebar: oklch(0.955 0.005 90);
+  --sidebar-foreground: oklch(0.329 0.011 91.7);
   --sidebar-primary: oklch(0.52 0.21 273);
   --sidebar-primary-foreground: oklch(0.985 0.005 273);
-  --sidebar-accent: oklch(0.952 0.015 273);
+  --sidebar-accent: oklch(0.935 0.01 88);
   --sidebar-accent-foreground: oklch(0.32 0.06 273);
-  --sidebar-border: oklch(0.908 0.008 260);
+  --sidebar-border: oklch(0.9 0.008 89);
   --sidebar-ring: oklch(0.52 0.21 273);
 }
 
@@ -138,12 +139,12 @@
     background-image:
       radial-gradient(
         52rem 30rem at 8% -8%,
-        color-mix(in oklab, var(--primary) 9%, transparent),
+        color-mix(in oklab, var(--primary) 6%, transparent),
         transparent 62%
       ),
       radial-gradient(
         44rem 26rem at 96% 4%,
-        color-mix(in oklab, var(--chart-2) 7%, transparent),
+        color-mix(in oklab, var(--chart-2) 5%, transparent),
         transparent 60%
       );
   }
