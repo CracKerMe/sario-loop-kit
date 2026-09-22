@@ -1,0 +1,154 @@
+<svg viewBox="0 0 1000 900" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <pattern id="dots2" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#E4E0D5"/>
+    </pattern>
+    <filter id="soft2" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="3" flood-color="#1F2430" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B7BBC4"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="900" fill="#FBFAF6"/>
+  <rect width="1000" height="900" fill="url(#dots2)"/>
+
+  <!-- toolbar chrome -->
+  <rect x="0" y="0" width="1000" height="44" fill="#FFFFFF"/>
+  <line x1="0" y1="44" x2="1000" y2="44" stroke="#EAE7DC"/>
+  <text x="24" y="27" font-size="13.5" font-weight="700" fill="#1F2430">Welcome + A/B + Score + Hours</text>
+  <rect x="850" y="12" width="58" height="20" rx="10" fill="#F5EFFF"/>
+  <text x="879" y="26" font-size="10.5" fill="#8B5CF6" text-anchor="middle" font-weight="600">Valid</text>
+  <rect x="918" y="12" width="62" height="20" rx="6" fill="#4F46E5"/>
+  <text x="949" y="26" font-size="10.5" fill="#FFFFFF" text-anchor="middle" font-weight="600">Publish</text>
+
+  <!-- connectors first (behind nodes) -->
+  <g stroke="#C7CAD2" stroke-width="1.6" fill="none">
+    <path d="M500,110 V140" marker-end="url(#arrow2)"/>
+    <path d="M500,196 V226" marker-end="url(#arrow2)"/>
+    <path d="M500,282 V312" marker-end="url(#arrow2)"/>
+    <path d="M500,368 V392 Q500,400 490,400 H330 Q320,400 320,410 V424" marker-end="url(#arrow2)"/>
+    <path d="M500,368 V392 Q500,400 510,400 H670 Q680,400 680,410 V424" marker-end="url(#arrow2)"/>
+    <path d="M320,480 V510" marker-end="url(#arrow2)"/>
+    <path d="M680,480 V510" marker-end="url(#arrow2)"/>
+    <path d="M320,566 V596" marker-end="url(#arrow2)"/>
+    <path d="M680,566 V596" marker-end="url(#arrow2)"/>
+    <path d="M320,652 V682" marker-end="url(#arrow2)"/>
+    <path d="M680,652 H500 Q490,652 490,662 V682" marker-end="url(#arrow2)"/>
+    <path d="M320,738 V748 Q320,756 330,756 H480 Q490,756 490,764 V774" marker-end="url(#arrow2)"/>
+  </g>
+
+  <!-- Trigger -->
+  <g filter="url(#soft2)">
+    <rect x="420" y="60" width="160" height="50" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="420" y="60" width="6" height="50" rx="3" fill="#8B5CF6"/>
+  <circle cx="446" cy="78" r="4" fill="#8B5CF6"/>
+  <text x="460" y="82" font-size="12" font-weight="700" fill="#1F2430">Trigger</text>
+  <text x="440" y="98" font-size="10" fill="#8A8E99">contact created</text>
+
+  <!-- Email: Welcome -->
+  <g filter="url(#soft2)">
+    <rect x="420" y="140" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="420" y="140" width="6" height="56" rx="3" fill="#10B981"/>
+  <circle cx="446" cy="160" r="4" fill="#10B981"/>
+  <text x="460" y="164" font-size="12" font-weight="700" fill="#1F2430">Email</text>
+  <text x="440" y="180" font-size="10" fill="#8A8E99">Welcome aboard</text>
+
+  <!-- Score: Lead score -->
+  <g filter="url(#soft2)">
+    <rect x="420" y="226" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="420" y="226" width="6" height="56" rx="3" fill="#F59E0B"/>
+  <circle cx="446" cy="246" r="4" fill="#F59E0B"/>
+  <text x="460" y="250" font-size="12" font-weight="700" fill="#1F2430">Score</text>
+  <text x="440" y="266" font-size="10" fill="#8A8E99">+10 lead score</text>
+
+  <!-- A/B Split -->
+  <g filter="url(#soft2)">
+    <rect x="420" y="312" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="420" y="312" width="6" height="56" rx="3" fill="#3B82F6"/>
+  <circle cx="446" cy="332" r="4" fill="#3B82F6"/>
+  <text x="460" y="336" font-size="12" font-weight="700" fill="#1F2430">A/B Split</text>
+  <text x="440" y="352" font-size="10" fill="#8A8E99">60% / 40% weighted</text>
+
+  <!-- Left branch: Path A -->
+  <text x="240" y="416" font-size="10.5" font-weight="700" fill="#8A8E99" text-anchor="middle">PATH A · NURTURE</text>
+
+  <g filter="url(#soft2)">
+    <rect x="240" y="424" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="240" y="424" width="6" height="56" rx="3" fill="#10B981"/>
+  <circle cx="266" cy="444" r="4" fill="#10B981"/>
+  <text x="280" y="448" font-size="12" font-weight="700" fill="#1F2430">Email</text>
+  <text x="260" y="464" font-size="10" fill="#8A8E99">Getting started guide</text>
+
+  <g filter="url(#soft2)">
+    <rect x="240" y="510" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="240" y="510" width="6" height="56" rx="3" fill="#F59E0B"/>
+  <circle cx="266" cy="530" r="4" fill="#F59E0B"/>
+  <text x="280" y="534" font-size="12" font-weight="700" fill="#1F2430">Delay</text>
+  <text x="260" y="550" font-size="10" fill="#8A8E99">wait 2 days</text>
+
+  <g filter="url(#soft2)">
+    <rect x="240" y="596" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="240" y="596" width="6" height="56" rx="3" fill="#F59E0B"/>
+  <circle cx="266" cy="616" r="4" fill="#F59E0B"/>
+  <text x="280" y="620" font-size="12" font-weight="700" fill="#1F2430">Business Hours</text>
+  <text x="260" y="636" font-size="10" fill="#8A8E99">Mon–Fri, 9am–6pm gate</text>
+
+  <g filter="url(#soft2)">
+    <rect x="240" y="682" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="240" y="682" width="6" height="56" rx="3" fill="#F59E0B"/>
+  <circle cx="266" cy="702" r="4" fill="#F59E0B"/>
+  <text x="280" y="706" font-size="12" font-weight="700" fill="#1F2430">Goal</text>
+  <text x="260" y="722" font-size="10" fill="#8A8E99">record activation</text>
+
+  <!-- Right branch: Path B -->
+  <text x="760" y="416" font-size="10.5" font-weight="700" fill="#8A8E99" text-anchor="middle">PATH B · SALES</text>
+
+  <g filter="url(#soft2)">
+    <rect x="600" y="424" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="600" y="424" width="6" height="56" rx="3" fill="#3B82F6"/>
+  <circle cx="626" cy="444" r="4" fill="#3B82F6"/>
+  <text x="640" y="448" font-size="12" font-weight="700" fill="#1F2430">Update Contact</text>
+  <text x="620" y="464" font-size="10" fill="#8A8E99">tag: high-intent</text>
+
+  <g filter="url(#soft2)">
+    <rect x="600" y="510" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="600" y="510" width="6" height="56" rx="3" fill="#3B82F6"/>
+  <circle cx="626" cy="530" r="4" fill="#3B82F6"/>
+  <text x="640" y="534" font-size="12" font-weight="700" fill="#1F2430">Notify</text>
+  <text x="620" y="550" font-size="10" fill="#8A8E99">Slack: sales team</text>
+
+  <g filter="url(#soft2)">
+    <rect x="600" y="596" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="600" y="596" width="6" height="56" rx="3" fill="#EC4899"/>
+  <circle cx="626" cy="616" r="4" fill="#EC4899"/>
+  <text x="640" y="620" font-size="12" font-weight="700" fill="#1F2430">Exit</text>
+  <text x="620" y="636" font-size="10" fill="#8A8E99">handed to sales</text>
+
+  <!-- Merge / Exit -->
+  <g filter="url(#soft2)">
+    <rect x="410" y="774" width="160" height="56" rx="10" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="410" y="774" width="6" height="56" rx="3" fill="#EC4899"/>
+  <circle cx="436" cy="794" r="4" fill="#EC4899"/>
+  <text x="450" y="798" font-size="12" font-weight="700" fill="#1F2430">Exit</text>
+  <text x="430" y="814" font-size="10" fill="#8A8E99">journey complete</text>
+
+  <!-- footer status bar -->
+  <line x1="0" y1="858" x2="1000" y2="858" stroke="#EAE7DC"/>
+  <text x="24" y="880" font-size="10.5" fill="#8A8E99">10 nodes · 10 edges</text>
+  <circle cx="905" cy="875" r="4" fill="#10B981"/>
+  <text x="915" y="880" font-size="10.5" fill="#3F8E5C" font-weight="600">Graph looks valid</text>
+</svg>

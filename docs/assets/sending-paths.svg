@@ -1,0 +1,90 @@
+<svg viewBox="0 0 1200 560" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <pattern id="dots3" width="18" height="18" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="1.2" fill="#E4E0D5"/>
+    </pattern>
+    <filter id="soft3" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#1F2430" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B7BBC4"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" fill="#F6F4EE"/>
+  <rect width="1200" height="560" fill="url(#dots3)"/>
+
+  <text x="40" y="46" font-size="22" font-weight="700" fill="#1F2430">Three products, one sending path</text>
+  <text x="40" y="68" font-size="13" fill="#6D7280">Pick by intent — a journey is a graph per contact; a campaign is one email to a saved audience</text>
+
+  <!-- Journey column -->
+  <g filter="url(#soft3)">
+    <rect x="40" y="100" width="350" height="140" rx="14" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="40" y="100" width="350" height="6" rx="3" fill="#8B5CF6"/>
+  <text x="64" y="134" font-size="15" font-weight="700" fill="#1F2430">Lifecycle journey</text>
+  <text x="64" y="154" font-size="11.5" fill="#6D7280">Dashboard → Journeys</text>
+  <text x="64" y="176" font-size="11.5" fill="#6D7280">Per-contact graph: waits, branches,</text>
+  <text x="64" y="192" font-size="11.5" fill="#6D7280">event wake-ups</text>
+  <text x="64" y="214" font-size="11.5" fill="#8B5CF6" font-weight="600">Lab: dry-run → simulate → optimize</text>
+  <text x="64" y="230" font-size="11.5" fill="#8B5CF6" font-weight="600">→ canary → migrate</text>
+
+  <!-- Campaign column -->
+  <g filter="url(#soft3)">
+    <rect x="425" y="100" width="350" height="140" rx="14" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="425" y="100" width="350" height="6" rx="3" fill="#3B82F6"/>
+  <text x="449" y="134" font-size="15" font-weight="700" fill="#1F2430">Broadcast campaign</text>
+  <text x="449" y="154" font-size="11.5" fill="#6D7280">Dashboard → Campaigns</text>
+  <text x="449" y="176" font-size="11.5" fill="#6D7280">One email to a saved audience —</text>
+  <text x="449" y="192" font-size="11.5" fill="#6D7280">filter frozen at launch</text>
+  <text x="449" y="214" font-size="11.5" fill="#3B82F6" font-weight="600">campaign_recipient rows are the queue</text>
+  <text x="449" y="230" font-size="11.5" fill="#3B82F6" font-weight="600">→ resume = recovery, not re-send</text>
+
+  <!-- Transactional column -->
+  <g filter="url(#soft3)">
+    <rect x="810" y="100" width="350" height="140" rx="14" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="810" y="100" width="350" height="6" rx="3" fill="#10B981"/>
+  <text x="834" y="134" font-size="15" font-weight="700" fill="#1F2430">Transactional API</text>
+  <text x="834" y="154" font-size="11.5" fill="#6D7280">POST /v1/transactional</text>
+  <text x="834" y="176" font-size="11.5" fill="#6D7280">Backend-triggered mail, required</text>
+  <text x="834" y="192" font-size="11.5" fill="#6D7280">idempotency key</text>
+  <text x="834" y="214" font-size="11.5" fill="#10B981" font-weight="600">scope: transactional:send</text>
+  <text x="834" y="230" font-size="11.5" fill="#10B981" font-weight="600">exempt from frequency cap</text>
+
+  <!-- converge lines -->
+  <path d="M215,240 V280 Q215,300 400,300" stroke="#B7BBC4" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+  <path d="M600,240 V300" stroke="#B7BBC4" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+  <path d="M985,240 V280 Q985,300 800,300" stroke="#B7BBC4" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+
+  <!-- Shared email channel -->
+  <g filter="url(#soft3)">
+    <rect x="330" y="300" width="540" height="66" rx="12" fill="#1F2430"/>
+  </g>
+  <text x="600" y="328" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">packages/email — one channel</text>
+  <text x="600" y="348" font-size="11" fill="#B8BDC9" text-anchor="middle">exactly-once send · retry policy · dead-letter queue</text>
+
+  <path d="M600,366 V396" stroke="#B7BBC4" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+
+  <!-- compliance gates -->
+  <g filter="url(#soft3)">
+    <rect x="330" y="396" width="255" height="120" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="330" y="396" width="255" height="6" rx="3" fill="#F59E0B"/>
+  <text x="354" y="428" font-size="13" font-weight="700" fill="#1F2430">contact.subscribed</text>
+  <text x="354" y="446" font-size="11" fill="#6D7280">identity — reversible from the</text>
+  <text x="354" y="461" font-size="11" fill="#6D7280">preference centre</text>
+  <text x="354" y="483" font-size="10.5" fill="#B08A2E" font-weight="600">does NOT survive contact deletion</text>
+
+  <g filter="url(#soft3)">
+    <rect x="615" y="396" width="255" height="120" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="615" y="396" width="255" height="6" rx="3" fill="#EC4899"/>
+  <text x="639" y="428" font-size="13" font-weight="700" fill="#1F2430">suppression row</text>
+  <text x="639" y="446" font-size="11" fill="#6D7280">address fact — bounce / complaint,</text>
+  <text x="639" y="461" font-size="11" fill="#6D7280">lifted only by an operator</text>
+  <text x="639" y="483" font-size="10.5" fill="#C23B72" font-weight="600">survives contact deletion</text>
+
+  <text x="600" y="540" font-size="11.5" fill="#6D7280" text-anchor="middle">Both gates checked on every send · both written by the delivery webhook · never redundant</text>
+</svg>

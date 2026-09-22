@@ -4,6 +4,12 @@ Self-hostable lifecycle marketing engine built on a real workflow engine (`ts-wo
 
 Journeys are not a fixed set of marketing nodes — they **compile** into engine `WorkflowDefinition`s with durable waits, event wake-ups, retries, and DLQ.
 
+![Journey builder — Welcome + A/B + Score + Hours](docs/assets/journey-graph.svg)
+
+## Architecture
+
+![Loopkit architecture](docs/assets/architecture.svg)
+
 ## Stack
 
 - **apps/server** — Hono API (ingestion, dashboard APIs, Resend webhooks)
@@ -87,6 +93,8 @@ Three products share one email channel (`packages/email`). Pick by intent — do
 | POST     | `/v1/webhooks/resend`      | provider signature | Delivery events + engagement wake-ups        |
 
 ## Campaigns vs journeys
+
+![Three sending paths, one email channel, two compliance gates](docs/assets/sending-paths.svg)
 
 They are different products that share one sending path.
 
