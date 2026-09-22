@@ -1,5 +1,7 @@
 {
-  "name": "loopkit",
+  "name": "sario-loop-kit",
+  "description": "Self-hostable lifecycle marketing engine with durable workflow journeys, campaigns, audiences, transactional email, and compliance controls.",
+  "license": "MIT",
   "private": true,
   "workspaces": [
     "apps/*",
