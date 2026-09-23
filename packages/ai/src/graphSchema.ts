@@ -19,18 +19,40 @@ const jsonValue: z.ZodType<unknown> = z.lazy(() =>
   ]),
 );
 
-// Cast silences zod v4's output-type mismatch against SegmentFilter's
-// required `value: unknown` (schema keeps value optional — models omit
-// it); runtime structural validation is unaffected.
+// Canonical audience-style SegmentFilter AST (same shape core compiles to
+// SQL). Models sometimes omit `value` on operators that allow it.
 const segmentFilter = z.lazy(() =>
   z.union([
-    z.object({ op: z.enum(["and", "or"]), filters: z.array(segmentFilter) }),
     z.object({
-      op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains"]),
-      property: z.string(),
+      kind: z.literal("condition"),
+      field: z.string().min(1),
+      operator: z.enum([
+        "eq",
+        "neq",
+        "contains",
+        "not_contains",
+        "starts_with",
+        "ends_with",
+        "in",
+        "not_in",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "exists",
+        "not_exists",
+      ]),
       value: jsonValue.optional(),
     }),
-    z.object({ op: z.enum(["exists", "not_exists"]), property: z.string() }),
+    z.object({
+      kind: z.literal("event"),
+      name: z.string().min(1),
+      occurred: z.boolean(),
+      withinDays: z.number().int().positive().optional(),
+      minCount: z.number().int().positive().optional(),
+    }),
+    z.object({ op: z.enum(["and", "or"]), children: z.array(segmentFilter) }),
+    z.object({ op: z.literal("not"), child: segmentFilter }),
   ]),
 ) as unknown as z.ZodType<SegmentFilter>;
 

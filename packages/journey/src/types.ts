@@ -4,21 +4,15 @@
  * WorkflowDefinition from it, cached in journey_version.compiled.
  */
 
+import type { SegmentFilter } from "./segments";
+
+export type { SegmentFilter };
+
 export type JourneyTrigger =
   | { kind: "contact_created"; filter?: SegmentFilter }
   | { kind: "event"; name: string; filter?: SegmentFilter }
   | { kind: "property_changed"; property: string; from?: unknown; to?: unknown }
   | { kind: "manual" };
-
-/** Segment filter AST — evaluated to SQL by @loopkit/core, not interpreted here. */
-export type SegmentFilter =
-  | { op: "and" | "or"; filters: SegmentFilter[] }
-  | {
-      op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains";
-      property: string;
-      value: unknown;
-    }
-  | { op: "exists" | "not_exists"; property: string };
 
 export interface JourneyNodeBase {
   id: string;

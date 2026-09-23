@@ -92,7 +92,7 @@ Hard rules:
 - Lay nodes out left-to-right with sensible position spacing (x: 0, 260, 520, …).`;
 }
 
-const NODE_TYPE_REFERENCE = `- trigger: data { trigger: { kind: "contact_created" | "event" | "property_changed" | "manual", ... } }. event kind carries { name, filter? }; property_changed carries { property, from?, to? }.
+const NODE_TYPE_REFERENCE = `- trigger: data { trigger: { kind: "contact_created" | "event" | "property_changed" | "manual", ... } }. event kind carries { name, filter? }; property_changed carries { property, from?, to? }. Trigger filter is the audience SegmentFilter AST: { kind: "condition", field, operator, value? } | { kind: "event", name, occurred, withinDays?, minCount? } | { op: "and"|"or", children: [...] } | { op: "not", child }. Use field "property.<key>" for contact properties.
 - delay: data { mode: "duration", ms, value?, unit: "minutes"|"hours"|"days"|"weeks" } or { mode: "until", iso } or { mode: "weekly", dayOfWeek (0-6), hour (0-23), minute? }. Always set ms consistently with value/unit (minutes=60000, hours=3600000, days=86400000, weeks=604800000).
 - email: data { templateId, subject?, preheader?, fromName?, replyTo?, utm? }.
 - branch: data { expression } — a JS-like boolean expression over contact properties.

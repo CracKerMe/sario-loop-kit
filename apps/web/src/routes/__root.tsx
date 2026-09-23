@@ -4,6 +4,7 @@ import { createMiddleware } from "@tanstack/react-start";
 import { evlogErrorHandler } from "evlog/nitro/v3";
 import { ThemeProvider } from "next-themes";
 
+import { AppQueryProvider } from "../lib/api/provider";
 import appCss from "../index.css?url";
 
 export interface RouterAppContext {}
@@ -85,7 +86,9 @@ function RootDocument() {
           enableSystem
           disableTransitionOnChange
         >
-          <Outlet />
+          <AppQueryProvider>
+            <Outlet />
+          </AppQueryProvider>
           <Toaster richColors />
         </ThemeProvider>
         <Scripts />

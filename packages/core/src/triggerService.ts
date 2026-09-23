@@ -95,7 +95,7 @@ type TriggerConfig = {
   /**
    * Optional audience-style SegmentFilter frozen onto the journey trigger
    * (from a saved audience or the shared segment editor). Evaluated against
-   * the contact at entry — not the journey package's property-only AST.
+   * the contact at entry via core's SQL compiler.
    */
   filter?: unknown;
 };

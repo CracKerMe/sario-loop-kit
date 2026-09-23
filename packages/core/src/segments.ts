@@ -38,62 +38,24 @@ import { z } from "zod";
 /* AST                                                                 */
 /* ------------------------------------------------------------------ */
 
-export type SegmentOperator =
-  | "eq"
-  | "neq"
-  | "contains"
-  | "not_contains"
-  | "starts_with"
-  | "ends_with"
-  | "in"
-  | "not_in"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "exists"
-  | "not_exists";
+export type {
+  SegmentCondition,
+  SegmentEventCondition,
+  SegmentFilter,
+  SegmentGroup,
+  SegmentNot,
+  SegmentOperator,
+  SegmentValue,
+} from "@loopkit/journey";
 
-/** Scalar a condition can carry. Arrays only for `in`/`not_in`. */
-export type SegmentValue = string | number | boolean | string[] | number[] | null;
-
-export interface SegmentCondition {
-  kind: "condition";
-  /**
-   * `email` | `userId` | `subscribed` | `createdAt` | `updatedAt` |
-   * `unsubscribedAt` | `property.<key>` (top-level JSON key).
-   */
-  field: string;
-  operator: SegmentOperator;
-  value?: SegmentValue;
-}
-
-export interface SegmentEventCondition {
-  kind: "event";
-  /** The `contact_event.name`, e.g. "email.opened", "order.placed". */
-  name: string;
-  /** Restrict to events in the last N days. Omitted = all time. */
-  withinDays?: number;
-  /**
-   * `true` = the event must have occurred; `false` = it must NOT have
-   * (a "no events at all" contact satisfies the negative form).
-   */
-  occurred: boolean;
-  /** Minimum occurrences. Only meaningful with `occurred: true`. */
-  minCount?: number;
-}
-
-export interface SegmentGroup {
-  op: "and" | "or";
-  children: SegmentFilter[];
-}
-
-export interface SegmentNot {
-  op: "not";
-  child: SegmentFilter;
-}
-
-export type SegmentFilter = SegmentCondition | SegmentEventCondition | SegmentGroup | SegmentNot;
+import type {
+  SegmentCondition,
+  SegmentEventCondition,
+  SegmentFilter,
+  SegmentGroup,
+  SegmentNot,
+  SegmentOperator,
+} from "@loopkit/journey";
 
 export const MAX_SEGMENT_DEPTH = 10;
 export const MAX_SEGMENT_CHILDREN = 50;
