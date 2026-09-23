@@ -27,8 +27,24 @@ export {
   type NodeReach,
 } from "./cohort";
 export { standardWelcomeSequenceGraph, welcomeAbScoreHoursGraph } from "./presets";
+export type {
+  SegmentCondition,
+  SegmentEventCondition,
+  SegmentFilter,
+  SegmentGroup,
+  SegmentNot,
+  SegmentOperator,
+  SegmentValue,
+} from "./segments";
 export { validateGraph, type ValidationIssue, type ValidationResult } from "./validate";
 export { assertWhitelistedGraph, JOURNEY_NODE_TYPES } from "./whitelist";
+export {
+  getNodeDef,
+  NODE_DEFS,
+  type JourneyNodeDef,
+  type JourneyNodeDefMap,
+  type JourneyNodeType,
+} from "./nodeDefs";
 export type {
   JourneyAbSplitData,
   JourneyAbVariant,
@@ -55,5 +71,4 @@ export type {
   JourneyWaitEventData,
   JourneyWebhookData,
   JourneyWebhookMethod,
-  SegmentFilter,
 } from "./types";

@@ -1,9 +1,8 @@
 import type { JourneyGraph } from "./types";
+import type { ValidateNodeContext, ValidationIssue } from "./nodeDefs";
+import { validateNodeWithDef } from "./nodeDefs";
 
-export interface ValidationIssue {
-  nodeId?: string;
-  message: string;
-}
+export type { ValidationIssue } from "./nodeDefs";
 
 export interface ValidationResult {
   valid: boolean;
@@ -17,6 +16,10 @@ export interface ValidationResult {
  * browser). Catches the mistakes a builder UI can trivially make before
  * they reach the server-side compile() + publish path, which does the
  * authoritative validation and node-type whitelist check.
+ *
+ * Per-node config checks live on NODE_DEFS descriptors. Graph-level rules
+ * (trigger uniqueness, edge integrity, reachability, join-region closure)
+ * stay here.
  */
 export function validateGraph(graph: JourneyGraph): ValidationResult {
   const issues: ValidationIssue[] = [];
@@ -46,213 +49,23 @@ export function validateGraph(graph: JourneyGraph): ValidationResult {
     }
   }
 
-  const outgoingCount = new Map<string, number>();
-  for (const edge of graph.edges) {
-    outgoingCount.set(edge.source, (outgoingCount.get(edge.source) ?? 0) + 1);
+  for (const node of graph.nodes) {
+    const outgoingEdges = graph.edges.filter((e) => e.source === node.id);
+    const incomingEdges = graph.edges.filter((e) => e.target === node.id && e.source !== node.id);
+    const ctx: ValidateNodeContext = {
+      outgoingCount: outgoingEdges.length,
+      outgoingEdges,
+      incomingEdges,
+    };
+    issues.push(...validateNodeWithDef(node, graph, ctx));
   }
 
+  // Graph-level: join region closure for mode-"all" joins. A branch that
+  // dead-ends, exits, or escapes the region before the join would deadlock
+  // the post-join path — fail loudly at validate time instead.
   for (const node of graph.nodes) {
-    const count = outgoingCount.get(node.id) ?? 0;
-    switch (node.type) {
-      case "exit":
-        if (count > 0) issues.push({ nodeId: node.id, message: "exit node has outgoing edges" });
-        break;
-      case "branch": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        if (!edges.some((e) => e.sourceHandle === "true")) {
-          issues.push({ nodeId: node.id, message: "branch node is missing a true edge" });
-        }
-        if (!edges.some((e) => e.sourceHandle === "false")) {
-          issues.push({ nodeId: node.id, message: "branch node is missing a false edge" });
-        }
-        break;
-      }
-      case "timeWindow": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        if (!edges.some((e) => e.sourceHandle === "true")) {
-          issues.push({
-            nodeId: node.id,
-            message: "timeWindow node is missing an in-window (true) edge",
-          });
-        }
-        const days = node.data.days;
-        if (!Array.isArray(days) || days.length === 0) {
-          issues.push({ nodeId: node.id, message: "timeWindow node has no open days selected" });
-        }
-        if (node.data.startHour === node.data.endHour) {
-          issues.push({
-            nodeId: node.id,
-            message: "timeWindow start and end hour are identical — window is empty",
-          });
-        }
-        break;
-      }
-      case "split": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        for (const route of node.data.routes) {
-          if (!edges.some((e) => e.sourceHandle === route.name)) {
-            issues.push({
-              nodeId: node.id,
-              message: `split route "${route.name}" has no outgoing edge`,
-            });
-          }
-        }
-        break;
-      }
-      case "abSplit": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        const variants = node.data.variants;
-        if (!Array.isArray(variants) || variants.length < 2) {
-          issues.push({
-            nodeId: node.id,
-            message: "abSplit needs at least two variants",
-          });
-        } else {
-          for (const v of variants) {
-            if (!v.name) {
-              issues.push({ nodeId: node.id, message: "abSplit variant is missing a name" });
-            } else if (!edges.some((e) => e.sourceHandle === v.name)) {
-              issues.push({
-                nodeId: node.id,
-                message: `abSplit variant "${v.name}" has no outgoing edge`,
-              });
-            }
-            if (!(Number(v.weight) > 0)) {
-              issues.push({
-                nodeId: node.id,
-                message: `abSplit variant "${v.name || "?"}" weight must be > 0`,
-              });
-            }
-          }
-        }
-        break;
-      }
-      case "waitEvent": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        const eventEdge = edges.some((e) => !e.sourceHandle || e.sourceHandle === "event");
-        if (!eventEdge && edges.length === 0) {
-          issues.push({ nodeId: node.id, message: "waitEvent node has no outgoing edge" });
-        }
-        if (!node.data.eventName) {
-          issues.push({ nodeId: node.id, message: "waitEvent node has no event name" });
-        }
-        break;
-      }
-      case "parallel": {
-        if (count < 2) {
-          issues.push({
-            nodeId: node.id,
-            message: "parallel node needs at least two outgoing branch edges",
-          });
-        }
-        break;
-      }
-      case "join": {
-        const edges = graph.edges.filter((e) => e.source === node.id);
-        const incoming = graph.edges.filter((e) => e.target === node.id && e.source !== node.id);
-        if (incoming.length < 2) {
-          issues.push({
-            nodeId: node.id,
-            message: "join node needs at least two incoming branch edges",
-          });
-        }
-        if (edges.length === 0) {
-          issues.push({ nodeId: node.id, message: "join node has no outgoing edge" });
-        } else if (edges.length > 1) {
-          issues.push({
-            nodeId: node.id,
-            message: "join node supports a single outgoing edge (the post-join path)",
-          });
-        }
-        if ((node.data.mode ?? "all") === "all") {
-          issues.push(...joinRegionIssues(graph, node.id));
-        }
-        break;
-      }
-      case "subJourney":
-        if (!node.data.journeyId) {
-          issues.push({ nodeId: node.id, message: "subJourney node has no journey selected" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "subJourney node has no outgoing edge" });
-        }
-        break;
-      case "email":
-        if (!node.data.templateId) {
-          issues.push({ nodeId: node.id, message: "email node has no template selected" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "email node has no outgoing edge" });
-        }
-        break;
-      case "sendCampaign":
-        if (!node.data.campaignId) {
-          issues.push({ nodeId: node.id, message: "sendCampaign node has no campaign selected" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "sendCampaign node has no outgoing edge" });
-        }
-        break;
-      case "webhook":
-        if (!node.data.url) {
-          issues.push({ nodeId: node.id, message: "webhook node has no URL" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "webhook node has no outgoing edge" });
-        }
-        break;
-      case "notify":
-        if (!node.data.url) {
-          issues.push({ nodeId: node.id, message: "notify node has no webhook URL" });
-        }
-        if (!node.data.message) {
-          issues.push({ nodeId: node.id, message: "notify node has no message" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "notify node has no outgoing edge" });
-        }
-        break;
-      case "updateContact": {
-        const d = node.data;
-        const hasWork =
-          (d.set && Object.keys(d.set).length > 0) ||
-          (d.addTags && d.addTags.length > 0) ||
-          (d.removeTags && d.removeTags.length > 0);
-        if (!hasWork) {
-          issues.push({
-            nodeId: node.id,
-            message: "updateContact node has nothing to set or tag",
-          });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "updateContact node has no outgoing edge" });
-        }
-        break;
-      }
-      case "score":
-        if (typeof node.data.value !== "number" || Number.isNaN(node.data.value)) {
-          issues.push({ nodeId: node.id, message: "score node needs a numeric value" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "score node has no outgoing edge" });
-        }
-        break;
-      case "goal":
-        if (!node.data.name) {
-          issues.push({ nodeId: node.id, message: "goal node has no name" });
-        }
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: "goal node has no outgoing edge" });
-        }
-        break;
-      case "trigger":
-        if (count === 0)
-          issues.push({ nodeId: node.id, message: "trigger node has no outgoing edge" });
-        break;
-      default:
-        if (count === 0) {
-          issues.push({ nodeId: node.id, message: `${node.type} node has no outgoing edge` });
-        }
+    if (node.type === "join" && (node.data.mode ?? "all") === "all") {
+      issues.push(...joinRegionIssues(graph, node.id));
     }
   }
 
