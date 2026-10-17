@@ -61,6 +61,7 @@ function CampaignsPage() {
   const [name, setName] = useState("");
   const [audienceId, setAudienceId] = useState("");
   const [composer, setComposer] = useState<EmailComposerValue>(emptyComposerValue);
+  const [optimizeSendTime, setOptimizeSendTime] = useState(false);
 
   /** Campaign id currently being scheduled, or null when that dialog is closed. */
   const [scheduleTarget, setScheduleTarget] = useState<CampaignDto | null>(null);
@@ -72,6 +73,7 @@ function CampaignsPage() {
     setName("");
     setAudienceId(audiences[0]?.id ?? "");
     setComposer({ ...emptyComposerValue, templateId: templates[0]?.id ?? "" });
+    setOptimizeSendTime(false);
   };
 
   const openEdit = (c: CampaignDto) => {
@@ -85,6 +87,7 @@ function CampaignsPage() {
       fromName: c.fromName ?? "",
       replyTo: c.replyTo ?? "",
     });
+    setOptimizeSendTime(Boolean(c.optimizeSendTime));
   };
 
   /**
@@ -349,6 +352,7 @@ function CampaignsPage() {
                   preheader: composer.preheader.trim() || undefined,
                   fromName: composer.fromName.trim() || undefined,
                   replyTo: composer.replyTo.trim() || undefined,
+                  optimizeSendTime,
                 };
                 if (editor?.id) {
                   await api.updateCampaign(editor.id, payload);
@@ -407,6 +411,22 @@ function CampaignsPage() {
               onTemplateCreated={(t) => setTemplates((prev) => [...prev, t])}
               variables={CAMPAIGN_VARIABLES}
             />
+
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-muted/30 p-3">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={optimizeSendTime}
+                onChange={(e) => setOptimizeSendTime(e.target.checked)}
+              />
+              <span>
+                <span className="text-sm font-medium">按最佳互动时段发送（STO）</span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  根据每位联系人的历史打开/点击时段，把投递推迟到对方最可能阅读的小时（最长 48
+                  小时）。冷启动联系人使用工作区平均时段。
+                </span>
+              </span>
+            </label>
 
             <Button
               type="submit"

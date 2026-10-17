@@ -11,6 +11,8 @@ import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 import { recordContactEvent } from "./contacts";
+import { createTask } from "./gtm";
+import { getContactEngagementProfile, hashSeed, nextBestSendTime } from "./sendTime";
 
 /**
  * Resolves `{{ path }}` template strings against the run context; leaves
@@ -163,7 +165,80 @@ export function createJourneyCompileActions(db: Db): JourneyCompileActions {
         lastGoalAt: new Date().toISOString(),
       });
 
-      return { ok: true, contactId, eventName, eventId: event?.id ?? null };
+      // Journey goals are conversions — automatically hand sales a task
+      // instead of leaving the win buried in the event stream. Deduped on
+      // (contact, source, sourceId) so a re-entrant goal node is a no-op.
+      const task = await createTask(db, workspaceId, {
+        contactId,
+        title: `Journey goal hit: ${name}`,
+        body: `Contact reached goal "${name}" in journey ${meta.journeyId ?? "?"}. Follow through on the conversion.`,
+        kind: "call",
+        priority: typeof data.value === "number" && data.value >= 100 ? 10 : 7,
+        source: "goal",
+        sourceId: meta.journeyRunId
+          ? `${meta.journeyRunId}:${meta.nodeId}`
+          : meta.journeyId
+            ? `${meta.journeyId}:${meta.nodeId}`
+            : eventName,
+        dueAt: new Date(Date.now() + 4 * 3600_000),
+      }).catch(() => null);
+
+      return {
+        ok: true,
+        contactId,
+        eventName,
+        eventId: event?.id ?? null,
+        taskId: task?.id ?? null,
+      };
+    },
+
+    /**
+     * Send-time optimization gate. Computes the contact's next preferred
+     * engagement hour and stamps the companion wait node's deadline so
+     * the engine parks them until that hour — not until the compiled
+     * upper bound. Falls back to the workspace profile, then to
+     * `fallbackHour`, and always respects `maxWaitHours`.
+     */
+    async stoWait(
+      data: { maxWaitHours?: number; fallbackHour?: number; waitNodeId: string },
+      ctx: JourneyRuntimeContext,
+      meta: { seedWaitDeadline: (deadlineMs: number) => void },
+    ) {
+      const contactId = contactIdFromCtx(ctx);
+      const workspaceId = typeof ctx.workspaceId === "string" ? ctx.workspaceId : null;
+      const maxWaitHours = Math.max(1, Math.min(72, data.maxWaitHours ?? 48));
+      const fallbackHour = data.fallbackHour ?? 10;
+      const now = new Date();
+
+      let bestAt: Date;
+      if (contactId && workspaceId) {
+        const profile = await getContactEngagementProfile(db, workspaceId, contactId);
+        bestAt = nextBestSendTime(profile, {
+          from: now,
+          maxDelayMs: maxWaitHours * 3600_000,
+          seed: hashSeed(contactId),
+        });
+      } else {
+        bestAt = nextBestSendTime(
+          {
+            hours: Array.from({ length: 24 }, (_, h) => (h === fallbackHour ? 1 : 0)),
+            samples: 0,
+            bestHour: fallbackHour,
+            confidence: 1,
+            source: "default",
+          },
+          { from: now, maxDelayMs: maxWaitHours * 3600_000 },
+        );
+      }
+
+      meta.seedWaitDeadline(bestAt.getTime());
+      return {
+        ok: true,
+        contactId,
+        bestAt: bestAt.toISOString(),
+        delayMs: bestAt.getTime() - now.getTime(),
+        waitNodeId: data.waitNodeId,
+      };
     },
   };
 }

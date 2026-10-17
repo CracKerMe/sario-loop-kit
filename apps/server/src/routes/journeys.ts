@@ -1,13 +1,17 @@
 import {
   createJourneyDraft,
+  evaluateOpsHealth,
+  getContactEngagementProfile,
   getDashboardStats,
   getInFlightVersionCounts,
   getJourneyCanaryStatus,
   getJourneyDetail,
   getJourneyEmailEngagement,
+  getJourneyLiftReport,
   getJourneyOptimization,
   getSuppression,
   getWorkspaceEngagement,
+  getWorkspaceEngagementProfile,
   JourneyMigrationError,
   JourneyOptimizationError,
   acceptJourneyOptimization,
@@ -18,13 +22,17 @@ import {
   listJourneyOptimizations,
   listJourneyRuns,
   listNodeFunnel,
+  listOpsAlerts,
   migrateInFlightJourneyRuns,
   migrateJourneyRun,
   persistJourneyOptimization,
   promoteJourneyCanary,
   publishJourney,
+  recordOpsAlerts,
+  resolveOpsAlert,
   rollbackJourneyCanary,
   searchInstances,
+  updateJourneyHoldout,
   type JourneyMigrationStrategy,
   type OptimizationAcceptMode,
 } from "@loopkit/core";
@@ -209,6 +217,20 @@ journeysRouter.post("/", async (c) => {
   });
 
   return c.json({ journeyId, validation }, 201);
+});
+
+// Static path segments must be registered BEFORE `/:id` or they resolve as
+// an id. Send-time profiles live here for that reason.
+journeysRouter.get("/send-time/profile", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const profile = await getWorkspaceEngagementProfile(db, workspaceId);
+  return c.json(profile);
+});
+
+journeysRouter.get("/send-time/profile/:contactId", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const profile = await getContactEngagementProfile(db, workspaceId, c.req.param("contactId"));
+  return c.json(profile);
 });
 
 journeysRouter.get("/:id", async (c) => {
@@ -1036,6 +1058,46 @@ runsRouter.post("/:instanceId/migrate", async (c) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Holdout & incremental lift
+// ---------------------------------------------------------------------------
+
+journeysRouter.patch("/:id/holdout", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = z
+    .object({
+      holdoutPercent: z.number().int().min(0).max(50).optional(),
+      holdoutGoalEvent: z.string().min(1).nullable().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const ok = await updateJourneyHoldout(db, workspaceId, journeyId, parsed.data);
+  if (!ok) return c.json({ error: "not_found" }, 404);
+
+  const report = await getJourneyLiftReport(db, workspaceId, journeyId);
+  return c.json({ ok: true, report });
+});
+
+journeysRouter.get("/:id/lift", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const sinceRaw = c.req.query("since");
+  const goalEvent = c.req.query("goalEvent") ?? undefined;
+  const since = sinceRaw ? new Date(sinceRaw) : undefined;
+  if (since && Number.isNaN(since.getTime())) {
+    return c.json({ error: "invalid_since" }, 400);
+  }
+  const report = await getJourneyLiftReport(db, workspaceId, journeyId, {
+    since,
+    goalEvent,
+  });
+  if (!report) return c.json({ error: "not_found" }, 404);
+  return c.json(report);
+});
+
 export const opsRouter = new Hono<{ Variables: AuthVariables }>();
 
 opsRouter.get("/stats", async (c) => {
@@ -1045,6 +1107,53 @@ opsRouter.get("/stats", async (c) => {
     getWorkspaceEngagement(db, workspaceId),
   ]);
   return c.json({ stats: { ...stats, engagement } });
+});
+
+// ---------------------------------------------------------------------------
+// Ops health — bounce/complaint/failure spikes, DLQ growth, open-rate drop
+// ---------------------------------------------------------------------------
+
+opsRouter.get("/health", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const windowHours = Number(c.req.query("windowHours") ?? 24);
+  const snapshot = await evaluateOpsHealth(db, workspaceId, {
+    windowHours: Number.isFinite(windowHours) && windowHours > 0 ? windowHours : 24,
+  });
+  return c.json(snapshot);
+});
+
+opsRouter.post("/health/sweep", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = z
+    .object({ webhookUrl: z.string().url().nullable().optional() })
+    .safeParse(await c.req.json().catch(() => ({})));
+  const snapshot = await evaluateOpsHealth(db, workspaceId);
+  const created = await recordOpsAlerts(db, workspaceId, snapshot, {
+    webhookUrl: parsed.success ? (parsed.data.webhookUrl ?? null) : null,
+  });
+  return c.json({ snapshot, created });
+});
+
+opsRouter.get("/alerts", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const limit = Number(c.req.query("limit") ?? 50);
+  const alerts = await listOpsAlerts(db, workspaceId, { limit });
+  return c.json({ alerts });
+});
+
+opsRouter.post("/alerts/:id/resolve", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const parsed = z
+    .object({ note: z.string().optional() })
+    .safeParse(await c.req.json().catch(() => ({})));
+  const ok = await resolveOpsAlert(
+    db,
+    workspaceId,
+    c.req.param("id"),
+    parsed.success ? parsed.data.note : undefined,
+  );
+  if (!ok) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 opsRouter.get("/dlq", async (c) => {

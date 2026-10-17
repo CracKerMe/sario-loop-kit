@@ -1,6 +1,5 @@
-import { evaluateCondition } from "ts-workflow-engine-lite";
-
 import type { JourneyNodeDef } from "../nodeDefTypes";
+import { evaluateCondition } from "../expression";
 import { delayDataToMs } from "../runtimeUtils";
 import { describeDuration, nodeBase, requireSingleTarget, validateHasOutgoing } from "./helpers";
 
@@ -8,6 +7,56 @@ export const delayDef: JourneyNodeDef<"delay"> = {
   type: "delay",
   compile: (node, ctx) => {
     const target = requireSingleTarget(node, ctx.edges, ctx.warnings);
+
+    // Send-time optimization: one journey node becomes two engine nodes.
+    //   `${id}__sto`  action  — resolve the contact's best hour, seed the
+    //                           wait deadline in instance node-state
+    //   `${id}`       wait    — bounded durable wait that respects the
+    //                           seeded deadline (see resolveWaitDurationMs)
+    // Incoming edges are redirected onto the action via setRedirectIncomingTo.
+    if (node.data.mode === "bestTime") {
+      const maxWaitHours = Math.max(1, Math.min(72, node.data.maxWaitHours ?? 48));
+      const waitNodeId = node.id;
+      const stoId = `${node.id}__sto`;
+      const data = {
+        maxWaitHours,
+        fallbackHour: node.data.fallbackHour ?? 10,
+        waitNodeId,
+      };
+      ctx.setRedirectIncomingTo?.(stoId);
+      ctx.emitExtra?.({
+        ...nodeBase(stoId),
+        type: "action",
+        config: { journeyOp: "stoWait", ...data },
+        action: async (instance: {
+          context?: unknown;
+          state?: { nodes?: Record<string, Record<string, unknown>> };
+        }) => {
+          const handler = ctx.actions?.stoWait;
+          if (!handler) return { ok: false, error: "stoWait handler not configured" };
+          return handler(data, (instance.context ?? {}) as never, {
+            seedWaitDeadline: (deadlineMs: number) => {
+              if (!instance.state) instance.state = { nodes: {} };
+              if (!instance.state.nodes) instance.state.nodes = {};
+              const prior = instance.state.nodes[waitNodeId] ?? {};
+              instance.state.nodes[waitNodeId] = { ...prior, deadline: deadlineMs };
+            },
+          });
+        },
+        next: [waitNodeId],
+      } as Parameters<NonNullable<typeof ctx.emitExtra>>[0]);
+      return {
+        ...nodeBase(waitNodeId),
+        type: "wait",
+        config: {
+          durationMs: maxWaitHours * 3600_000,
+          externalTimer: { enabled: true },
+          durable: true,
+        },
+        next: target ? [target] : [],
+      };
+    }
+
     const config =
       node.data.mode === "until"
         ? { until: node.data.iso, externalTimer: { enabled: true }, durable: true }
@@ -41,12 +90,20 @@ export const delayDef: JourneyNodeDef<"delay"> = {
         ? `wait until ${d.iso}`
         : d.mode === "weekly"
           ? `wait until weekly gate (day ${d.dayOfWeek}, ${String(d.hour).padStart(2, "0")}:${String(d.minute ?? 0).padStart(2, "0")})`
-          : `wait ${describeDuration(delayDataToMs(d))}`;
+          : d.mode === "bestTime"
+            ? `wait until the contact's best engagement hour (max ${d.maxWaitHours ?? 48}h, fallback ${String(d.fallbackHour ?? 10).padStart(2, "0")}:00)`
+            : `wait ${describeDuration(delayDataToMs(d))}`;
     return {
       nodeId: node.id,
       type: "delay",
       description,
-      detail: { mode: d.mode, ms: d.mode === "duration" ? delayDataToMs(d) : null },
+      detail: {
+        mode: d.mode,
+        ms: d.mode === "duration" ? delayDataToMs(d) : null,
+        ...(d.mode === "bestTime"
+          ? { maxWaitHours: d.maxWaitHours ?? 48, fallbackHour: d.fallbackHour ?? 10 }
+          : {}),
+      },
       next: ctx.nextTargets.slice(0, 1),
     };
   },

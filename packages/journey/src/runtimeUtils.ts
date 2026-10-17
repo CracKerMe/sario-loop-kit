@@ -15,6 +15,9 @@ const UNIT_MS: Record<string, number> = {
 export function delayDataToMs(data: JourneyDelayData): number {
   if (data.mode === "until") return 0; // uses until, not durationMs
   if (data.mode === "weekly") return 0; // paired with timeWindow in the builder
+  if (data.mode === "bestTime") {
+    return Math.max(0, Math.round((data.maxWaitHours ?? 48) * 3600_000));
+  }
   if (typeof data.value === "number" && data.unit) {
     return Math.max(0, Math.round(data.value * (UNIT_MS[data.unit] ?? 60_000)));
   }

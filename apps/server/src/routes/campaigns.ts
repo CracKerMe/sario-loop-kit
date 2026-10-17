@@ -55,6 +55,8 @@ const createSchema = z.object({
   replyTo: z.string().email().optional(),
   preheader: z.string().max(500).optional(),
   utm: utmSchema.optional(),
+  /** Per-recipient send-time optimization (STO). */
+  optimizeSendTime: z.boolean().optional(),
 });
 
 const updateSchema = createSchema.partial();

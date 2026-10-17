@@ -360,6 +360,8 @@ function DelayPanel({ d, update }: { d: NodeData; update: UpdateData }) {
               update({ mode: "until", iso: new Date(Date.now() + 24 * 3600_000).toISOString() });
             } else if (next === "weekly") {
               update({ mode: "weekly", dayOfWeek: 1, hour: 10, minute: 0 });
+            } else if (next === "bestTime") {
+              update({ mode: "bestTime", maxWaitHours: 48, fallbackHour: 10 });
             } else {
               const unit = String(d.unit ?? "minutes");
               const value = Number(d.value ?? Math.round(Number(d.ms ?? 300000) / 60000));
@@ -370,8 +372,49 @@ function DelayPanel({ d, update }: { d: NodeData; update: UpdateData }) {
           <option value="duration">Duration</option>
           <option value="until">Until date/time</option>
           <option value="weekly">Weekly slot (pair with Time Window)</option>
+          <option value="bestTime">Best engagement hour (STO)</option>
         </select>
       </InspectorField>
+      {mode === "bestTime" && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <InspectorField label="Max wait (hours)">
+              <Input
+                type="number"
+                min={1}
+                max={72}
+                value={Number(d.maxWaitHours ?? 48)}
+                onChange={(e) =>
+                  update({
+                    mode: "bestTime",
+                    maxWaitHours: Math.max(1, Math.min(72, Number(e.target.value) || 48)),
+                    fallbackHour: Number(d.fallbackHour ?? 10),
+                  })
+                }
+              />
+            </InspectorField>
+            <InspectorField label="Fallback hour (UTC)">
+              <Input
+                type="number"
+                min={0}
+                max={23}
+                value={Number(d.fallbackHour ?? 10)}
+                onChange={(e) =>
+                  update({
+                    mode: "bestTime",
+                    maxWaitHours: Number(d.maxWaitHours ?? 48),
+                    fallbackHour: Math.max(0, Math.min(23, Number(e.target.value) || 10)),
+                  })
+                }
+              />
+            </InspectorField>
+          </div>
+          <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-[10px] leading-relaxed text-sky-800 dark:text-sky-200">
+            Parks the contact until their usual open/click hour (derived from engagement history;
+            workspace average when cold). Capped at the max wait so time-sensitive flows still move.
+          </div>
+        </>
+      )}
       {mode === "until" && (
         <InspectorField label="Until (ISO)">
           <Input

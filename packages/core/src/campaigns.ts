@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { countAudienceMembers, resolveAudienceContacts } from "./audiences";
 import { validateSegmentFilter } from "./segments";
+import { planCampaignSendTimes } from "./sendTime";
 
 /**
  * Campaign lifecycle and the recipient drain.
@@ -50,6 +51,8 @@ export interface Campaign {
   audienceSendableCount: number | null;
   /** When a `scheduled` campaign should start draining. Null otherwise. */
   scheduledAt: Date | null;
+  /** Per-recipient send-time optimization (STO). */
+  optimizeSendTime: boolean;
   recipientCount: number;
   queuedCount: number;
   sentCount: number;
@@ -75,6 +78,8 @@ export interface CampaignRecipient {
   error: string | null;
   createdAt: Date;
   sentAt: Date | null;
+  /** Earliest release time when STO is on. Null = release immediately. */
+  sendAt: Date | null;
 }
 
 /** How many recipients one drain pass takes on. */
@@ -94,6 +99,7 @@ export interface CreateCampaignInput {
   replyTo?: string;
   preheader?: string;
   utm?: { source?: string; medium?: string; campaign?: string };
+  optimizeSendTime?: boolean;
   createdBy?: string;
 }
 
@@ -107,6 +113,7 @@ export interface UpdateCampaignInput {
   replyTo?: string | null;
   preheader?: string | null;
   utm?: { source?: string; medium?: string; campaign?: string } | null;
+  optimizeSendTime?: boolean;
 }
 
 export class CampaignStateError extends Error {}
@@ -126,6 +133,7 @@ export async function createCampaign(db: Db, input: CreateCampaignInput): Promis
       replyTo: input.replyTo ?? null,
       preheader: input.preheader ?? null,
       utm: input.utm ?? null,
+      optimizeSendTime: input.optimizeSendTime ?? false,
       createdBy: input.createdBy ?? null,
     })
     .returning();
@@ -287,6 +295,18 @@ async function materializeCampaign(
     // "excluded 42" instead of silently doing nothing for 42 people.
   });
 
+  // STO: stamp each recipient with the hour they are most likely to
+  // engage. The drain only releases a row once its sendAt has passed, so
+  // a 21:00 reader is not asked to open at 09:00.
+  const sendTimes = existing.optimizeSendTime
+    ? await planCampaignSendTimes(
+        db,
+        workspaceId,
+        resolved.contacts.map((c) => c.id),
+        { maxDelayMs: 48 * 3600_000 },
+      )
+    : null;
+
   let inserted = 0;
   for (let i = 0; i < resolved.contacts.length; i += MATERIALIZE_CHUNK) {
     const chunk = resolved.contacts.slice(i, i + MATERIALIZE_CHUNK);
@@ -299,6 +319,7 @@ async function materializeCampaign(
           workspaceId,
           contactId: contact.id,
           email: contact.email,
+          sendAt: sendTimes?.get(contact.id) ?? null,
         })),
       )
       // A resumed or double-clicked launch must not double-materialize —
@@ -459,7 +480,14 @@ export async function drainCampaign(
   campaignId: string,
   startSend: StartCampaignSend,
   options: { batchSize?: number } = {},
-): Promise<{ queued: number; failed: number; remaining: number; status: CampaignStatus }> {
+): Promise<{
+  queued: number;
+  failed: number;
+  remaining: number;
+  /** Pending rows whose STO sendAt is still in the future. */
+  waitingForSendTime: number;
+  status: CampaignStatus;
+}> {
   const batchSize = Math.max(1, options.batchSize ?? CAMPAIGN_DRAIN_BATCH);
 
   const [initial] = await db.select().from(campaign).where(eq(campaign.id, campaignId)).limit(1);
@@ -471,11 +499,12 @@ export async function drainCampaign(
       queued: 0,
       failed: 0,
       remaining: await countPending(db, campaignId),
+      waitingForSendTime: await countWaitingForSendTime(db, campaignId),
       status: campaignRow.status,
     };
   }
   if (campaignRow.status === "sent") {
-    return { queued: 0, failed: 0, remaining: 0, status: "sent" };
+    return { queued: 0, failed: 0, remaining: 0, waitingForSendTime: 0, status: "sent" };
   }
 
   await db.update(campaign).set({ status: "sending" }).where(eq(campaign.id, campaignId));
@@ -495,7 +524,13 @@ export async function drainCampaign(
       .select()
       .from(campaignRecipient)
       .where(
-        and(eq(campaignRecipient.campaignId, campaignId), eq(campaignRecipient.status, "pending")),
+        and(
+          eq(campaignRecipient.campaignId, campaignId),
+          eq(campaignRecipient.status, "pending"),
+          // STO gate: a recipient with a future sendAt stays pending until
+          // their hour arrives. Null sendAt means "release now".
+          sql`(${campaignRecipient.sendAt} is null or ${campaignRecipient.sendAt} <= now())`,
+        ),
       )
       .orderBy(campaignRecipient.createdAt)
       .limit(batchSize);
@@ -540,10 +575,11 @@ export async function drainCampaign(
   // Derive terminal states from what actually happened, then roll up.
   await syncCampaignRecipientStatuses(db, campaignId);
   const remaining = await countPending(db, campaignId);
+  const waitingForSendTime = await countWaitingForSendTime(db, campaignId);
   const status = await finalizeCampaign(db, campaignId, remaining);
   await refreshCampaignCounters(db, campaignId);
 
-  return { queued, failed, remaining, status };
+  return { queued, failed, remaining, waitingForSendTime, status };
 }
 
 export interface StartCampaignSend {
@@ -568,6 +604,40 @@ async function countPending(db: Db, campaignId: string): Promise<number> {
     .from(campaignRecipient)
     .where(
       and(eq(campaignRecipient.campaignId, campaignId), eq(campaignRecipient.status, "pending")),
+    );
+  return row?.count ?? 0;
+}
+
+/**
+ * How many pending recipients are parked on a future STO sendAt. The drain
+ * must treat these as "not ready" rather than "stuck", or a campaign with
+ * per-contact timing would spin forever waiting for 21:00.
+ */
+async function countWaitingForSendTime(db: Db, campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignRecipient)
+    .where(
+      and(
+        eq(campaignRecipient.campaignId, campaignId),
+        eq(campaignRecipient.status, "pending"),
+        sql`${campaignRecipient.sendAt} is not null and ${campaignRecipient.sendAt} > now()`,
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+/** Ready-to-send right now (pending and past their STO gate, if any). */
+export async function countReadyRecipients(db: Db, campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignRecipient)
+    .where(
+      and(
+        eq(campaignRecipient.campaignId, campaignId),
+        eq(campaignRecipient.status, "pending"),
+        sql`(${campaignRecipient.sendAt} is null or ${campaignRecipient.sendAt} <= now())`,
+      ),
     );
   return row?.count ?? 0;
 }
@@ -870,6 +940,30 @@ export async function listCampaignRecipients(
  * mid-fan-out). Returns every non-terminal campaign so the caller can
  * re-drain it — the pending rows are the queue, so nothing is lost.
  */
+/**
+ * Campaigns whose drain should run again because STO recipients have
+ * become ready. Used by the campaign scheduler tick so a 21:00-best-hour
+ * audience actually gets mail at 21:00 without a human clicking Resume.
+ */
+export async function listStoReadyCampaignIds(db: Db, limit = 20): Promise<string[]> {
+  const rows = await db
+    .select({ id: campaign.id })
+    .from(campaign)
+    .where(
+      and(
+        eq(campaign.status, "sending"),
+        sql`exists (
+          select 1 from campaign_recipient r
+          where r.campaign_id = ${campaign.id}
+            and r.status = 'pending'
+            and (r.send_at is null or r.send_at <= now())
+        )`,
+      ),
+    )
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
 export async function listResumableCampaigns(db: Db, workspaceId?: string): Promise<Campaign[]> {
   const conditions = [inArray(campaign.status, ["queued", "sending"] as const)];
   if (workspaceId) conditions.push(eq(campaign.workspaceId, workspaceId));

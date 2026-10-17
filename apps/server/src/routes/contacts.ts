@@ -1,19 +1,25 @@
 import {
+  assertWithinQuota,
   bulkUpdateContacts,
   contactsToCsv,
   evaluateTriggersForSignal,
   exportContacts,
   getContactById,
   getSuppression,
+  incrementUsage,
   isValidEmail,
   listContactPropertyKeys,
   listContacts,
+  QuotaExceededError,
   recordContactEvent,
+  recordRevenueEvent,
   replaceContactProperties,
+  runIntelligenceHook,
   unsubscribeContact,
   upsertContact,
   type ContactImportRow,
 } from "@loopkit/core";
+import { applyPlayJourneyStarts } from "../intelligenceHooks";
 import { db } from "@loopkit/db";
 import {
   contact,
@@ -109,7 +115,28 @@ contactsRouter.post("/", async (c) => {
   if (!parsed.success)
     return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
 
+  const email = parsed.data.email.trim().toLowerCase();
+  const [existing] = await db
+    .select({ id: contact.id })
+    .from(contact)
+    .where(and(eq(contact.workspaceId, workspaceId), eq(contact.email, email)))
+    .limit(1);
+  if (!existing) {
+    try {
+      await assertWithinQuota(db, workspaceId, "contacts");
+    } catch (error) {
+      if (error instanceof QuotaExceededError) {
+        return c.json(
+          { error: "quota_exceeded", metric: error.metric, limit: error.limit, used: error.used },
+          402,
+        );
+      }
+      throw error;
+    }
+  }
+
   const contactRow = await upsertContact(db, { workspaceId, ...parsed.data });
+  if (!existing) await incrementUsage(db, workspaceId, "contacts");
 
   const engineCtx = getEngine();
   if (engineCtx) {
@@ -119,7 +146,36 @@ contactsRouter.post("/", async (c) => {
     });
   }
 
-  return c.json({ contact: contactRow }, 201);
+  // Lead scoring + signal plays (Apollo-style intelligence layer).
+  const intelligence = await runIntelligenceHook(db, {
+    workspaceId,
+    contactId: contactRow.id,
+    email: contactRow.email,
+    signal: existing
+      ? {
+          kind: "event",
+          eventName: "contact.updated",
+          eventProperties: parsed.data.properties ?? {},
+        }
+      : { kind: "contact_created" },
+  }).catch(() => null);
+  if (intelligence?.plays.journeyStarts.length && engineCtx) {
+    await applyPlayJourneyStarts(db, engineCtx.ctx.engine, intelligence.plays.journeyStarts);
+  }
+
+  return c.json(
+    {
+      contact: {
+        ...contactRow,
+        properties: {
+          ...contactRow.properties,
+          ...(intelligence?.leadScore != null ? { leadScore: intelligence.leadScore } : {}),
+          ...(intelligence?.leadTier ? { leadTier: intelligence.leadTier } : {}),
+        },
+      },
+    },
+    201,
+  );
 });
 
 contactsRouter.post("/import", async (c) => {
@@ -399,6 +455,36 @@ eventsRouter.post("/", async (c) => {
     idempotencyKey,
   });
 
+  // Revenue attribution: order/charge events become revenue rows with
+  // last-touch journey attribution (7d). Idempotent on (ws, orderId, type).
+  if (/^(order\.|charge\.|invoice\.|payment|subscription\.)/i.test(name)) {
+    const props = properties ?? {};
+    const amountRaw =
+      props.amount_cents ??
+      props.amountCents ??
+      props.amount ??
+      (props as { data?: { object?: { amount?: number } } }).data?.object?.amount ??
+      0;
+    const amountCents =
+      typeof amountRaw === "number"
+        ? props.amount_cents !== undefined || props.amountCents !== undefined
+          ? Math.round(amountRaw)
+          : Math.round(amountRaw * 100)
+        : 0;
+    if (amountCents !== 0) {
+      await recordRevenueEvent(db, {
+        workspaceId,
+        contactId: contactRow.id,
+        type: name,
+        orderId: String(props.orderId ?? props.order_id ?? props.id ?? idempotencyKey ?? name),
+        currency: String(props.currency ?? "USD"),
+        amountCents,
+        metadata: props,
+        attributionSource: "event",
+      });
+    }
+  }
+
   const engineCtx = getEngine();
   let woken = 0;
   if (engineCtx) {
@@ -416,5 +502,24 @@ eventsRouter.post("/", async (c) => {
     });
   }
 
-  return c.json({ recorded: recorded !== null, woken }, 201);
+  // Intelligence: recompute score and fire signal plays for this event.
+  const intelligence = await runIntelligenceHook(db, {
+    workspaceId,
+    contactId: contactRow.id,
+    email: contactRow.email,
+    signal: { kind: "event", eventName: name, eventProperties: properties ?? {} },
+  }).catch(() => null);
+  if (intelligence?.plays.journeyStarts.length) {
+    await applyPlayJourneyStarts(db, engineCtx?.ctx.engine, intelligence.plays.journeyStarts);
+  }
+
+  return c.json(
+    {
+      recorded: recorded !== null,
+      woken,
+      leadScore: intelligence?.leadScore,
+      leadTier: intelligence?.leadTier,
+    },
+    201,
+  );
 });

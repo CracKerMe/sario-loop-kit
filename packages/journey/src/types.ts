@@ -38,6 +38,19 @@ export type JourneyDelayData =
       dayOfWeek: number;
       hour: number;
       minute?: number;
+    }
+  | {
+      /**
+       * Send-time optimization: wait until the contact's next preferred
+       * engagement hour (derived from open/click history, workspace
+       * fallback). Compiled to a preparatory action + a bounded wait —
+       * see delayDef / compile.ts.
+       */
+      mode: "bestTime";
+      /** Upper bound on how long we will park the contact. Default 48h. */
+      maxWaitHours?: number;
+      /** Used when the contact has no engagement history. Default 10. */
+      fallbackHour?: number;
     };
 
 export interface JourneyEmailData {
@@ -226,5 +239,22 @@ export interface JourneyCompileActions {
     data: JourneyGoalData,
     ctx: JourneyRuntimeContext,
     meta: { nodeId: string; journeyId?: string; journeyRunId?: string },
+  ) => Promise<unknown>;
+  /**
+   * Resolves the contact's next preferred send time and seeds the
+   * companion wait node's deadline. Injected by packages/core; omitted in
+   * pure tooling (dry-run then reports a synthetic window).
+   */
+  stoWait?: (
+    data: { maxWaitHours?: number; fallbackHour?: number; waitNodeId: string },
+    ctx: JourneyRuntimeContext,
+    meta: {
+      /**
+       * Writes `deadline` (epoch ms) into the companion wait node's
+       * instance state so `resolveWaitDurationMs` respects it instead of
+       * the compiled upper bound.
+       */
+      seedWaitDeadline: (deadlineMs: number) => void;
+    },
   ) => Promise<unknown>;
 }

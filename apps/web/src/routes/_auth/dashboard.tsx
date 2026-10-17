@@ -4,6 +4,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ActivityIcon,
   ArrowRightIcon,
+  BadgeDollarSignIcon,
   FilterIcon,
   MailIcon,
   MousePointerClickIcon,
@@ -192,10 +193,10 @@ const QUICK_ACTIONS: {
     icon: MailIcon,
   },
   {
-    title: "Connect your app",
-    body: "API keys for contacts, events, and transactional send.",
+    title: "Capture leads",
+    body: "Embeddable signup forms with preference topics and double opt-in.",
     to: "/settings/$tab",
-    params: { tab: "api-keys" },
+    params: { tab: "forms" },
     icon: FilterIcon,
   },
 ];
@@ -204,12 +205,26 @@ function DashboardPage() {
   const { session } = Route.useRouteContext();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
+  const [revenueCents, setRevenueCents] = useState(0);
+  const [opsHealth, setOpsHealth] = useState<{
+    healthy: boolean;
+    findings: { kind: string; title: string; detail: string; severity: string }[];
+    current: { bouncedRate: number; complainedRate: number; openRate: number };
+  } | null>(null);
 
   useEffect(() => {
     void api
       .stats()
       .then((r) => setStats(r.stats))
       .catch(() => setStats(null));
+    void api
+      .revenueReport()
+      .then((r) => setRevenueCents(r.rows.reduce((sum, row) => sum + row.amountCents, 0)))
+      .catch(() => setRevenueCents(0));
+    void api
+      .opsHealth(24)
+      .then((r) => setOpsHealth(r))
+      .catch(() => setOpsHealth(null));
   }, []);
 
   const journeysByStatus = (stats?.journeysByStatus as Record<string, number>) ?? {};
@@ -269,13 +284,46 @@ function DashboardPage() {
           onClick={() => void navigate({ to: "/templates" })}
         />
         <Stat
-          label="Runs in flight"
-          value={runsByStatus.running ?? 0}
-          icon={ActivityIcon}
-          tone="bg-sky-500/10 text-sky-500 dark:text-sky-300"
-          onClick={() => void navigate({ to: "/journeys" })}
+          label="Attributed revenue"
+          value={
+            revenueCents > 0
+              ? new Intl.NumberFormat(undefined, {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                }).format(revenueCents / 100)
+              : "$0"
+          }
+          icon={BadgeDollarSignIcon}
+          tone="bg-rose-500/10 text-rose-500 dark:text-rose-300"
+          onClick={() => void navigate({ to: "/settings/$tab", params: { tab: "revenue" } })}
         />
       </div>
+
+      {opsHealth && (
+        <div
+          className={cn(
+            "mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border px-3 py-2 text-xs",
+            opsHealth.healthy
+              ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200"
+              : "border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-100",
+          )}
+        >
+          <span className="font-medium">
+            {opsHealth.healthy ? "发送健康" : `发现 ${opsHealth.findings.length} 项异常`}
+          </span>
+          <span className="text-muted-foreground">
+            退信 {(opsHealth.current.bouncedRate * 100).toFixed(2)}% · 投诉{" "}
+            {(opsHealth.current.complainedRate * 100).toFixed(3)}% · 打开{" "}
+            {(opsHealth.current.openRate * 100).toFixed(1)}%
+          </span>
+          {opsHealth.findings.slice(0, 2).map((f) => (
+            <span key={f.kind} className="rounded-full bg-background/60 px-2 py-0.5">
+              {f.title}：{f.detail}
+            </span>
+          ))}
+        </div>
+      )}
 
       {stats && emailTotal === 0 && activeAutomations === 0 && (
         <Card className="lk-fade-up mt-4 border-primary/20 bg-primary/5">

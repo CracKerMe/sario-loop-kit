@@ -25,6 +25,14 @@ const TABLES = [
   schema.wfWorkflow,
   schema.wfWorkflowMeta,
   schema.wfNodeMetric,
+  schema.wfDlq,
+  // Platform expansion tables (forms, billing, experiments, revenue, ops…).
+  ...schema.platformTables,
+  ...schema.intelligenceTables,
+  ...schema.gtmTables,
+  schema.session,
+  schema.account,
+  schema.user,
   schema.workspace,
 ] as const;
 

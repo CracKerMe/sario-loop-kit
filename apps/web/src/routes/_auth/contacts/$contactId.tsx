@@ -6,6 +6,8 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BanIcon,
+  BadgeDollarSignIcon,
+  Building2Icon,
   CalendarDaysIcon,
   MailIcon,
   MailOpenIcon,
@@ -14,6 +16,7 @@ import {
   PlusIcon,
   ShieldCheckIcon,
   Trash2Icon,
+  TrendingUpIcon,
   UserRoundIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -22,7 +25,16 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Dialog } from "@/components/dialog";
 import { StatusBadge } from "@/components/status-badge";
-import { api, type ContactDto, type ContactEventDto } from "@/lib/api";
+import {
+  api,
+  type CompanyDto,
+  type ContactDto,
+  type ContactEventDto,
+  type ContactLtvDto,
+  type MeetingDto,
+  type MeetingSettingsDto,
+  type TaskDto,
+} from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_auth/contacts/$contactId")({
@@ -44,16 +56,40 @@ function ContactDetailPage() {
   const [editingProperties, setEditingProperties] = useState(false);
   const [propertyDraft, setPropertyDraft] = useState<[string, string][]>([]);
   const [savingProperties, setSavingProperties] = useState(false);
+  const [ltv, setLtv] = useState<ContactLtvDto | null>(null);
+  const [tasks, setTasks] = useState<TaskDto[]>([]);
+  const [meeting, setMeeting] = useState<MeetingSettingsDto | null>(null);
+  const [meetings, setMeetings] = useState<MeetingDto[]>([]);
+  const [company, setCompany] = useState<CompanyDto | null>(null);
 
   const load = async () => {
     try {
-      const [res, act] = await Promise.all([
+      const [res, act, ltvRes, taskRes, meetingRes, meetingsRes] = await Promise.all([
         api.contact(contactId),
         api.contactActivity(contactId).catch(() => null),
+        api.contactLtv(contactId).catch(() => null),
+        api
+          .tasks({ contactId, status: "open", limit: 5 })
+          .catch(() => ({ tasks: [], stats: { open: 0, done: 0, dismissed: 0, total: 0 } })),
+        api.meetingSettings().catch(() => null),
+        api.meetings({ contactId, limit: 5 }).catch(() => ({ meetings: [] })),
       ]);
       setContact(res.contact);
       setEvents(res.events);
       setActivity(act);
+      setLtv(ltvRes?.ltv ?? null);
+      setTasks(taskRes.tasks ?? []);
+      setMeeting(meetingRes?.settings ?? null);
+      setMeetings(meetingsRes.meetings ?? []);
+
+      // Company from linked id or email domain rollup.
+      const companyId = res.contact.properties?.companyId;
+      if (typeof companyId === "string" && companyId) {
+        const comp = await api.company(companyId).catch(() => null);
+        setCompany(comp?.company ?? null);
+      } else {
+        setCompany(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load contact");
     } finally {
@@ -162,9 +198,32 @@ function ContactDetailPage() {
             {contact.email}
           </span>
         }
-        description={`Contact since ${new Date(
-          contact.createdAt ?? Date.now(),
-        ).toLocaleDateString()}`}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            Contact since {new Date(contact.createdAt ?? Date.now()).toLocaleDateString()}
+            {(() => {
+              const score = contact.properties?.leadScore;
+              const tier = contact.properties?.leadTier;
+              if (typeof score !== "number" && !tier) return null;
+              const tone =
+                tier === "hot"
+                  ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300"
+                  : tier === "warm"
+                    ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    : "border-border bg-muted text-muted-foreground";
+              return (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}
+                  title="Lead score from scoring rules"
+                >
+                  <TrendingUpIcon className="size-3" aria-hidden="true" />
+                  {typeof score === "number" ? score : "—"}
+                  {tier ? ` · ${tier}` : ""}
+                </span>
+              );
+            })()}
+          </span>
+        }
         actions={
           contact.subscribed ? (
             <Button variant="outline" size="sm" onClick={() => void unsubscribe()}>
@@ -256,6 +315,131 @@ function ContactDetailPage() {
             <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
               <MailIcon className="size-3.5" aria-hidden="true" />
               <span className="font-mono">{contact.id}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2Icon className="size-4 text-primary" aria-hidden="true" />
+              Account & follow-up
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Company</span>
+              <span className="font-medium">
+                {company
+                  ? `${company.name} (${company.domain})`
+                  : String(
+                      contact.properties?.companyName ?? contact.properties?.companyDomain ?? "—",
+                    )}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Open tasks</span>
+              <span className="font-medium">{tasks.length}</span>
+            </div>
+            {tasks.slice(0, 3).map((task) => (
+              <div
+                key={task.id}
+                className="truncate rounded-md border border-border/60 px-2 py-1.5 text-[11px]"
+              >
+                <span className="font-medium">{task.title}</span>
+                <span className="ml-1 text-muted-foreground">{task.kind}</span>
+              </div>
+            ))}
+            {meetings.length > 0 && (
+              <>
+                <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Meetings
+                </div>
+                {meetings.slice(0, 3).map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-2 py-1.5 text-[11px]"
+                  >
+                    <span className="truncate font-medium">{m.title}</span>
+                    <span className="ml-2 shrink-0 text-muted-foreground">
+                      {new Date(m.startsAt).toLocaleDateString()} · {m.status}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+            {meeting?.bookingUrl && (
+              <a
+                href={`${meeting.bookingUrl}?email=${encodeURIComponent(contact.email)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-primary hover:underline"
+              >
+                <CalendarDaysIcon className="size-3.5" aria-hidden="true" />
+                {meeting.ctaLabel || "Book a meeting"}
+              </a>
+            )}
+            <button
+              type="button"
+              className="inline-flex w-fit items-center gap-1.5 text-[11px] text-primary hover:underline"
+              onClick={() => {
+                void api
+                  .createTask({
+                    contactId: contact.id,
+                    title: `Follow up with ${contact.email}`,
+                    kind: "call",
+                    source: "manual",
+                  })
+                  .then(() => {
+                    toast.success("Task created");
+                    void load();
+                  })
+                  .catch(() => toast.error("Could not create task"));
+              }}
+            >
+              <PlusIcon className="size-3" aria-hidden="true" />
+              Create follow-up task
+            </button>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BadgeDollarSignIcon className="size-4 text-primary" aria-hidden="true" />
+              Lifetime value
+              <Link
+                to="/settings/$tab"
+                params={{ tab: "revenue" }}
+                className="ml-auto text-[11px] font-normal text-primary hover:underline"
+              >
+                Revenue report
+              </Link>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-xs sm:grid-cols-3">
+            <div>
+              <div className="text-[11px] text-muted-foreground uppercase">LTV</div>
+              <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                {ltv
+                  ? new Intl.NumberFormat(undefined, {
+                      style: "currency",
+                      currency: (ltv.currency || "usd").toUpperCase(),
+                    }).format(ltv.ltvCents / 100)
+                  : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground uppercase">Orders</div>
+              <div className="mt-0.5 text-lg font-semibold tabular-nums">
+                {ltv?.orderCount ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground uppercase">Source</div>
+              <div className="mt-1 text-muted-foreground">
+                Last-touch attribution from order / charge events and integrations.
+              </div>
             </div>
           </CardContent>
         </Card>

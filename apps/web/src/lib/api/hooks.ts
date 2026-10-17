@@ -65,6 +65,22 @@ export const queryKeys = {
   suppressions: {
     all: ["suppressions"] as const,
   },
+  platform: {
+    forms: ["platform", "forms"] as const,
+    domains: ["platform", "domains"] as const,
+    billing: ["platform", "billing"] as const,
+    topics: ["platform", "topics"] as const,
+    members: ["platform", "members"] as const,
+    audit: (params: Record<string, unknown>) => ["platform", "audit", params] as const,
+    channels: ["platform", "channels"] as const,
+    integrations: ["platform", "integrations"] as const,
+    revenue: (params: Record<string, unknown>) => ["platform", "revenue", params] as const,
+    contactLtv: (contactId: string) => ["platform", "revenue", "ltv", contactId] as const,
+    experiments: ["platform", "experiments"] as const,
+    experiment: (id: string) => ["platform", "experiments", id] as const,
+    privacyJobs: ["platform", "privacy-jobs"] as const,
+    contactTopics: (contactId: string) => ["platform", "contact-topics", contactId] as const,
+  },
   ops: {
     stats: ["ops", "stats"] as const,
     dlq: ["ops", "dlq"] as const,

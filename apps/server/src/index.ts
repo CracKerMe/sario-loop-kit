@@ -17,6 +17,33 @@ import { publicRouter } from "./routes/public";
 import { suppressionsRouter } from "./routes/suppressions";
 import { transactionalRouter } from "./routes/transactional";
 import { webhooksRouter } from "./routes/webhooks";
+import {
+  auditRouter,
+  billingRouter,
+  channelsRouter,
+  compliancePublicRouter,
+  complianceRouter,
+  contactTopicsRouter,
+  domainsRouter,
+  experimentsRouter,
+  formsPublicRouter,
+  formsRouter,
+  integrationsPublicRouter,
+  integrationsRouter,
+  invitesPublicRouter,
+  journeyCodeRouter,
+  membersRouter,
+  metricsRouter,
+  revenueRouter,
+  topicsRouter,
+} from "./routes/platform";
+import {
+  playsRouter,
+  scoringRouter,
+  signalsPublicRouter,
+  signalsRouter,
+} from "./routes/intelligence";
+import { companiesRouter, meetingsPublicRouter, meetingsRouter, tasksRouter } from "./routes/gtm";
 import { acquireInstanceLock } from "./instanceLock";
 import { requireAuth, requireScope, type AuthVariables } from "./middleware/auth";
 import {
@@ -24,7 +51,8 @@ import {
   startCampaignScheduler,
   stopCampaignScheduler,
 } from "./campaignRunner";
-import { startEngine, stopEngine } from "./loopkitRuntime";
+import { startMeetingReminderPoller, stopMeetingReminderPoller } from "./meetingMailer";
+import { getEngine, startEngine, stopEngine } from "./loopkitRuntime";
 
 initLogger({
   env: { service: "loopkit-server" },
@@ -164,6 +192,32 @@ app.route("/v1/public", publicRouter);
 
 // Public — verified by the provider's own webhook signature, not session/API-key auth.
 app.route("/v1/webhooks", webhooksRouter);
+app.route("/v1/forms", formsRouter);
+app.route("/v1/domains", domainsRouter);
+app.route("/v1/billing", billingRouter);
+app.route("/v1/topics", topicsRouter);
+app.route("/v1", contactTopicsRouter);
+app.route("/v1/members", membersRouter);
+app.route("/v1/audit", auditRouter);
+app.route("/v1/channels", channelsRouter);
+app.route("/v1/integrations", integrationsRouter);
+app.route("/v1/revenue", revenueRouter);
+app.route("/v1/experiments", experimentsRouter);
+app.route("/v1", journeyCodeRouter);
+app.route("/v1/compliance", complianceRouter);
+app.route("/v1/scoring", scoringRouter);
+app.route("/v1/plays", playsRouter);
+app.route("/v1/signals", signalsRouter);
+app.route("/v1/meetings", meetingsRouter);
+app.route("/v1/tasks", tasksRouter);
+app.route("/v1/companies", companiesRouter);
+app.route("/v1", meetingsPublicRouter);
+app.route("/v1", metricsRouter);
+app.route("/v1", formsPublicRouter);
+app.route("/v1", invitesPublicRouter);
+app.route("/v1", integrationsPublicRouter);
+app.route("/v1", compliancePublicRouter);
+app.route("/v1", signalsPublicRouter);
 
 import { serve } from "@hono/node-server";
 
@@ -200,6 +254,15 @@ async function main() {
   // than routed through packages/timers.
   startCampaignScheduler();
 
+  // Pre-meeting reminder emails. Same single-process poller shape.
+  const engine = getEngine();
+  if (engine) {
+    startMeetingReminderPoller({
+      provider: engine.emailProvider,
+      defaultFrom: process.env.DEFAULT_FROM_EMAIL ?? "noreply@loopkit.dev",
+    });
+  }
+
   const server = serve(
     {
       fetch: app.fetch,
@@ -213,6 +276,7 @@ async function main() {
   const shutdown = async () => {
     server.close();
     stopCampaignScheduler();
+    stopMeetingReminderPoller();
     await stopEngine();
     await lock.release();
     process.exit(0);

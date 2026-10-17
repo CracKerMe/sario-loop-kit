@@ -72,5 +72,22 @@ describe("createJourneyCompileActions (db-backed)", () => {
 
     const afterGoal = await getContactById(db, "ws-act", contact.id);
     expect(afterGoal?.properties.lastGoal).toBe("goal.activated");
+
+    // Goal → Task: conversions hand sales a to-do automatically.
+    const { listTasks } = await import("@loopkit/core");
+    const tasks = await listTasks(db, "ws-act", { contactId: contact.id });
+    const goalTask = tasks.find((t) => t.source === "goal");
+    expect(goalTask).toBeTruthy();
+    expect(goalTask!.title).toContain("activated");
+    expect((goal as { taskId?: string | null }).taskId).toBe(goalTask!.id);
+
+    // Re-entrant goal (same run+node) must not double-create the task.
+    await actions.goal(
+      { name: "activated", value: 1 },
+      { contactId: contact.id, workspaceId: "ws-act", journeyId: "j1", journeyRunId: "r1" },
+      { nodeId: "goal_1", journeyId: "j1", journeyRunId: "r1" },
+    );
+    const again = await listTasks(db, "ws-act", { contactId: contact.id });
+    expect(again.filter((t) => t.source === "goal")).toHaveLength(1);
   });
 });

@@ -20,6 +20,19 @@ export interface CompileNodeContext {
   incomingSources: string[];
   warnings: string[];
   actions?: JourneyCompileActions;
+  /**
+   * Emit an additional engine node alongside the primary one. Used by
+   * delay `bestTime`, which compiles to a preparatory action + a wait
+   * (two engine nodes from one journey node). The caller's `nodes` map
+   * collects extras; incoming-edge rewiring is signaled via
+   * `redirectIncomingTo`.
+   */
+  emitExtra?: (node: TaskNode) => void;
+  /**
+   * When set on a compile result path, the compile shell retargets every
+   * edge that pointed at this journey node to the given engine node id.
+   */
+  setRedirectIncomingTo?: (id: string) => void;
 }
 
 export interface ValidateNodeContext {

@@ -61,6 +61,28 @@ Three products share one email channel (`packages/email`). Pick by intent — do
 
 **Compliance** is dual-gated by design: `contact.subscribed` (identity) + `suppression` (address facts). Contact detail shows both (Contact 360).
 
+## Measurement & intelligence
+
+These are not CRUD knobs — they answer "did the automation work?" and "when should we send?".
+
+| Capability | Where | What it does |
+| --- | --- | --- |
+| **Holdout & lift** | Journey → Activity → Lift | Deterministic control group (`journey.holdoutPercent`). Holdout contacts are recorded but never enter the engine. Report: conversion rate per arm, relative/absolute lift, two-proportion z-score, operator verdict. |
+| **Send-time optimization** | Delay `bestTime` mode + Campaign "STO" | Engagement-hour profile from open/click history (clicks weigh 3× opens). Journeys park until the contact's preferred hour (capped by `maxWaitHours`); campaigns stamp per-recipient `sendAt` at materialize and the drain only releases when due. |
+| **Ops health** | Home strip + `GET /v1/ops/health` | Window-vs-window spike detection: bounce, complaint, failure, DLQ growth, open-rate drop. Threshold + delta (not ML) so the finding is explainable. Alerts dedupe per hour bucket; optional webhook. |
+
+API surface additions:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| PATCH | `/v1/journeys/:id/holdout` | Set holdout % (clamped 0–50) + goal event |
+| GET | `/v1/journeys/:id/lift` | Incremental lift report |
+| GET | `/v1/journeys/send-time/profile` | Workspace engagement-hour profile |
+| GET | `/v1/journeys/send-time/profile/:contactId` | Per-contact STO profile |
+| GET | `/v1/ops/health` | Health snapshot + findings |
+| POST | `/v1/ops/health/sweep` | Evaluate + persist alerts |
+| GET/POST | `/v1/ops/alerts` · `/v1/ops/alerts/:id/resolve` | Alert list / acknowledge |
+
 ## API surface
 
 | Method   | Path                       | Auth               | Purpose                                      |
@@ -141,7 +163,7 @@ Source of truth is `journey_version.graph` (React Flow nodes/edges). Node ids ar
 | Journey node    | Engine node                                       | Purpose                                                        |
 | --------------- | ------------------------------------------------- | -------------------------------------------------------------- |
 | trigger         | — (startNode via first edge)                      | Entry: contact_created / event / property_changed / manual     |
-| delay           | `wait` + `externalTimer.enabled`                  | Duration (min/h/d/w), absolute `until`, weekly slot helper     |
+| delay           | `wait` + `externalTimer.enabled`                  | Duration (min/h/d/w), absolute `until`, weekly slot, **bestTime (STO)** |
 | email           | `notification` channel `loopkit-email`            | Templated email + subject/preheader/from/replyTo/UTM overrides |
 | notify          | `http` POST                                       | Team webhook (Slack/Discord/飞书/Zapier)                       |
 | branch / filter | `condition`                                       | Expression true/false                                          |

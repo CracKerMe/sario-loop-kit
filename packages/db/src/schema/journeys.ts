@@ -36,6 +36,20 @@ export const journey = pgTable(
       .$type<"once" | "once_at_a_time" | "always">()
       .notNull()
       .default("once"),
+    /**
+     * Holdout (control) group — the scientific half of "does this journey
+     * work?". 0 = off. When > 0, a deterministic share of eligible contacts
+     * is recorded as enrolled but never handed to the engine, so their
+     * downstream behaviour stays untouched. Lift is measured against that
+     * baseline (see core's holdout.ts).
+     */
+    holdoutPercent: integer("holdout_percent").notNull().default(0),
+    /**
+     * Goal event name used as the conversion signal in the lift report,
+     * e.g. "order.placed" or "goal.upgraded". Null falls back to any
+     * `goal.*` contact event after enrollment.
+     */
+    holdoutGoalEvent: text("holdout_goal_event"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -100,6 +114,13 @@ export const journeyRun = pgTable(
     status: text("status")
       .$type<"pending" | "running" | "completed" | "failed" | "cancelled" | "exited">()
       .notNull(),
+    /**
+     * Experiment cohort for holdout measurement.
+     * `holdout` rows are recorded at enrollment time and never start an
+     * engine instance — they are the control group. Null on legacy rows
+     * means exposed.
+     */
+    cohort: text("cohort").$type<"exposed" | "holdout">().notNull().default("exposed"),
     /**
      * Set to `true` at insert time only when the journey's reentry mode
      * is "once_at_a_time"; left `null` for "once" (gated in application

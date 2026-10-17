@@ -1,5 +1,14 @@
 import { relations, sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 import { contact } from "./contacts";
 import { workspace } from "./workspace";
@@ -103,6 +112,13 @@ export const campaign = pgTable(
      * unscheduled back to `draft`, or once it starts sending.
      */
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    /**
+     * Per-recipient send-time optimization. When true, materialization
+     * stamps each recipient with a `sendAt` derived from that contact's
+     * engagement-hour profile (falls back to the workspace profile). The
+     * drain only releases a recipient once its `sendAt` has passed.
+     */
+    optimizeSendTime: boolean("optimize_send_time").notNull().default(false),
     recipientCount: integer("recipient_count").notNull().default(0),
     queuedCount: integer("queued_count").notNull().default(0),
     sentCount: integer("sent_count").notNull().default(0),
@@ -169,6 +185,12 @@ export const campaignRecipient = pgTable(
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    /**
+     * Earliest time this recipient should receive the send. Set at
+     * materialization when the campaign has `optimizeSendTime`. Null means
+     * "send as soon as the drain reaches me".
+     */
+    sendAt: timestamp("send_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("campaign_recipient_uidx").on(t.campaignId, t.contactId),

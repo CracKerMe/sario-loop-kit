@@ -8,3 +8,6 @@ export * from "./email";
 export * from "./suppressions";
 export * from "./timers";
 export * from "./engine";
+export * from "./platform";
+export * from "./intelligence";
+export * from "./gtm";

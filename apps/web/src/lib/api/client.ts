@@ -33,18 +33,68 @@ import type {
   JourneyDryRunResultDto,
   JourneyDto,
   JourneyGraphDto,
+  JourneyLiftReportDto,
   JourneyOptimizationDto,
   JourneyOptimizationProposeDto,
   JourneyRunDto,
   JourneySimulationDto,
   MigrationInput,
   NodeEmailEngagementDto,
+  OpsAlertDto,
+  OpsHealthSnapshotDto,
   RunMigrationResultDto,
   SegmentFilterDto,
+  AuditLogDto,
+  BillingSubscriptionDto,
+  ChannelConnectionDto,
+  ChannelKindDto,
+  ContactLtvDto,
+  ContactTopicDto,
+  FormDto,
+  FormFieldDto,
+  FormStyleDto,
+  IntegrationDto,
+  IntegrationKindDto,
+  InvitePreviewDto,
+  IssuedIntegrationDto,
+  JourneyExportDto,
+  MessageSendDto,
+  PlanQuotaDto,
+  PlanTierDto,
+  PreferenceTopicDto,
+  PrivacyJobDto,
+  RevenueEventDto,
+  RevenueReportRowDto,
+  SendExperimentDto,
+  SendExperimentResultDto,
+  SendExperimentVariantDto,
+  SendingDomainDto,
   SuppressionCountsDto,
   SuppressionDto,
   UnsubscribeContextDto,
+  UsageDto,
   ValidationResult,
+  WorkspaceInviteDto,
+  WorkspaceMemberDto,
+  LeadScoreRuleDto,
+  LeadScoreRuleInputDto,
+  MeetingHostDto,
+  MeetingOutcomeIntelDto,
+  MeetingPrepBriefDto,
+  MeetingSettingsDto,
+  MeetingTypeDto,
+  MeetingDto,
+  PageViewDto,
+  CompanyContactDto,
+  CompanyDto,
+  PlayDto,
+  PlayInputDto,
+  PublicBookingPayloadDto,
+  SignalSettingsDto,
+  SlotDto,
+  TaskDto,
+  TaskKindDto,
+  TaskStatsDto,
 } from "./types";
 
 export const api = {
@@ -93,6 +143,28 @@ export const api = {
       runCounts: Record<string, number>;
       emailEngagement: NodeEmailEngagementDto[];
     }>(`/v1/journeys/${id}/funnel`),
+
+  /* Holdout & incremental lift ---------------------------------------- */
+  journeyLift: (id: string, params: { since?: string; goalEvent?: string } = {}) =>
+    request<JourneyLiftReportDto>(`/v1/journeys/${id}/lift${qs(params)}`),
+  updateJourneyHoldout: (
+    id: string,
+    body: { holdoutPercent?: number; holdoutGoalEvent?: string | null },
+  ) =>
+    request<{ ok: true; report: JourneyLiftReportDto | null }>(`/v1/journeys/${id}/holdout`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  /* Ops health --------------------------------------------------------- */
+  opsHealth: (windowHours = 24) =>
+    request<OpsHealthSnapshotDto>(`/v1/ops/health${qs({ windowHours })}`),
+  opsAlerts: (limit = 50) => request<{ alerts: OpsAlertDto[] }>(`/v1/ops/alerts${qs({ limit })}`),
+  resolveOpsAlert: (id: string, note?: string) =>
+    request<{ ok: true }>(`/v1/ops/alerts/${id}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
 
   /* Lab: dry-run / simulate / optimize / canary / migrate --------------- */
   journeyDryRun: (id: string, body: { contactId: string; stopAfterNode?: string }) =>
@@ -337,6 +409,7 @@ export const api = {
     preheader?: string;
     fromName?: string;
     replyTo?: string;
+    optimizeSendTime?: boolean;
   }) =>
     request<{ campaign: CampaignDto }>("/v1/campaigns", {
       method: "POST",
@@ -352,6 +425,7 @@ export const api = {
       preheader?: string;
       fromName?: string;
       replyTo?: string;
+      optimizeSendTime?: boolean;
     },
   ) =>
     request<{ campaign: CampaignDto }>(`/v1/campaigns/${id}`, {
@@ -416,14 +490,544 @@ export const api = {
   /* Public (signed token is the capability) ---------------------------- */
   unsubscribeContext: (token: string) =>
     request<UnsubscribeContextDto>(`/v1/public/unsubscribe?token=${encodeURIComponent(token)}`),
-  submitUnsubscribe: (token: string, action: "unsubscribe" | "resubscribe") =>
-    request<{ ok: boolean; subscribed?: boolean; error?: string; message?: string }>(
-      "/v1/public/unsubscribe",
+  submitUnsubscribe: (
+    token: string,
+    action: "unsubscribe" | "resubscribe",
+    topics?: { topicId: string; subscribed: boolean }[],
+  ) =>
+    request<{
+      ok: boolean;
+      subscribed?: boolean;
+      topics?: ContactTopicDto[];
+      error?: string;
+      message?: string;
+    }>("/v1/public/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({ token, action, topics }),
+    }),
+
+  /* Platform: forms --------------------------------------------------- */
+  forms: () => request<{ forms: FormDto[] }>("/v1/forms"),
+  form: (id: string) => request<{ form: FormDto }>(`/v1/forms/${id}`),
+  createForm: (input: {
+    name: string;
+    slug: string;
+    kind?: "inline" | "popup" | "floating";
+    fields?: FormFieldDto[];
+    topicIds?: string[];
+    doubleOptIn?: boolean;
+    successMessage?: string;
+    redirectUrl?: string | null;
+    style?: FormStyleDto;
+  }) => request<{ form: FormDto }>("/v1/forms", { method: "POST", body: JSON.stringify(input) }),
+  updateForm: (
+    id: string,
+    input: Partial<{
+      name: string;
+      status: "draft" | "published" | "archived";
+      kind: "inline" | "popup" | "floating";
+      fields: FormFieldDto[];
+      topicIds: string[];
+      doubleOptIn: boolean;
+      successMessage: string;
+      redirectUrl: string | null;
+      style: FormStyleDto;
+    }>,
+  ) =>
+    request<{ form: FormDto }>(`/v1/forms/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteForm: (id: string) => request<{ ok: true }>(`/v1/forms/${id}`, { method: "DELETE" }),
+
+  /* Platform: sending domains ------------------------------------------ */
+  domains: () => request<{ domains: SendingDomainDto[] }>("/v1/domains"),
+  createDomain: (input: {
+    domain: string;
+    fromName?: string;
+    fromEmail?: string;
+    replyTo?: string;
+  }) =>
+    request<{ domain: SendingDomainDto }>("/v1/domains", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  verifyDomain: (id: string, body: { manual?: boolean; resolvedHosts?: string[] } = {}) =>
+    request<{ domain: SendingDomainDto }>(`/v1/domains/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteDomain: (id: string) => request<{ ok: true }>(`/v1/domains/${id}`, { method: "DELETE" }),
+
+  /* Platform: billing -------------------------------------------------- */
+  billing: () =>
+    request<{
+      subscription: BillingSubscriptionDto;
+      usage: UsageDto;
+      plans: Record<PlanTierDto, PlanQuotaDto>;
+    }>("/v1/billing"),
+  changePlan: (plan: PlanTierDto) =>
+    request<{ subscription: BillingSubscriptionDto }>("/v1/billing/plan", {
+      method: "POST",
+      body: JSON.stringify({ plan }),
+    }),
+
+  /* Platform: preference topics ---------------------------------------- */
+  topics: () => request<{ topics: PreferenceTopicDto[] }>("/v1/topics"),
+  createTopic: (input: {
+    key: string;
+    name: string;
+    description?: string | null;
+    category?: "marketing" | "product" | "transactional";
+    sortOrder?: number;
+    active?: boolean;
+  }) =>
+    request<{ topic: PreferenceTopicDto }>("/v1/topics", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateTopic: (
+    id: string,
+    input: {
+      key: string;
+      name: string;
+      description?: string | null;
+      category?: "marketing" | "product" | "transactional";
+      sortOrder?: number;
+      active?: boolean;
+    },
+  ) =>
+    request<{ topic: PreferenceTopicDto }>(`/v1/topics/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  deleteTopic: (id: string) => request<{ ok: true }>(`/v1/topics/${id}`, { method: "DELETE" }),
+
+  /* Platform: contact topics ------------------------------------------- */
+  contactTopics: (contactId: string) =>
+    request<{ topics: ContactTopicDto[] }>(`/v1/contacts/${contactId}/topics`),
+  updateContactTopics: (contactId: string, topics: { topicId: string; subscribed: boolean }[]) =>
+    request<{ topics: ContactTopicDto[] }>(`/v1/contacts/${contactId}/topics`, {
+      method: "PUT",
+      body: JSON.stringify({ topics }),
+    }),
+
+  /* Platform: members / invites ---------------------------------------- */
+  members: () =>
+    request<{ members: WorkspaceMemberDto[]; invites: WorkspaceInviteDto[] }>("/v1/members"),
+  inviteMember: (input: { email: string; role: "owner" | "admin" | "member" }) =>
+    request<{ invite: WorkspaceInviteDto; token: string }>("/v1/members/invites", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateMemberRole: (id: string, role: "owner" | "admin" | "member") =>
+    request<{ member: WorkspaceMemberDto }>(`/v1/members/${id}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+  invitePreview: (token: string) =>
+    request<InvitePreviewDto>(`/v1/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) =>
+    request<{ member: unknown }>(`/v1/invites/${encodeURIComponent(token)}/accept`, {
+      method: "POST",
+    }),
+
+  /* Platform: audit ---------------------------------------------------- */
+  auditLogs: (params: { action?: string; limit?: number } = {}) =>
+    request<{ logs: AuditLogDto[] }>(`/v1/audit${qs(params)}`),
+
+  /* Platform: channels ------------------------------------------------- */
+  channels: () => request<{ channels: ChannelConnectionDto[] }>("/v1/channels"),
+  upsertChannel: (input: {
+    channel: ChannelKindDto;
+    provider?: string;
+    name?: string;
+    status?: "disabled" | "enabled" | "error";
+    config?: Record<string, unknown>;
+  }) =>
+    request<{ channel: ChannelConnectionDto }>("/v1/channels", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  testChannel: (input: { channel: ChannelKindDto; to: string; body: string; subject?: string }) =>
+    request<{ message: MessageSendDto }>("/v1/channels/test", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /* Platform: integrations --------------------------------------------- */
+  integrations: () => request<{ integrations: IntegrationDto[] }>("/v1/integrations"),
+  integration: (id: string) =>
+    request<{ integration: IntegrationDto; webhookPath: string }>(`/v1/integrations/${id}`),
+  createIntegration: (input: {
+    kind: IntegrationKindDto;
+    name: string;
+    slug: string;
+    config?: Record<string, unknown>;
+  }) =>
+    request<{ integration: IssuedIntegrationDto; secret: string; webhookPath: string }>(
+      "/v1/integrations",
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  updateIntegration: (
+    id: string,
+    input: {
+      name?: string;
+      status?: "disabled" | "enabled" | "error";
+      config?: Record<string, unknown>;
+    },
+  ) =>
+    request<{ integration: IntegrationDto }>(`/v1/integrations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteIntegration: (id: string) =>
+    request<{ ok: true }>(`/v1/integrations/${id}`, { method: "DELETE" }),
+
+  /* Platform: revenue -------------------------------------------------- */
+  revenueReport: (params: { since?: string } = {}) =>
+    request<{ rows: RevenueReportRowDto[] }>(`/v1/revenue/report${qs(params)}`),
+  contactLtv: (contactId: string) =>
+    request<{ ltv: ContactLtvDto }>(`/v1/revenue/ltv/${contactId}`),
+  recordRevenueEvent: (input: {
+    contactId: string;
+    type: string;
+    orderId?: string;
+    currency?: string;
+    amountCents: number;
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ event: RevenueEventDto }>("/v1/revenue/events", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /* Platform: send experiments ----------------------------------------- */
+  experiments: () => request<{ experiments: SendExperimentDto[] }>("/v1/experiments"),
+  experiment: (id: string) =>
+    request<{
+      experiment: SendExperimentDto;
+      results: SendExperimentResultDto[];
+    }>(`/v1/experiments/${id}`),
+  createExperiment: (input: {
+    name: string;
+    kind: "subject" | "send_time" | "content";
+    metric?: "open" | "click" | "conversion";
+    journeyId?: string;
+    variants: Omit<SendExperimentVariantDto, "id">[] & { id?: string }[];
+  }) =>
+    request<{ experiment: SendExperimentDto }>("/v1/experiments", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  startExperiment: (id: string) =>
+    request<{ experiment: SendExperimentDto }>(`/v1/experiments/${id}/start`, {
+      method: "POST",
+    }),
+  recordExperimentOutcome: (
+    id: string,
+    input: {
+      variantId: string;
+      emailSendId?: string;
+      opened?: boolean;
+      clicked?: boolean;
+      converted?: boolean;
+    },
+  ) =>
+    request<{ result: SendExperimentResultDto }>(`/v1/experiments/${id}/outcome`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  pickExperimentWinner: (id: string, metric: "open" | "click" | "conversion" = "open") =>
+    request<{ experiment: SendExperimentDto; winnerVariantId: string | null }>(
+      `/v1/experiments/${id}/pick-winner${qs({ metric })}`,
+      { method: "POST" },
+    ),
+
+  /* Platform: journey as code ------------------------------------------ */
+  exportJourney: (id: string, format: "json" | "yaml" = "json") =>
+    request<{ export: JourneyExportDto; document: string }>(
+      `/v1/journeys/${id}/export${qs({ format })}`,
+    ),
+  importJourney: (document: string) =>
+    request<{ journeyId: string; name: string }>("/v1/journeys/import", {
+      method: "POST",
+      body: JSON.stringify({ document }),
+    }),
+
+  /* Platform: compliance ----------------------------------------------- */
+  privacyJobs: () => request<{ jobs: PrivacyJobDto[] }>("/v1/compliance/privacy-jobs"),
+  privacyJob: (id: string) => request<{ job: PrivacyJobDto }>(`/v1/compliance/privacy-jobs/${id}`),
+  createPrivacyJob: (input: { email: string; kind: "export" | "erasure" }) =>
+    request<{ job: PrivacyJobDto }>("/v1/compliance/privacy-jobs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  /** Returns the raw JSON payload text for a completed export job. */
+  privacyJobDownloadPath: (id: string) => `/v1/compliance/privacy-jobs/${id}/download`,
+  issueDoubleOptIn: (input: {
+    email: string;
+    contactId?: string | null;
+    formId?: string | null;
+    topicIds?: string[];
+  }) =>
+    request<{ token: string; confirmUrl: string }>("/v1/compliance/double-opt-in", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /* Intelligence: lead scoring ----------------------------------------- */
+  scoreRules: () => request<{ rules: LeadScoreRuleDto[] }>("/v1/scoring/rules"),
+  createScoreRule: (input: LeadScoreRuleInputDto) =>
+    request<{ rule: LeadScoreRuleDto }>("/v1/scoring/rules", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateScoreRule: (id: string, input: Partial<LeadScoreRuleInputDto>) =>
+    request<{ rule: LeadScoreRuleDto }>(`/v1/scoring/rules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteScoreRule: (id: string) =>
+    request<{ ok: true }>(`/v1/scoring/rules/${id}`, { method: "DELETE" }),
+  scoreDistribution: () =>
+    request<{ distribution: { hot: number; warm: number; cold: number; total: number } }>(
+      "/v1/scoring/distribution",
+    ),
+  recomputeScore: (contactId: string) =>
+    request<{
+      score: number;
+      tier: "hot" | "warm" | "cold";
+      contributions: Array<{ ruleId: string; ruleName: string; hits: number; points: number }>;
+    }>(`/v1/scoring/recompute/${contactId}`, { method: "POST" }),
+
+  /* Intelligence: plays ------------------------------------------------ */
+  plays: () => request<{ plays: PlayDto[] }>("/v1/plays"),
+  createPlay: (input: PlayInputDto) =>
+    request<{ play: PlayDto }>("/v1/plays", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updatePlay: (id: string, input: Partial<PlayInputDto>) =>
+    request<{ play: PlayDto }>(`/v1/plays/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deletePlay: (id: string) => request<{ ok: true }>(`/v1/plays/${id}`, { method: "DELETE" }),
+
+  /* Intelligence: website signals -------------------------------------- */
+  signalSettings: () => request<{ settings: SignalSettingsDto }>("/v1/signals/settings"),
+  updateSignalSettings: (input: { highIntentPaths?: string[]; intentWebhookUrl?: string | null }) =>
+    request<{ settings: SignalSettingsDto }>("/v1/signals/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  pageViews: (limit = 50) =>
+    request<{ pageViews: PageViewDto[] }>(`/v1/signals/page-views${qs({ limit })}`),
+
+  /* GTM: meetings ------------------------------------------------------ */
+  meetingSettings: () => request<{ settings: MeetingSettingsDto }>("/v1/meetings/settings"),
+  updateMeetingSettings: (input: {
+    bookingUrl?: string | null;
+    meetingTitle?: string;
+    meetingDescription?: string | null;
+    durationMinutes?: number;
+    ctaLabel?: string;
+    timezone?: string;
+    availableWeekdays?: number[];
+    dayStartMinute?: number;
+    dayEndMinute?: number;
+    bufferMinutes?: number;
+    leadDays?: number;
+    bookingSlug?: string | null;
+    reminderHoursBefore?: number[];
+    sendBookingConfirmation?: boolean;
+    sendReminders?: boolean;
+    assignmentMode?: "round_robin" | "fixed" | "none";
+    fixedHostEmail?: string | null;
+    organizerName?: string | null;
+    organizerEmail?: string | null;
+    postMeetingJourneyId?: string | null;
+    noShowJourneyId?: string | null;
+    cancellationJourneyId?: string | null;
+    prepBriefHoursBefore?: number;
+  }) =>
+    request<{ settings: MeetingSettingsDto }>("/v1/meetings/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  meetingCalendarToken: () =>
+    request<{ token: string; feedPath: string }>("/v1/meetings/calendar-token", {
+      method: "POST",
+    }),
+  meetingBrief: (id: string) => request<{ brief: MeetingPrepBriefDto }>(`/v1/meetings/${id}/brief`),
+  meetingHosts: () => request<{ hosts: MeetingHostDto[] }>("/v1/meetings/hosts"),
+  createMeetingHost: (input: {
+    name: string;
+    email: string;
+    userId?: string | null;
+    active?: boolean;
+    sortOrder?: number;
+  }) =>
+    request<{ host: MeetingHostDto }>("/v1/meetings/hosts", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateMeetingHost: (
+    id: string,
+    input: {
+      name?: string;
+      email?: string;
+      userId?: string | null;
+      active?: boolean;
+      sortOrder?: number;
+    },
+  ) =>
+    request<{ host: MeetingHostDto }>(`/v1/meetings/hosts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteMeetingHost: (id: string) =>
+    request<{ ok: true }>(`/v1/meetings/hosts/${id}`, { method: "DELETE" }),
+  meetingEmailVars: () => request<{ variables: Record<string, string> }>("/v1/meetings/email-vars"),
+  meetingTypes: () => request<{ types: MeetingTypeDto[] }>("/v1/meetings/types"),
+  createMeetingType: (input: {
+    name: string;
+    slug: string;
+    description?: string | null;
+    durationMinutes?: number;
+    bookingUrl?: string | null;
+    ctaLabel?: string;
+    isDefault?: boolean;
+    active?: boolean;
+    sortOrder?: number;
+  }) =>
+    request<{ type: MeetingTypeDto }>("/v1/meetings/types", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  deleteMeetingType: (id: string) =>
+    request<{ ok: true }>(`/v1/meetings/types/${id}`, { method: "DELETE" }),
+  meetingSlots: (
+    params: {
+      meetingTypeId?: string;
+      days?: number;
+      contactId?: string;
+      timezone?: string;
+      smart?: boolean;
+    } = {},
+  ) =>
+    request<{ slots: Array<SlotDto & { score?: number; reasons?: string[] }>; smart?: boolean }>(
+      `/v1/meetings/slots${qs({
+        meetingTypeId: params.meetingTypeId,
+        days: params.days,
+        contactId: params.contactId,
+        timezone: params.timezone,
+        smart: params.smart ? "1" : undefined,
+      })}`,
+    ),
+  bookMeeting: (input: {
+    contactId?: string;
+    email?: string;
+    name?: string;
+    meetingTypeId?: string;
+    startsAt: string;
+    notes?: string;
+    source?: string;
+    timezone?: string;
+    hostEmail?: string;
+  }) =>
+    request<{
+      meeting: MeetingDto;
+      contactId: string | null;
+      reminderTaskId: string | null;
+      leadScore?: number;
+      leadTier?: string;
+    }>("/v1/meetings", { method: "POST", body: JSON.stringify(input) }),
+  meetings: (
+    params: {
+      status?: string;
+      contactId?: string;
+      upcoming?: boolean;
+      limit?: number;
+    } = {},
+  ) =>
+    request<{ meetings: MeetingDto[] }>(
+      `/v1/meetings${qs({ ...params, upcoming: params.upcoming ? "1" : undefined })}`,
+    ),
+  meeting: (id: string) => request<{ meeting: MeetingDto }>(`/v1/meetings/${id}`),
+  updateMeetingStatus: (
+    id: string,
+    status: "scheduled" | "held" | "cancelled" | "no_show",
+    outcome?: string | null,
+  ) =>
+    request<{ meeting: MeetingDto; intelligence: MeetingOutcomeIntelDto }>(
+      `/v1/meetings/${id}/status`,
       {
         method: "POST",
-        body: JSON.stringify({ token, action }),
+        body: JSON.stringify({ status, outcome }),
       },
     ),
+  recordMeetingBooked: (input: {
+    contactId?: string;
+    email?: string;
+    startsAt?: string;
+    endsAt?: string;
+    notes?: string;
+    source?: string;
+  }) =>
+    request<{ eventId: string | null; leadScore?: number; leadTier?: string }>(
+      "/v1/meetings/booked",
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  /* Public booking page (no session) ----------------------------------- */
+  publicBooking: (slug: string) =>
+    request<PublicBookingPayloadDto>(`/v1/book/${encodeURIComponent(slug)}`),
+  publicBook: (input: {
+    slug: string;
+    meetingTypeId?: string;
+    email: string;
+    name?: string;
+    startsAt: string;
+    notes?: string;
+    timezone?: string;
+  }) =>
+    request<{
+      ok: true;
+      meeting: { id: string; title: string; startsAt: string; endsAt: string; timezone: string };
+    }>("/v1/book", { method: "POST", body: JSON.stringify(input) }),
+
+  /* GTM: tasks --------------------------------------------------------- */
+  tasks: (params: { status?: string; contactId?: string; limit?: number } = {}) =>
+    request<{ tasks: TaskDto[]; stats: TaskStatsDto }>(`/v1/tasks${qs(params)}`),
+  createTask: (input: {
+    contactId: string;
+    title: string;
+    body?: string | null;
+    kind?: TaskKindDto;
+    priority?: number;
+    dueAt?: string | null;
+    source?: string;
+    sourceId?: string | null;
+  }) => request<{ task: TaskDto }>("/v1/tasks", { method: "POST", body: JSON.stringify(input) }),
+  completeTask: (id: string, status: "done" | "dismissed" = "done") =>
+    request<{ task: TaskDto }>(`/v1/tasks/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
+
+  /* GTM: companies ----------------------------------------------------- */
+  companies: (limit = 100) => request<{ companies: CompanyDto[] }>(`/v1/companies${qs({ limit })}`),
+  company: (id: string) =>
+    request<{ company: CompanyDto; contacts: CompanyContactDto[] }>(`/v1/companies/${id}`),
+  recomputeCompany: (id: string) =>
+    request<{ company: CompanyDto }>(`/v1/companies/${id}/recompute`, { method: "POST" }),
+  syncContactCompany: (contactId: string, name?: string) =>
+    request<{ company: CompanyDto | null }>(`/v1/companies/sync-contact`, {
+      method: "POST",
+      body: JSON.stringify({ contactId, name }),
+    }),
 };
 
 export type Api = typeof api;

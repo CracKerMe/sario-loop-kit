@@ -48,6 +48,12 @@ export class ResendProvider implements EmailProvider {
       tags: input.tags
         ? Object.entries(input.tags).map(([name, value]) => ({ name, value }))
         : undefined,
+      attachments: input.attachments?.map((a) => ({
+        filename: a.filename,
+        content: typeof a.content === "string" ? Buffer.from(a.content, "utf8") : a.content,
+        content_type: a.contentType ?? "application/octet-stream",
+        disposition: a.disposition ?? "attachment",
+      })),
     });
 
     if (error || !data) {

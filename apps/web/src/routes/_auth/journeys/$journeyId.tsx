@@ -28,6 +28,7 @@ import {
   SearchIcon,
   ShuffleIcon,
   SparklesIcon,
+  TrendingUpIcon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
+import { LiftPanel } from "@/features/journey-builder/LiftPanel";
 import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { NODE_META } from "@/features/journey-builder/graph";
 import { NODE_ICONS } from "@/features/journey-builder/nodes";
@@ -63,7 +65,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 type TabId = "builder" | "activity";
-type ActivityView = "runs" | "funnel";
+type ActivityView = "runs" | "funnel" | "lift";
 type LabStageId = "preview" | "simulate" | "optimize" | "migrate";
 
 const FUNNEL_STATUS_STYLES: Record<string, string> = {
@@ -573,6 +575,29 @@ function JourneyEditorPage() {
                   <ShuffleIcon data-icon="inline-start" />
                   Migrate runs…
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    void navigate({
+                      to: "/settings/$tab",
+                      params: { tab: "experiments" },
+                    })
+                  }
+                >
+                  <FlaskConicalIcon data-icon="inline-start" />
+                  Send experiments…
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    void navigate({
+                      to: "/settings/$tab",
+                      params: { tab: "journey-code" },
+                    })
+                  }
+                >
+                  <CopyIcon data-icon="inline-start" />
+                  Journey as code…
+                </DropdownMenuItem>
                 {canary?.canary && (
                   <>
                     <DropdownMenuSeparator />
@@ -694,6 +719,7 @@ function JourneyEditorPage() {
                   [
                     { id: "runs" as const, label: "Runs", icon: ActivityIcon },
                     { id: "funnel" as const, label: "Funnel", icon: BarChart3Icon },
+                    { id: "lift" as const, label: "Lift", icon: TrendingUpIcon },
                   ] as const
                 ).map(({ id, label, icon: Icon }) => (
                   <button
@@ -1015,6 +1041,8 @@ function JourneyEditorPage() {
                 )}
               </>
             )}
+
+            {activityView === "lift" && <LiftPanel journeyId={journeyId} />}
           </div>
         </div>
       )}

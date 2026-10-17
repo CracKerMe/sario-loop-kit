@@ -1,3 +1,11 @@
+export interface EmailAttachment {
+  filename: string;
+  /** Raw content; string is treated as UTF-8 text (e.g. an .ics body). */
+  content: string | Buffer;
+  contentType?: string;
+  disposition?: "attachment" | "inline";
+}
+
 export interface SendEmailInput {
   to: string;
   from: string;
@@ -8,6 +16,8 @@ export interface SendEmailInput {
   headers?: Record<string, string>;
   /** Provider-side correlation tags (e.g. Resend's `tags`). */
   tags?: Record<string, string>;
+  /** Optional attachments (e.g. a meeting .ics). */
+  attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {

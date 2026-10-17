@@ -629,3 +629,68 @@ describe("compile: sendCampaign", () => {
     expect(definition.nodes.sc!.type).toBe("action");
   });
 });
+
+describe("compile: delay bestTime (send-time optimization)", () => {
+  const graph: JourneyGraph = {
+    nodes: [
+      {
+        id: "t",
+        type: "trigger",
+        position: { x: 0, y: 0 },
+        data: { trigger: { kind: "manual" } },
+      },
+      {
+        id: "sto",
+        type: "delay",
+        position: { x: 0, y: 1 },
+        data: { mode: "bestTime", maxWaitHours: 24, fallbackHour: 9 },
+      },
+      {
+        id: "mail",
+        type: "email",
+        position: { x: 0, y: 2 },
+        data: { templateId: "tpl" },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "t", target: "sto" },
+      { id: "e2", source: "sto", target: "mail" },
+    ],
+  };
+
+  it("expands into a preparatory action + bounded wait, rewired in order", () => {
+    const { definition } = compile(graph, { workflowId: "wf-sto", name: "sto" });
+
+    // Incoming edges (and startNode) land on the preparatory action.
+    expect(definition.startNode).toBe("sto__sto");
+
+    const action = definition.nodes["sto__sto"]!;
+    expect(action.type).toBe("action");
+    expect(action.next).toEqual(["sto"]);
+    const actionCfg = action.config as Record<string, unknown>;
+    expect(actionCfg.journeyOp).toBe("stoWait");
+    expect(actionCfg.maxWaitHours).toBe(24);
+    expect(actionCfg.fallbackHour).toBe(9);
+
+    const wait = definition.nodes.sto!;
+    expect(wait.type).toBe("wait");
+    expect(wait.config).toMatchObject({
+      durationMs: 24 * 3600_000,
+      externalTimer: { enabled: true },
+      durable: true,
+    });
+    expect(wait.next).toEqual(["mail"]);
+  });
+
+  it("decompiles the pair back into a single bestTime delay", () => {
+    const { definition } = compile(graph, { workflowId: "wf-sto2", name: "sto2" });
+    // Import the decompile cycle lazily to avoid a circular in this file.
+    return import("../decompile").then(({ decompile }) => {
+      const { graph: roundTrip } = decompile(definition);
+      const delay = roundTrip.nodes.find((n) => n.type === "delay");
+      expect(delay).toBeDefined();
+      expect(delay!.data).toMatchObject({ mode: "bestTime", maxWaitHours: 24, fallbackHour: 9 });
+      expect(roundTrip.nodes.some((n) => n.id.endsWith("__sto"))).toBe(false);
+    });
+  });
+});

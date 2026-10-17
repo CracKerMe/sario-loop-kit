@@ -2,6 +2,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_auth/settings/")({
   beforeLoad: () => {
-    throw redirect({ to: "/settings/$tab", params: { tab: "api-keys" } });
+    throw redirect({ to: "/settings/$tab", params: { tab: "billing" } });
   },
 });

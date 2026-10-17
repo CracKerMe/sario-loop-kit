@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { WorkflowEngine } from "ts-workflow-engine-lite";
 
 import { getCampaign } from "./campaigns";
+import { assignCohort, type RunCohort } from "./holdout";
 import { createJourneyCompileActions } from "./journeyActions";
 import { assertSubJourneyReferences } from "./subJourneyValidation";
 
@@ -205,7 +206,14 @@ export async function startJourneyRun(
   engine: WorkflowEngine,
   input: StartJourneyRunInput,
   reentry: "once" | "once_at_a_time" | "always",
-): Promise<{ started: boolean; runId?: string; instanceId?: string }> {
+  options: { holdoutPercent?: number } = {},
+): Promise<{
+  started: boolean;
+  runId?: string;
+  instanceId?: string;
+  cohort?: RunCohort;
+  holdout?: boolean;
+}> {
   if (reentry === "once") {
     const [existing] = await db
       .select({ id: journeyRun.id })
@@ -217,8 +225,46 @@ export async function startJourneyRun(
     if (existing) return { started: false };
   }
 
+  // Holdout assignment is deterministic on (journeyId, contactId) and
+  // happens BEFORE any engine work so a held-out contact never costs an
+  // instance, a timer, or an email. They still get a journey_run row so
+  // re-entry rules, reports, and the lift denominator stay honest.
+  const holdoutPercent =
+    options.holdoutPercent ??
+    (
+      await db
+        .select({ holdoutPercent: journey.holdoutPercent })
+        .from(journey)
+        .where(eq(journey.id, input.journeyId))
+        .limit(1)
+    )[0]?.holdoutPercent ??
+    0;
+  const cohort = assignCohort(input.journeyId, input.contactId, holdoutPercent);
+
   const runId = crypto.randomUUID();
   const placeholderInstanceId = `pending:${runId}`;
+
+  if (cohort === "holdout") {
+    try {
+      await db.insert(journeyRun).values({
+        id: runId,
+        workspaceId: input.workspaceId,
+        journeyId: input.journeyId,
+        journeyVersion: input.journeyVersion,
+        contactId: input.contactId,
+        instanceId: `holdout:${runId}`,
+        status: "exited",
+        activeLock: reentry === "once_at_a_time" ? true : null,
+        cohort: "holdout",
+        exitedAt: new Date(),
+        exitReason: "holdout",
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) return { started: false };
+      throw error;
+    }
+    return { started: true, runId, cohort: "holdout", holdout: true };
+  }
 
   try {
     // Insert already at status='running' with the placeholder instanceId
@@ -245,6 +291,7 @@ export async function startJourneyRun(
       instanceId: placeholderInstanceId,
       status: "running",
       activeLock: reentry === "once_at_a_time" ? true : null,
+      cohort: "exposed",
     });
   } catch (error) {
     // The reentry === "once_at_a_time" partial unique index
@@ -282,7 +329,7 @@ export async function startJourneyRun(
     .set({ instanceId, journeyVersion: input.journeyVersion })
     .where(eq(journeyRun.id, runId));
 
-  return { started: true, runId, instanceId };
+  return { started: true, runId, instanceId, cohort: "exposed", holdout: false };
 }
 
 /**

@@ -80,12 +80,16 @@ export function compile(graph: JourneyGraph, options: CompileOptions): CompileRe
   if (triggerOut.length > 1) {
     warnings.push(`trigger node ${triggerNode.id} has multiple outgoing edges; using the first`);
   }
-  const startNode = triggerOut[0]!.target;
+  let startNode = triggerOut[0]!.target;
   if (!byId.has(startNode)) {
     throw new CompileError(`trigger edge targets unknown node ${startNode}`);
   }
 
   const nodes: Record<string, TaskNode> = {};
+  /** journey node id → engine node id that should receive its incoming edges. */
+  const incomingRedirect = new Map<string, string>();
+  /** Companion nodes (e.g. STO prep action), attached after redirect. */
+  const deferredExtras: TaskNode[] = [];
 
   const incoming = new Map<string, string[]>();
   for (const edge of graph.edges) {
@@ -103,15 +107,70 @@ export function compile(graph: JourneyGraph, options: CompileOptions): CompileRe
         warnings.push(`node ${node.id} has an edge to unknown node ${edge.target}`);
       }
     }
+    let redirectIncomingTo: string | undefined;
+    const extras: TaskNode[] = [];
     const ctx: CompileNodeContext = {
       edges,
       incomingSources: incoming.get(node.id) ?? [],
       warnings,
       actions: options.actions,
+      emitExtra: (extra) => {
+        extras.push(extra);
+      },
+      setRedirectIncomingTo: (id) => {
+        redirectIncomingTo = id;
+      },
     };
     const compiled = compileNodeWithDef(node, ctx);
     nodes[node.id] = compiled;
+    // Extras are attached AFTER the incoming-redirect pass so their
+    // internal edges (sto action → wait) are not rewritten to point at
+    // themselves. See the redirect block below.
+    deferredExtras.push(...extras);
+    if (redirectIncomingTo) incomingRedirect.set(node.id, redirectIncomingTo);
   }
+
+  // One journey node can expand to a preparatory action + the real node
+  // (delay `bestTime`). Edges that targeted the journey node must land on
+  // the action so the wait's deadline is seeded before the wait runs.
+  if (incomingRedirect.size > 0) {
+    for (const node of Object.values(nodes)) {
+      if (Array.isArray(node.next)) {
+        node.next = node.next.map((id) => incomingRedirect.get(id) ?? id);
+      }
+      const cfg = node.config as
+        | { trueBranch?: string; falseBranch?: string; routes?: Array<{ target?: string }> }
+        | undefined;
+      if (cfg) {
+        if (typeof cfg.trueBranch === "string")
+          cfg.trueBranch = incomingRedirect.get(cfg.trueBranch) ?? cfg.trueBranch;
+        if (typeof cfg.falseBranch === "string")
+          cfg.falseBranch = incomingRedirect.get(cfg.falseBranch) ?? cfg.falseBranch;
+        if (Array.isArray(cfg.routes)) {
+          for (const route of cfg.routes) {
+            if (typeof route.target === "string")
+              route.target = incomingRedirect.get(route.target) ?? route.target;
+          }
+        }
+      }
+      const cond = (node as { conditionalNext?: Array<{ target: string }> }).conditionalNext;
+      if (Array.isArray(cond)) {
+        for (const branch of cond) {
+          branch.target = incomingRedirect.get(branch.target) ?? branch.target;
+        }
+      }
+      const failureNext = node.failureNext;
+      if (Array.isArray(failureNext)) {
+        node.failureNext = failureNext.map((id) => incomingRedirect.get(id) ?? id);
+      }
+    }
+    // startNode must also land on the preparatory action when the trigger
+    // points at a bestTime delay.
+    const redirectedStart = incomingRedirect.get(startNode);
+    if (redirectedStart) startNode = redirectedStart;
+  }
+
+  for (const extra of deferredExtras) nodes[extra.id] = extra;
 
   const definition: WorkflowDefinition = {
     id: options.workflowId,

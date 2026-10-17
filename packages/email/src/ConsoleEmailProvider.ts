@@ -24,6 +24,11 @@ export class ConsoleEmailProvider implements EmailProvider {
       to: input.to,
       from: input.from,
       subject: input.subject,
+      attachments: input.attachments?.map((a) => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        bytes: typeof a.content === "string" ? Buffer.byteLength(a.content) : a.content.length,
+      })),
       htmlPreview: input.html.slice(0, 200),
     });
     return { messageId };

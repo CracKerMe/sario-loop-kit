@@ -1,10 +1,12 @@
 import {
+  countReadyRecipients,
   drainCampaign,
   fireCampaignSchedule,
   getCampaign,
   launchCampaign,
   listDueCampaigns,
   listResumableCampaigns,
+  listStoReadyCampaignIds,
   refreshCampaignCounters,
   syncCampaignRecipientStatuses,
   type Campaign,
@@ -93,13 +95,21 @@ async function runDrain(campaignId: string): Promise<void> {
   const engine = getEngine();
   if (!engine) throw new Error("engine not ready");
 
-  // Loop until the campaign has no pending recipients left. `drainCampaign`
+  // Loop until the campaign has no *ready* recipients left. `drainCampaign`
   // already re-reads the campaign's status between batches, so a pause or
   // cancel lands promptly.
+  //
+  // STO caveat: a pending recipient whose `sendAt` is still in the future
+  // is "waiting for its hour", not "stuck". Spinning on it would burn CPU
+  // until 21:00 — exit instead and let the STO tick pick the campaign up.
   for (;;) {
     const result = await drainCampaign(db, campaignId, startSendFor(engine));
     if (result.remaining === 0) return;
     if (result.status === "paused" || result.status === "cancelled") return;
+    if (result.waitingForSendTime > 0) {
+      const ready = await countReadyRecipients(db, campaignId);
+      if (ready === 0) return;
+    }
     // Progress is being made but the campaign is large; keep going rather
     // than returning a partially-drained campaign to the caller.
   }
@@ -234,6 +244,21 @@ export async function campaignSchedulerTick(limit = 20): Promise<number> {
       console.error(`[loopkit] scheduled campaign launch failed for ${row.id}:`, error);
     }
   }
+
+  // STO wake-up: campaigns left in `sending` because recipients were
+  // parked on a future sendAt get another drain pass once their hour
+  // arrives. scheduleDrain is idempotent per campaign, so a concurrent
+  // manual resume is harmless.
+  const stoReady = await listStoReadyCampaignIds(db, limit);
+  for (const id of stoReady) {
+    if (runningDrains.has(id)) continue;
+    try {
+      void scheduleDrain(id);
+    } catch (error) {
+      console.error(`[loopkit] STO resume failed for ${id}:`, error);
+    }
+  }
+
   return due.length;
 }
 

@@ -1,4 +1,5 @@
 export type {
+  EmailAttachment,
   EmailProvider,
   NormalizedEmailEvent,
   SendEmailInput,
@@ -26,6 +27,17 @@ export {
   type UnsubscribeLinkPayload,
 } from "./channel";
 export { processEmailWebhook, type WebhookContactEvent } from "./webhook";
+export {
+  composeBookingConfirmation,
+  composeHostAssignment,
+  composeMeetingReminder,
+  composePrepBrief,
+  sendMeetingMail,
+  type ComposeMeetingMail,
+  type MeetingMailData,
+  type MeetingMailPerson,
+  type SendMeetingMailInput,
+} from "./meetingMail";
 export {
   createWorkspaceSendLimiter,
   sendLimitsFromEnv,
