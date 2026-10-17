@@ -4,7 +4,7 @@ Self-hostable lifecycle marketing engine built on a real workflow engine (`ts-wo
 
 Journeys are not a fixed set of marketing nodes — they **compile** into engine `WorkflowDefinition`s with durable waits, event wake-ups, retries, and DLQ.
 
-![Journey builder — Welcome + A/B + Score + Hours](docs/assets/journey-graph.svg)
+![Journey builder — the default Welcome drip template on the canvas](docs/assets/journey-graph.svg)
 
 ## Architecture
 
@@ -12,29 +12,42 @@ Journeys are not a fixed set of marketing nodes — they **compile** into engine
 
 ## Stack
 
-- **apps/server** — Hono API (ingestion, dashboard APIs, Resend webhooks)
-- **apps/web** — TanStack Start dashboard + React Flow journey builder
-- **packages/engine** — bootstrap, EventWaitIndex, contact-event wake-ups
-- **packages/engine-storage** — Drizzle/Postgres `StorageProvider`
+A pnpm + Turborepo monorepo: **2 apps + 13 packages**.
+
+**Apps**
+
+- **apps/server** — Hono API (~240 endpoints: ingestion, dashboard APIs, platform suite, GTM suite, Resend webhooks) · Better Auth · single-instance advisory lock · campaign runner/scheduler · meeting reminder poller
+- **apps/web** — TanStack Start dashboard · React Flow journey canvas · Tiptap email editor · Agent-first `/automations` and `/settings` workbenches
+
+**Packages**
+
+- **packages/engine** — `createLoopkitEngine`: assembles `ts-workflow-engine-lite` with Drizzle storage, campaign workflow, event wake-ups, history compaction
+- **packages/engine-storage** — Drizzle/Postgres `StorageProvider` for the engine's `wf_*` state
 - **packages/timers** — Postgres external timers + poller (restart-safe waits)
-- **packages/email** — EmailProvider / Resend / notification channel bridge
-- **packages/journey** — graph types, `compile`/`decompile`, `validateGraph`, node whitelist
-- **packages/core** — contacts, journeys, triggers, API keys, reports
-- **packages/db** — Drizzle schema (engine tables + product tables)
+- **packages/journey** — graph types, node descriptor registry (19 types), `compile`/`decompile`, `validateGraph`, whitelist, dry-run, cohort simulation
+- **packages/core** — contacts, journeys, campaigns, segments, API keys, scoring, holdout, reports, journey compile actions
+- **packages/email** — EmailProvider / Resend bridge, send gates, rate limit, frequency cap, RFC 8058 unsubscribe
+- **packages/email-doc** — Tiptap-style email document model (validate/render), community templates
+- **packages/ai** — guarded LLM pipelines: journey/settings agents, email/segment copilots, dry-run insights, optimization
+- **packages/db** — Drizzle schema (product + engine + auth tables, 15 domains)
+- **packages/auth** — Better Auth instance (email/password, drizzle adapter)
+- **packages/env** — type-safe env vars (`/server`, `/web` entries)
+- **packages/ui** — shared web components (shadcn-style, Tailwind v4)
+- **packages/config** — shared tsconfig base
 
 ## Quick start
 
 ```bash
 pnpm install
+cp apps/server/.env.example apps/server/.env   # DATABASE_URL / BETTER_AUTH_SECRET / (optional) RESEND_API_KEY, OPENAI_API_KEY
+cp apps/web/.env.example apps/web/.env
 pnpm db:start          # docker compose up -d postgres
 cd packages/db && pnpm db:push
 cd ../..
 pnpm dev               # API :3000, web :3001
 ```
 
-Open http://localhost:3001 → sign up (workspace + welcome email template are auto-provisioned) → **Journeys** → **New journey** → pick a template → publish → **API keys** → ingest a contact:
-
-New-journey templates include a marketing sample **Welcome + A/B + Score + Hours** (welcome email → lead score → weighted A/B → path A nurture with business-hours gate + goal, path B sales tag + team notify).
+Open http://localhost:3001 → sign up (workspace + welcome email template are auto-provisioned; invite teammates from Settings → Members) → **Automations** → describe what you want in plain language (or start from the Welcome drip template) → publish → **Settings → API keys** → ingest a contact:
 
 ```bash
 curl -H "Authorization: Bearer lk_live_..." \
@@ -43,21 +56,25 @@ curl -H "Authorization: Bearer lk_live_..." \
   http://localhost:3000/v1/contacts
 ```
 
-Without `RESEND_API_KEY`, emails are logged by `ConsoleEmailProvider`.
+Without `RESEND_API_KEY`, emails are logged by `ConsoleEmailProvider`. Without `OPENAI_API_KEY`, AI features degrade to the non-AI paths.
 
 ## Product map (sending paths)
 
 Three products share one email channel (`packages/email`). Pick by intent — do not force-campaign a multi-step flow, and do not build a journey for a password reset.
 
-| Path                   | Surface                                            | Use when                                                                                                        |
-| ---------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Lifecycle journey**  | Dashboard → Journeys                               | Per-contact graph: waits, branches, event wake-ups. Lab tab = dry-run → simulate → optimize → canary → migrate. |
-| **Broadcast campaign** | Dashboard → Campaigns                              | One email to a saved audience. Filter frozen at launch; recipient rows are the queue.                           |
-| **Transactional API**  | `POST /v1/transactional` (+ Templates → Test send) | Backend-triggered mail with required idempotency key. Scope `transactional:send`.                               |
+| Path                  | Surface                                             | Use when                                                                                                        |
+| --------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Lifecycle journey** | Dashboard → Automations                             | Per-contact graph: waits, branches, event wake-ups. Lab tab = dry-run → simulate → optimize → canary → migrate. |
+| **Broadcast campaign**| Dashboard → Campaigns                               | One email to a saved audience. Filter frozen at launch; recipient rows are the queue.                           |
+| **Transactional API** | `POST /v1/transactional` (+ Emails → Test send)     | Backend-triggered mail with required idempotency key. Scope `transactional:send`.                               |
+
+The UI speaks **Automations / Campaigns / Emails**; the API and DB keep the `journey` / `campaign` / `template` names.
+
+**Two interaction paradigms share one runtime.** `/automations/:id` opens an Agent-first workbench: you describe the automation in plain language, the agent asks clarifying questions, proposes a guarded graph (+ email template drafts), explains the flow in a narrative card, and applies it through the same `writeDraftVersion` path as the canvas. The React Flow canvas remains one click away (`···` → professional view) with all 19 node types, and `/settings` runs the same pattern as a config status board backed by a settings agent.
 
 **Audiences** are saved SegmentFilter ASTs. The same editor powers audience CRUD, journey entry filters (frozen onto the trigger graph), and Contacts drill-down (`/contacts?audienceId=`).
 
-**AI assist** is a shared product surface (`CopilotShell`): journey graph, email doc, and audience filter copilots + simulate/optimize insights. Entrypoints stay in-context; error grammar is shared.
+**AI assist** is a shared product surface (`CopilotShell`): journey graph, email doc, and audience filter copilots + simulate/optimize insights + the two agent workbenches. Entrypoints stay in-context; error grammar is shared; every LLM output passes a zod → guard → repair pipeline before it touches the graph.
 
 **Compliance** is dual-gated by design: `contact.subscribed` (identity) + `suppression` (address facts). Contact detail shows both (Contact 360).
 
@@ -67,14 +84,14 @@ These are not CRUD knobs — they answer "did the automation work?" and "when sh
 
 | Capability                 | Where                                  | What it does                                                                                                                                                                                                                                      |
 | -------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Holdout & lift**         | Journey → Activity → Lift              | Deterministic control group (`journey.holdoutPercent`). Holdout contacts are recorded but never enter the engine. Report: conversion rate per arm, relative/absolute lift, two-proportion z-score, operator verdict.                              |
+| **Holdout & lift**         | Automation → Activity → Lift           | Deterministic control group (`journey.holdoutPercent`). Holdout contacts are recorded but never enter the engine. Report: conversion rate per arm, relative/absolute lift, two-proportion z-score, operator verdict.                              |
 | **Send-time optimization** | Delay `bestTime` mode + Campaign "STO" | Engagement-hour profile from open/click history (clicks weigh 3× opens). Journeys park until the contact's preferred hour (capped by `maxWaitHours`); campaigns stamp per-recipient `sendAt` at materialize and the drain only releases when due. |
 | **Ops health**             | Home strip + `GET /v1/ops/health`      | Window-vs-window spike detection: bounce, complaint, failure, DLQ growth, open-rate drop. Threshold + delta (not ML) so the finding is explainable. Alerts dedupe per hour bucket; optional webhook.                                              |
 
-API surface additions:
+Key endpoints:
 
 | Method   | Path                                            | Purpose                                   |
-| -------- | ----------------------------------------------- | ----------------------------------------- |
+| -------- | ----------------------------------------------- | ------------------------------------------ |
 | PATCH    | `/v1/journeys/:id/holdout`                      | Set holdout % (clamped 0–50) + goal event |
 | GET      | `/v1/journeys/:id/lift`                         | Incremental lift report                   |
 | GET      | `/v1/journeys/send-time/profile`                | Workspace engagement-hour profile         |
@@ -85,34 +102,26 @@ API surface additions:
 
 ## API surface
 
-| Method   | Path                                          | Auth               | Purpose                                       |
-| -------- | --------------------------------------------- | ------------------ | --------------------------------------------- |
-| POST     | `/v1/contacts`                                | API key / session  | Upsert contact + evaluate entry triggers      |
-| POST     | `/v1/events`                                  | API key / session  | Record event, start journeys, wake waitEvent  |
-| GET      | `/v1/journeys`                                | session            | List journeys                                 |
-| POST     | `/v1/journeys`                                | session            | Create draft from graph                       |
-| GET      | `/v1/journeys/:id`                            | session            | Journey + latest graph + run counts           |
-| PUT      | `/v1/journeys/:id/draft`                      | session            | Save graph as a new version                   |
-| POST     | `/v1/journeys/:id/publish`                    | session            | Server-side whitelist + compile + register    |
-| GET      | `/v1/journeys/:id/runs`                       | session            | Runs                                          |
-| GET      | `/v1/ops/stats`                               | session            | Dashboard stats                               |
-| GET      | `/v1/ops/dlq`                                 | session            | Dead-letter queue                             |
-| GET/POST | `/v1/email-templates`                         | session            | Template CRUD                                 |
-| GET/POST | `/v1/api-keys`                                | session            | Ingestion keys                                |
-| GET/POST | `/v1/audiences`                               | session            | Saved segments (CRUD)                         |
-| POST     | `/v1/audiences/preview`                       | session            | Live match count for an unsaved filter        |
-| GET      | `/v1/audiences/:id`                           | session            | Segment + counts + a page of members          |
-| GET      | `/v1/audiences/:id/contacts`                  | session            | Paged members                                 |
-| GET/POST | `/v1/campaigns`                               | session            | Broadcasts (CRUD)                             |
-| POST     | `/v1/campaigns/:id/launch`                    | session            | Resolve audience → materialize → drain        |
-| POST     | `/v1/campaigns/:id/schedule` \| `/unschedule` | session            | Materialize now, drain later at `scheduledAt` |
-| POST     | `/v1/campaigns/:id/resume`                    | session            | Re-drain (crash recovery / un-pause)          |
-| POST     | `/v1/campaigns/:id/pause` \| `/cancel`        | session            | Stop between batches                          |
-| GET      | `/v1/campaigns/:id/recipients`                | session            | Per-recipient send outcome                    |
-| GET/POST | `/v1/suppressions`                            | session            | Suppression list + manual block               |
-| DELETE   | `/v1/suppressions/:id`                        | session            | Lift a block (the only path that can)         |
-| GET/POST | `/v1/public/unsubscribe`                      | signed token       | Preference centre + RFC 8058 one-click        |
-| POST     | `/v1/webhooks/resend`                         | provider signature | Delivery events + engagement wake-ups         |
+Auth is dual: dashboard routes require a Better Auth **session**; ingestion routes accept an API key (`Authorization: Bearer lk_live_...`, scoped: `contacts:write`, `events:write`, `transactional:send`, …) or a session. Full method+path surface lives in `apps/server/src/routes/` (~240 endpoints across 14 route files); the map below is the short version.
+
+| Group                          | Representative endpoints                                                                                                                                  | Auth              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **Ingestion**                  | `POST /v1/contacts` · `GET/PATCH /v1/contacts/:id*` · `POST /v1/contacts/import` · `POST /v1/events` · `POST /v1/transactional`                            | API key / session |
+| **Automations (journeys)**     | `GET/POST /v1/journeys` · `PUT /v1/journeys/:id/draft` · `POST /v1/journeys/:id/publish` · `GET /v1/journeys/:id/runs` · `GET /v1/journeys/:id/funnel`     | session           |
+| — Agent workbench              | `GET /v1/journeys/:id/agent/session` · `POST …/turn` · `POST …/apply` · `POST …/regenerate-template` · `POST …/refresh-narrative`                          | session           |
+| — Test & release (Lab)         | `POST …/dry-run` · `POST …/simulate` · `POST …/optimize` · `POST …/canary/evaluate|promote|rollback` · `POST …/migrate-inflight` · `GET …/inflight-versions` | session        |
+| — Holdout & STO                | `PATCH …/holdout` · `GET …/lift` · `GET /v1/journeys/send-time/profile[/:contactId]`                                                                      | session           |
+| **Runs**                       | `GET /v1/runs` · `GET /v1/runs/:instanceId` · `POST …/cancel` · `POST …/migrate`                                                                          | session           |
+| **Campaigns**                  | `GET/POST /v1/campaigns` · `POST …/launch|schedule|unschedule|resume|pause|cancel|duplicate` · `GET …/recipients`                                         | session           |
+| **Audiences**                  | `GET/POST /v1/audiences` · `POST /v1/audiences/preview` · `POST …/copilot` · `GET …/contacts`                                                             | session           |
+| **Email templates**            | `GET/POST /v1/email-templates` · `PUT/DELETE …/:id` · `POST …/preview` · `GET …/usage|engagement` · `POST …/copilot`                                       | session           |
+| **Settings agent**             | `GET /v1/settings/agent/session` · `POST …/turn|apply|refresh-narrative`                                                                                   | session           |
+| **Ops**                        | `GET /v1/ops/stats` · `GET /v1/ops/dlq` · `GET /v1/ops/health` · `POST /v1/ops/health/sweep` · `GET/POST /v1/ops/alerts`                                   | session           |
+| **Suppressions**               | `GET/POST /v1/suppressions` · `POST …/import` · `DELETE …/:id` (the only path that can lift a bounce/complaint)                                            | session           |
+| **Platform**                   | `/v1/forms` (+ `/v1/embed/*` public) · `/v1/domains` · `/v1/billing` · `/v1/topics` · `/v1/members` · `/v1/invites/:token` · `/v1/audit` · `/v1/channels` · `/v1/integrations` (+ `/v1/hooks/:slug`) · `/v1/compliance/*` (privacy jobs, double opt-in, `/v1/confirm`) · `GET /v1/metrics` (Prometheus) | session / signed |
+| **Intelligence (GTM)**         | `/v1/scoring/rules` · `/v1/plays` · `/v1/signals/*` (+ public `/v1/signals/track`, `snippet.js`) · `/v1/experiments` · `/v1/revenue` · `/v1/companies`     | session           |
+| **Meetings & tasks**           | `/v1/meetings/*` (hosts, types, slots, briefs, ICS) · public `/v1/book/:slug`, `/v1/calendar/:token` · `/v1/tasks` · `/v1/companies`                        | session / signed  |
+| **Public & webhooks**          | `GET/POST /v1/public/unsubscribe` (RFC 8058, signed token) · `POST /v1/webhooks/resend` (provider signature) · `GET /v1/api-keys/meta`                      | signed / public   |
 
 ## Campaigns vs journeys
 
@@ -132,7 +141,7 @@ An audience is a stored SegmentFilter AST evaluated to SQL by `@loopkit/core`'s 
 
 A campaign **freezes its filter at launch**. Editing the saved segment afterwards cannot change who an in-flight broadcast goes to — otherwise the campaign's own report would be a lie.
 
-A campaign can also be **scheduled** (`POST /:id/schedule` with a `scheduledAt`) instead of launched immediately: the audience is resolved and the filter frozen at schedule time — same freeze-at-commit semantics as an immediate launch, not a live query at fire time — and a server-side poller (`apps/server`'s `campaignRunner.ts`, not the engine's `packages/timers`, since a scheduled campaign has no engine instance yet) starts the drain once due. `POST /:id/unschedule` reverts to `draft`; `POST /:id/cancel` works on a scheduled campaign directly too.
+A campaign can also be **scheduled** (`POST /:id/schedule` with a `scheduledAt`) instead of launched immediately: the audience is resolved and the filter frozen at schedule time — same freeze-at-commit semantics as an immediate launch, not a live query at fire time — and a server-side poller (`apps/server`'s `campaignRunner.ts`, not the engine's `packages/timers`, since a scheduled campaign has no engine instance yet) starts the drain once due. `POST /:id/unschedule` reverts to `draft`; `POST /:id/cancel` works on a scheduled campaign directly too. Startup calls `resumeInterruptedCampaigns()` so a crash between materialize and drain recovers on reboot.
 
 ## Send limits
 
@@ -154,11 +163,11 @@ Sending is blocked by two independent mechanisms, and they are not redundant:
 
 The public unsubscribe endpoint can only ever lift an `unsubscribe`-reason block. Clearing a bounce or complaint requires a session and an explicit action in the dashboard — a link in an old email must not be able to put a complained address back into the sending pool.
 
-Every send carries `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) whenever `PUBLIC_APP_URL`/`PUBLIC_API_URL` are configured.
+Every send carries `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) whenever `PUBLIC_APP_URL`/`PUBLIC_API_URL` are configured. GDPR-style privacy jobs (export/erasure) and double opt-in live under `/v1/compliance`.
 
 ## Journey graph
 
-Source of truth is `journey_version.graph` (React Flow nodes/edges). Node ids are engine `TaskNode.id`s.
+Source of truth is `journey_version.graph` (React Flow nodes/edges). Node ids are engine `TaskNode.id`s. Each node type has exactly one descriptor in `packages/journey/src/nodeDefs.ts` — the single registry driving `compile` / `validate` / `dryRun` for all 19 types.
 
 | Journey node    | Engine node                                       | Purpose                                                                 |
 | --------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -175,9 +184,20 @@ Source of truth is `journey_version.graph` (React Flow nodes/edges). Node ids ar
 | updateContact   | `action` (runtime handler)                        | Set properties / add / remove tags                                      |
 | score           | `action` (runtime handler)                        | Add or set a lead-score property                                        |
 | goal            | `action` (runtime handler)                        | Record `goal.*` contact event + lastGoal property                       |
+| parallel        | `action` (`journeyOp: "parallel"`)                | Fan-out to ≥2 branch edges, executed as one concurrent batch            |
+| join            | `join`                                            | Wait for parallel branches to converge (all/any mode)                   |
+| subJourney      | `subworkflow`                                     | Run a published journey as a reusable step                              |
 | exit            | terminal `action`                                 | End journey for the contact                                             |
 
-Publish always runs `assertWhitelistedGraph()` then `compile()` on the server. Action-backed marketing nodes (`updateContact` / `score` / `goal`) receive DB handlers injected via `CompileOptions.actions` — the browser only runs `validateGraph()`.
+The builder palette defaults to the core 6 (`trigger`, `email`, `delay`, `filter`, `branch`, `abSplit`); the other 13 are an Advanced drawer away, and graphs containing advanced nodes always render fully. Publish always runs `assertWhitelistedGraph()` then `compile()` on the server. Action-backed marketing nodes (`updateContact` / `score` / `goal`) receive DB handlers injected via `CompileOptions.actions` (built in `packages/core`'s `journeyActions.ts`) — the browser only runs `validateGraph()`.
+
+## AI pipelines
+
+`packages/ai` wraps every LLM feature in the same guard pipeline (`pipeline.ts`): schema-constrained single tool call → zod parse → domain guard (`graphGuard` whitelist + `validateGraph`, `emailGuard` doc check, segment filter guard) → one forced repair round → typed result. All outputs referencing graphs/templates may only name things that exist in the workspace.
+
+- **Journey agent** (`journeyAgent.ts`) — multi-turn `clarify` / `propose` with a requirements coverage table; proposals carry full graphs + email template drafts that materialize only on apply.
+- **Settings agent** (`settingsAgent.ts` + `settingsNarrative.ts`) — same pattern over a whitelist of 5 config change kinds; apply reuses the exact core write paths the manual panels use.
+- **Copilots** — journey generation, email content, audience filters, simulation insight, optimization proposals (`generate*.ts`).
 
 ## Verification gates (from the plan)
 
@@ -190,15 +210,17 @@ pnpm -r test
 ```
 
 | Gate                | Command                                      | What it proves                                                                        |
-| ------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------- |
+| ------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Storage conformance | `pnpm --filter @loopkit/engine-storage test` | Memory vs Drizzle + 10k stress                                                        |
 | Timer restart       | `pnpm --filter @loopkit/timers test`         | Kill mid-wait, no duplicate timer, no early fire                                      |
+| Graph compile       | `pnpm --filter @loopkit/journey test`        | All 19 node descriptors compile/validate/decompile; dry-run semantics                 |
 | Segments            | `pnpm --filter @loopkit/core test`           | SegmentFilter → SQL correctness, incl. the non-numeric property guard                 |
 | Campaigns           | `pnpm --filter @loopkit/core test`           | Materialize once, drain only pending, pause/resume mid-drain                          |
 | Compliance          | `pnpm --filter @loopkit/email test`          | Zero sends to a suppressed address; the webhook writes the block                      |
+| Email docs          | `pnpm --filter @loopkit/email-doc test`      | Doc validate/render round-trips; community templates stay valid                       |
+| AI guards           | `pnpm --filter @loopkit/ai test`             | Guard rejection + repair rounds for graph/email/segment outputs                       |
 | Campaign end to end | `pnpm --filter server test`                  | Real engine: interpolation resolves, one send per recipient, a re-drain sends nothing |
 | Single instance     | `pnpm --filter server test`                  | A second advisory-lock holder is refused                                              |
-| End-to-end (manual) | see Quick start                              | Publish a journey → `POST /v1/contacts` → observe `journey_run` + email + timer rows  |
 
 > Why per-package databases: `pnpm -r test` runs packages concurrently, and every helper's `resetTables()` issues `TRUNCATE ... CASCADE` over the engine tables. Sharing one database let `engine-storage`'s 10k-instance stress test wipe `wf_instance` while a `@loopkit/timers` instance was mid-wait — a fired timer with no instance to resume, which presents as "durable waits are broken" when nothing is broken.
 
@@ -217,7 +239,7 @@ pnpm -r test
 
 Loopkit stores durable state in Postgres rather than the engine's file store, which removes the data-corruption failure mode but **not** the coordination one.
 
-This is enforced, not just documented: `apps/server` takes a Postgres **session-level advisory lock** at startup (`src/instanceLock.ts`) and **exits non-zero if it cannot get it**. The lock is held by a dedicated connection, so it is released automatically if the process is killed — no TTL, no stale-lock cleanup.
+This is enforced, not just documented: `apps/server` takes a Postgres **session-level advisory lock** at startup (`src/instanceLock.ts`) and **exits non-zero if it cannot get it**. The lock is held by a dedicated connection (not the Drizzle pool) with a 30s keepalive that doubles as an ownership check — if the connection drops, the process exits rather than racing a replacement. No TTL, no stale-lock cleanup.
 
 ```
 [loopkit] FATAL: another API server already holds the single-instance lock for this database.
@@ -229,9 +251,12 @@ Horizontal scaling needs cross-process coordination (event routing, distributed 
 
 ## Scripts
 
-- `pnpm dev` — web + server
+- `pnpm dev` — web + server (turbo); `pnpm dev:web` / `pnpm dev:server` for one
 - `pnpm check-types` — monorepo TypeScript (all packages + server + web)
-- `pnpm db:push` / `pnpm db:studio`
+- `pnpm check` — oxlint + oxfmt (enforced by husky + lint-staged)
+- `pnpm db:push` / `pnpm db:studio` / `pnpm db:generate` / `pnpm db:migrate`
+- `pnpm db:start` / `db:watch` / `db:stop` / `db:down` — docker compose postgres
+- `pnpm docker:build` / `docker:up` / `docker:down` / `docker:logs` — full app deployment
 - `pnpm db:test:setup` — create/refresh the per-package test databases
 - `pnpm -r test` — full suite (never touches the dev database)
 - `pnpm --filter @loopkit/<pkg> test`

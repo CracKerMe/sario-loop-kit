@@ -1,5 +1,7 @@
 # UI 打磨 & 社区模板 — 更新总结
 
+> 历史变更记录（时点快照）。文中文件路径与社区模板数量（现共 18 个，见 `packages/email-doc/src/communityTemplates.ts`）经复核仍与当前代码一致；测试数字为当时结果，最新门禁见 README「Verification gates」。
+
 ## 新增社区邮件模板（12 → 18）
 
 | #   | ID                   | 分类          | 标签                  | 主题                                                       |

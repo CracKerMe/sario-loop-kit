@@ -40,6 +40,7 @@
 | `GET /:id/agent/session`            | intent + 转录 + latestVersion + validation                                   |
 | `POST /:id/agent/turn`              | 一轮对话；首条消息自动创建 intent（brief = 原话）                            |
 | `POST /:id/agent/apply`             | 提案 → `writeDraftVersion`（与 PUT /:id/draft 共用）→ 重新生成叙事并锚定版本 |
+| `POST /:id/agent/regenerate-template` | 重新生成提案内的模板草稿（可带一句改写要求；只改提案 payload，不落库）     |
 | `POST /:id/agent/refresh-narrative` | 版本未变直接回缓存；变了才调 LLM                                             |
 
 草稿写入抽成 `writeDraftVersion`，人工画布与 Agent apply 走同一条编译前置路径，没有第二套图格式。
@@ -90,7 +91,7 @@
 
 - 闭环一：copilot 生成 → 创建 → turn（Agent 主动澄清：模板不足、事件语义不明，覆盖表 1 covered / 2 needs_input）→ 回答后 turn（propose：并行路径 + 7 天 waitEvent 超时分支，3/3 covered）→ apply（v2 + 叙事 10 步大白话）→ session 状态一致。
 - 闭环二（资源草稿）：工作区无模板时，Agent 提案自带 2 个模板草稿（欢迎 + 上手技巧，文案含真实 merge tag）→ 应用创建 2 个 tiptap 模板并自动改写 templateId。
-- 测试：`packages/ai`（journeyAgent 23 例）、`apps/server`（journeyAgentRoute 8 例，apply 用真实 guardEmailContent 复验草稿 doc）。
+- 测试：`packages/ai`（journeyAgent 10 例、settingsAgent 14 例：guard 拒绝路径 + 修复轮）、`apps/server`（journeyAgentRoute 8 例，apply 用真实 guardEmailContent 复验草稿 doc；settingsAgentRoute 7 例）。
 
 ## Settings 工作台（范式平移到 `/settings`）
 

@@ -1,4 +1,4 @@
-<svg viewBox="0 0 1200 640" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
   <defs>
     <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse">
       <circle cx="1.2" cy="1.2" r="1.2" fill="#E4E0D5"/>
@@ -11,100 +11,157 @@
     </marker>
   </defs>
 
-  <rect width="1200" height="640" fill="#F6F4EE"/>
-  <rect width="1200" height="640" fill="url(#dots)"/>
+  <rect width="1200" height="800" fill="#F6F4EE"/>
+  <rect width="1200" height="800" fill="url(#dots)"/>
 
   <!-- Title block -->
   <text x="40" y="46" font-size="22" font-weight="700" fill="#1F2430">Loopkit architecture</text>
-  <text x="40" y="68" font-size="13" fill="#6D7280">Journeys compile to durable workflow-engine runs — not a fixed set of marketing nodes</text>
+  <text x="40" y="68" font-size="13" fill="#6D7280">Journeys compile to durable workflow-engine runs — a pnpm monorepo of 2 apps + 13 packages on one Postgres</text>
 
-  <!-- apps/web -->
+  <!-- Row 1: apps + external -->
   <g filter="url(#soft)">
-    <rect x="40" y="100" width="230" height="86" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+    <rect x="40" y="100" width="250" height="100" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
   </g>
-  <rect x="40" y="100" width="230" height="6" rx="3" fill="#8B5CF6"/>
-  <text x="60" y="132" font-size="14" font-weight="700" fill="#1F2430">apps/web</text>
-  <text x="60" y="150" font-size="11.5" fill="#6D7280">TanStack Start dashboard</text>
-  <text x="60" y="166" font-size="11.5" fill="#6D7280">React Flow journey builder</text>
-
-  <!-- apps/server -->
-  <g filter="url(#soft)">
-    <rect x="330" y="100" width="230" height="86" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
-  </g>
-  <rect x="330" y="100" width="230" height="6" rx="3" fill="#4F46E5"/>
-  <text x="350" y="132" font-size="14" font-weight="700" fill="#1F2430">apps/server</text>
-  <text x="350" y="150" font-size="11.5" fill="#6D7280">Hono API · ingestion · webhooks</text>
-  <text x="350" y="166" font-size="11.5" fill="#6D7280">single-instance advisory lock</text>
-
-  <!-- external clients -->
-  <g filter="url(#soft)">
-    <rect x="930" y="100" width="230" height="86" rx="12" fill="#FFFFFF" stroke="#E3E0D6" stroke-dasharray="4 3"/>
-  </g>
-  <text x="950" y="132" font-size="14" font-weight="700" fill="#1F2430">Your app</text>
-  <text x="950" y="150" font-size="11.5" fill="#6D7280">POST /v1/contacts · /v1/events</text>
-  <text x="950" y="166" font-size="11.5" fill="#6D7280">POST /v1/transactional</text>
-
-  <line x1="270" y1="143" x2="330" y2="143" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="930" y1="143" x2="562" y2="143" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- packages/journey + core row -->
-  <g filter="url(#soft)">
-    <rect x="140" y="240" width="220" height="82" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
-  </g>
-  <rect x="140" y="240" width="220" height="6" rx="3" fill="#EC4899"/>
-  <text x="160" y="270" font-size="13.5" font-weight="700" fill="#1F2430">packages/journey</text>
-  <text x="160" y="288" font-size="11" fill="#6D7280">graph → compile() / decompile()</text>
-  <text x="160" y="303" font-size="11" fill="#6D7280">validateGraph · node whitelist</text>
+  <rect x="40" y="100" width="250" height="6" rx="3" fill="#8B5CF6"/>
+  <text x="60" y="130" font-size="14" font-weight="700" fill="#1F2430">apps/web</text>
+  <text x="60" y="150" font-size="11" fill="#6D7280">TanStack Start dashboard</text>
+  <text x="60" y="166" font-size="11" fill="#6D7280">React Flow builder · Tiptap editor</text>
+  <text x="60" y="182" font-size="11" fill="#6D7280">/automations + /settings workbenches</text>
 
   <g filter="url(#soft)">
-    <rect x="400" y="240" width="220" height="82" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+    <rect x="370" y="100" width="300" height="100" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
   </g>
-  <rect x="400" y="240" width="220" height="6" rx="3" fill="#3B82F6"/>
-  <text x="420" y="270" font-size="13.5" font-weight="700" fill="#1F2430">packages/core</text>
-  <text x="420" y="288" font-size="11" fill="#6D7280">contacts · journeys · triggers</text>
-  <text x="420" y="303" font-size="11" fill="#6D7280">audiences (SegmentFilter → SQL)</text>
+  <rect x="370" y="100" width="300" height="6" rx="3" fill="#4F46E5"/>
+  <text x="390" y="130" font-size="14" font-weight="700" fill="#1F2430">apps/server</text>
+  <text x="390" y="150" font-size="11" fill="#6D7280">Hono API · API key + session auth</text>
+  <text x="390" y="166" font-size="11" fill="#6D7280">single-instance Postgres advisory lock</text>
+  <text x="390" y="182" font-size="11" fill="#6D7280">campaign runner · meeting reminder poller</text>
 
   <g filter="url(#soft)">
-    <rect x="660" y="240" width="220" height="82" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+    <rect x="750" y="100" width="170" height="100" rx="12" fill="#FFFFFF" stroke="#E3E0D6" stroke-dasharray="4 3"/>
   </g>
-  <rect x="660" y="240" width="220" height="6" rx="3" fill="#10B981"/>
-  <text x="680" y="270" font-size="13.5" font-weight="700" fill="#1F2430">packages/email</text>
-  <text x="680" y="288" font-size="11" fill="#6D7280">EmailProvider · Resend bridge</text>
-  <text x="680" y="303" font-size="11" fill="#6D7280">rate limit · frequency cap</text>
+  <text x="770" y="130" font-size="14" font-weight="700" fill="#1F2430">Your app</text>
+  <text x="770" y="150" font-size="11" fill="#6D7280">POST /v1/contacts</text>
+  <text x="770" y="166" font-size="11" fill="#6D7280">POST /v1/events</text>
+  <text x="770" y="182" font-size="11" fill="#6D7280">POST /v1/transactional</text>
 
   <g filter="url(#soft)">
-    <rect x="920" y="240" width="220" height="82" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+    <rect x="990" y="100" width="170" height="100" rx="12" fill="#FFFFFF" stroke="#E3E0D6" stroke-dasharray="4 3"/>
   </g>
-  <rect x="920" y="240" width="220" height="6" rx="3" fill="#F59E0B"/>
-  <text x="940" y="270" font-size="13.5" font-weight="700" fill="#1F2430">packages/timers</text>
-  <text x="940" y="288" font-size="11" fill="#6D7280">Postgres external timers</text>
-  <text x="940" y="303" font-size="11" fill="#6D7280">restart-safe wait poller</text>
+  <text x="1010" y="130" font-size="14" font-weight="700" fill="#1F2430">Resend</text>
+  <text x="1010" y="150" font-size="11" fill="#6D7280">email provider</text>
+  <text x="1010" y="166" font-size="11" fill="#6D7280">signed delivery webhooks</text>
+  <text x="1010" y="182" font-size="11" fill="#6D7280">(or Console fallback)</text>
 
-  <line x1="445" y1="186" x2="250" y2="240" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="445" y1="186" x2="510" y2="240" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="445" y1="186" x2="770" y2="240" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="445" y1="186" x2="1020" y2="240" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="290" y1="150" x2="366" y2="150" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="750" y1="150" x2="674" y2="150" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1075,200 V227 H660 V204" fill="none" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- engine -->
+  <!-- Row 2: domain packages -->
   <g filter="url(#soft)">
-    <rect x="300" y="400" width="420" height="96" rx="14" fill="#1F2430"/>
+    <rect x="40" y="255" width="265" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
   </g>
-  <text x="330" y="436" font-size="15" font-weight="700" fill="#FFFFFF">ts-workflow-engine-lite</text>
-  <text x="330" y="456" font-size="11.5" fill="#B8BDC9">bootstrap · EventWaitIndex · contact-event wake-ups</text>
-  <text x="330" y="474" font-size="11.5" fill="#B8BDC9">durable waits · retries · dead-letter queue</text>
+  <rect x="40" y="255" width="265" height="6" rx="3" fill="#EC4899"/>
+  <text x="60" y="283" font-size="13.5" font-weight="700" fill="#1F2430">packages/journey</text>
+  <text x="60" y="301" font-size="11" fill="#6D7280">19 node descriptors → compile / decompile</text>
+  <text x="60" y="317" font-size="11" fill="#6D7280">validate · whitelist · dry-run · cohort</text>
 
-  <line x1="250" y1="322" x2="420" y2="400" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="510" y1="322" x2="480" y2="400" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="770" y1="322" x2="560" y2="400" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="1020" y1="322" x2="640" y2="400" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- storage -->
   <g filter="url(#soft)">
-    <rect x="360" y="550" width="300" height="70" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+    <rect x="325" y="255" width="265" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
   </g>
-  <rect x="360" y="550" width="300" height="6" rx="3" fill="#4F46E5"/>
-  <text x="380" y="580" font-size="13.5" font-weight="700" fill="#1F2430">packages/engine-storage</text>
-  <text x="380" y="598" font-size="11" fill="#6D7280">Drizzle / Postgres StorageProvider — one database, single writer</text>
+  <rect x="325" y="255" width="265" height="6" rx="3" fill="#3B82F6"/>
+  <text x="345" y="283" font-size="13.5" font-weight="700" fill="#1F2430">packages/core</text>
+  <text x="345" y="301" font-size="11" fill="#6D7280">contacts · journeys · campaigns · keys</text>
+  <text x="345" y="317" font-size="11" fill="#6D7280">audiences (SegmentFilter → SQL) · reports</text>
 
-  <line x1="510" y1="496" x2="510" y2="550" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#soft)">
+    <rect x="610" y="255" width="265" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="610" y="255" width="265" height="6" rx="3" fill="#06B6D4"/>
+  <text x="630" y="283" font-size="13.5" font-weight="700" fill="#1F2430">packages/email-doc</text>
+  <text x="630" y="301" font-size="11" fill="#6D7280">Tiptap-style email doc model</text>
+  <text x="630" y="317" font-size="11" fill="#6D7280">validate · render · community templates</text>
+
+  <g filter="url(#soft)">
+    <rect x="895" y="255" width="265" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="895" y="255" width="265" height="6" rx="3" fill="#F97316"/>
+  <text x="915" y="283" font-size="13.5" font-weight="700" fill="#1F2430">packages/ai</text>
+  <text x="915" y="301" font-size="11" fill="#6D7280">guarded LLM pipelines (zod → graph/email)</text>
+  <text x="915" y="317" font-size="11" fill="#6D7280">journey/settings agent · copilots</text>
+
+  <line x1="430" y1="200" x2="180" y2="251" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="510" y1="200" x2="460" y2="251" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="590" y1="200" x2="740" y2="251" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="640" y1="200" x2="1020" y2="251" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Row 3: runtime -->
+  <g filter="url(#soft)">
+    <rect x="40" y="408" width="250" height="110" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="40" y="408" width="250" height="6" rx="3" fill="#10B981"/>
+  <text x="60" y="438" font-size="13.5" font-weight="700" fill="#1F2430">packages/email</text>
+  <text x="60" y="458" font-size="11" fill="#6D7280">Resend / Console provider bridge</text>
+  <text x="60" y="474" font-size="11" fill="#6D7280">subscribed + suppression gates on send</text>
+  <text x="60" y="490" font-size="11" fill="#6D7280">rate limit · frequency cap · RFC 8058</text>
+
+  <g filter="url(#soft)">
+    <rect x="350" y="408" width="500" height="110" rx="14" fill="#1F2430"/>
+  </g>
+  <text x="380" y="438" font-size="15" font-weight="700" fill="#FFFFFF">packages/engine — ts-workflow-engine-lite</text>
+  <text x="380" y="458" font-size="11.5" fill="#B8BDC9">createLoopkitEngine · EventWaitIndex · contact-event wake-ups</text>
+  <text x="380" y="474" font-size="11.5" fill="#B8BDC9">campaignWorkflow · history compaction · event indexed storage</text>
+  <text x="380" y="490" font-size="11.5" fill="#B8BDC9">durable waits · retries · dead-letter queue (process-local bus)</text>
+
+  <g filter="url(#soft)">
+    <rect x="910" y="408" width="250" height="110" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="910" y="408" width="250" height="6" rx="3" fill="#F59E0B"/>
+  <text x="930" y="438" font-size="13.5" font-weight="700" fill="#1F2430">packages/timers</text>
+  <text x="930" y="458" font-size="11" fill="#6D7280">Postgres external timers</text>
+  <text x="930" y="474" font-size="11" fill="#6D7280">PgTimerAdapter + TimerPoller</text>
+  <text x="930" y="490" font-size="11" fill="#6D7280">restart-safe waits, no early fire</text>
+
+  <line x1="180" y1="343" x2="500" y2="404" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="430" y1="343" x2="190" y2="404" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="350" y1="470" x2="296" y2="470" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="323" y="462" font-size="9.5" fill="#8A8E99" text-anchor="middle">send</text>
+  <line x1="910" y1="470" x2="856" y2="470" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="883" y="462" font-size="9.5" fill="#8A8E99" text-anchor="middle">wake</text>
+
+  <!-- Row 4: persistence -->
+  <g filter="url(#soft)">
+    <rect x="350" y="570" width="250" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="350" y="570" width="250" height="6" rx="3" fill="#6366F1"/>
+  <text x="370" y="598" font-size="13.5" font-weight="700" fill="#1F2430">packages/engine-storage</text>
+  <text x="370" y="616" font-size="11" fill="#6D7280">DrizzleStorageProvider</text>
+  <text x="370" y="632" font-size="11" fill="#6D7280">wf_workflows · instances · events · waits</text>
+
+  <g filter="url(#soft)">
+    <rect x="660" y="570" width="280" height="88" rx="12" fill="#FFFFFF" stroke="#E3E0D6"/>
+  </g>
+  <rect x="660" y="570" width="280" height="6" rx="3" fill="#0EA5E9"/>
+  <text x="680" y="598" font-size="13.5" font-weight="700" fill="#1F2430">packages/db</text>
+  <text x="680" y="616" font-size="11" fill="#6D7280">Drizzle schema — 15 domains</text>
+  <text x="680" y="632" font-size="11" fill="#6D7280">product + engine + auth tables in one DB</text>
+
+  <line x1="520" y1="518" x2="480" y2="566" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1035" y1="518" x2="840" y2="566" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="600" y1="614" x2="654" y2="614" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Postgres + foundations -->
+  <g filter="url(#soft)">
+    <rect x="660" y="686" width="280" height="44" rx="10" fill="#1F2430"/>
+  </g>
+  <text x="800" y="706" font-size="12.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">Postgres 18</text>
+  <text x="800" y="721" font-size="10.5" fill="#B8BDC9" text-anchor="middle">one database · single writer</text>
+  <line x1="800" y1="658" x2="800" y2="682" stroke="#9CA0AC" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="686" width="560" height="44" rx="10" fill="none" stroke="#C7CAD2" stroke-dasharray="4 3"/>
+  <text x="60" y="704" font-size="11" font-weight="700" fill="#6D7280">SHARED FOUNDATIONS</text>
+  <text x="60" y="721" font-size="11" fill="#6D7280">packages/auth (better-auth) · env (typed config) · ui (web components) · config (tsconfig)</text>
+
+  <text x="40" y="770" font-size="11.5" fill="#8A8E99">All durable state — product tables, engine wf_* tables, timers, auth — lands in one Postgres. The API server is single-instance by design: the engine's event bus,</text>
+  <text x="40" y="786" font-size="11.5" fill="#8A8E99">timer ownership and idempotency are process-local, enforced by a session-level advisory lock at startup.</text>
 </svg>

@@ -1,5 +1,7 @@
 # PLAN: 要灵活，不要更复杂 — 对标 Loops.so 的产品简化
 
+> **状态：已全部落地。** Phase 1–4 四个阶段的复选框均已完成（发布路径回归、`pnpm -w check-types` 与相关包测试通过）。本计划之后产品继续演进：Journeys 在 UI 层更名为 **Automations**，并新增了 Agent 优先的 `/automations` 与 `/settings` 对话工作台——见 `docs/AGENT_FIRST.md`。本文保留为决策记录，节点数（19）、编译契约等描述以 `README.md` 与代码为准。
+
 ## 问题
 
 Loopkit 引擎能力已经很强，但**产品表面把引擎概念全部平铺了**。对照 Loops.so，复杂度不在「缺功能」，而在「一打开就同时看到所有能力」。

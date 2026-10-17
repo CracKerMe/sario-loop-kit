@@ -23,7 +23,7 @@
   </g>
   <rect x="40" y="100" width="350" height="6" rx="3" fill="#8B5CF6"/>
   <text x="64" y="134" font-size="15" font-weight="700" fill="#1F2430">Lifecycle journey</text>
-  <text x="64" y="154" font-size="11.5" fill="#6D7280">Dashboard → Journeys</text>
+  <text x="64" y="154" font-size="11.5" fill="#6D7280">Dashboard → Automations</text>
   <text x="64" y="176" font-size="11.5" fill="#6D7280">Per-contact graph: waits, branches,</text>
   <text x="64" y="192" font-size="11.5" fill="#6D7280">event wake-ups</text>
   <text x="64" y="214" font-size="11.5" fill="#8B5CF6" font-weight="600">Lab: dry-run → simulate → optimize</text>
