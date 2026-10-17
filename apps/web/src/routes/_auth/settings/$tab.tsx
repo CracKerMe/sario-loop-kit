@@ -58,7 +58,7 @@ function SettingsTabPage() {
   }
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 settings-panel-stack">
       {tab === "billing" && <BillingPanel />}
       {tab === "team" && <TeamPanel />}
       {tab === "audit" && <AuditPanel />}

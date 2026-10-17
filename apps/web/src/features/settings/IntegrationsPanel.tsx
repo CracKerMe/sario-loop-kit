@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import {
   api,
@@ -33,6 +34,7 @@ const KINDS: { kind: IntegrationKindDto; label: string }[] = [
 ];
 
 export function IntegrationsPanel() {
+  const { confirm } = useModal();
   const [integrations, setIntegrations] = useState<IntegrationDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +112,15 @@ export function IntegrationsPanel() {
   };
 
   const remove = async (integration: IntegrationDto) => {
-    if (!confirm(`Delete integration "${integration.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete integration?",
+        description: `Delete integration "${integration.name}"?`,
+        confirmLabel: "Delete integration",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteIntegration(integration.id);
       toast.success("Integration deleted");

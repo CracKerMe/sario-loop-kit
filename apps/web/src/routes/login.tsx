@@ -6,10 +6,19 @@ import SignInForm from "@/components/sign-in-form";
 import SignUpForm from "@/components/sign-up-form";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect:
+      typeof search.redirect === "string" &&
+      search.redirect.startsWith("/") &&
+      !search.redirect.startsWith("//")
+        ? search.redirect
+        : undefined,
+  }),
   component: RouteComponent,
 });
 
 function RouteComponent() {
+  const { redirect } = Route.useSearch();
   const [showSignIn, setShowSignIn] = useState(false);
 
   return (
@@ -20,9 +29,9 @@ function RouteComponent() {
         className="lk-fade-up mt-6 w-full max-w-sm rounded-2xl border border-border bg-card/90 p-6 shadow-xl backdrop-blur"
       >
         {showSignIn ? (
-          <SignInForm onSwitchToSignUp={() => setShowSignIn(false)} />
+          <SignInForm redirectTo={redirect} onSwitchToSignUp={() => setShowSignIn(false)} />
         ) : (
-          <SignUpForm onSwitchToSignIn={() => setShowSignIn(true)} />
+          <SignUpForm redirectTo={redirect} onSwitchToSignIn={() => setShowSignIn(true)} />
         )}
       </main>
       <p className="mt-6 text-center text-xs text-muted-foreground">

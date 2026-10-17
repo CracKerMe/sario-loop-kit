@@ -208,4 +208,22 @@ export const journeyGraphZod = z.object({
       sourceHandle: z.string().optional(),
     }),
   ),
+  dataMapping: z
+    .object({
+      version: z.literal(1),
+      rules: z.array(
+        z.object({
+          id: z.string().min(1),
+          label: z.string().min(1),
+          sourcePath: z.string().min(1),
+          targetPath: z.string().min(1),
+          type: z.enum(["string", "number", "boolean", "datetime", "json"]),
+          required: z.boolean().optional(),
+          persist: z.enum(["run", "contact", "external"]).optional(),
+          description: z.string().optional(),
+          transform: z.string().optional(),
+        }),
+      ),
+    })
+    .optional(),
 }) as unknown as z.ZodType<JourneyGraph>;

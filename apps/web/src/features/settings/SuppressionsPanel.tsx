@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import {
   api,
   type SuppressionCountsDto,
@@ -33,6 +34,7 @@ const REASON_HINTS: Record<SuppressionReasonDto, string> = {
 };
 
 export function SuppressionsPanel() {
+  const { confirm } = useModal();
   const [suppressions, setSuppressions] = useState<SuppressionDto[]>([]);
   const [counts, setCounts] = useState<SuppressionCountsDto | null>(null);
   const [total, setTotal] = useState(0);
@@ -76,7 +78,14 @@ export function SuppressionsPanel() {
         ? `\n\nThis address was blocked because of a ${REASON_LABELS[row.reason].toLowerCase()}. ` +
           "Removing it will allow future sends to this address again."
         : "";
-    if (!confirm(`Allow mail to ${row.email} again?${warning}`)) return;
+    if (
+      !(await confirm({
+        title: "Allow mail again?",
+        description: `Allow mail to ${row.email} again?${warning}`,
+        confirmLabel: "Allow mail",
+      }))
+    )
+      return;
     try {
       await api.removeSuppression(row.id);
       toast.success(`${row.email} can receive mail again`);

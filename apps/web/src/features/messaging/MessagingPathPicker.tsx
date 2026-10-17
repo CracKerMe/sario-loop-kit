@@ -26,8 +26,7 @@ export const MESSAGING_PATHS: Path[] = [
     when: "Welcome series, onboarding, winback.",
     href: "/journeys/new",
     icon: RouteIcon,
-    accent:
-      "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/50 hover:bg-emerald-500/10",
+    accent: "border-success/30 bg-success/5 hover:border-success/50 hover:bg-success/10",
   },
   {
     id: "campaign",
@@ -36,7 +35,7 @@ export const MESSAGING_PATHS: Path[] = [
     when: "Announcements, newsletters.",
     href: "/campaigns",
     icon: SendIcon,
-    accent: "border-sky-500/30 bg-sky-500/5 hover:border-sky-500/50 hover:bg-sky-500/10",
+    accent: "border-info/30 bg-info/5 hover:border-info/50 hover:bg-info/10",
   },
   {
     id: "transactional",
@@ -44,8 +43,7 @@ export const MESSAGING_PATHS: Path[] = [
     blurb: "Backend-triggered mail with an idempotency key.",
     when: "Password resets, receipts.",
     icon: Code2Icon,
-    accent:
-      "border-violet-500/30 bg-violet-500/5 hover:border-violet-500/50 hover:bg-violet-500/10",
+    accent: "border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10",
   },
 ];
 

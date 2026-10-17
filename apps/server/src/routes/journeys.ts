@@ -50,6 +50,8 @@ import {
   AiConfigError,
   AiGraphError,
   generateJourneyGraph,
+  generateJourneyExplanation,
+  JourneyExplanationError,
   generateJourneyOptimization,
   generateSimulationInsight,
 } from "@loopkit/ai";
@@ -68,7 +70,26 @@ import { z } from "zod";
 import type { AuthVariables } from "../middleware/auth";
 import { getEngine } from "../loopkitRuntime";
 
-const graphSchema = z.object({ nodes: z.array(z.any()), edges: z.array(z.any()) });
+const dataMappingRuleSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  sourcePath: z.string().min(1),
+  targetPath: z.string().min(1),
+  type: z.enum(["string", "number", "boolean", "datetime", "json"]),
+  required: z.boolean().optional(),
+  persist: z.enum(["run", "contact", "external"]).optional(),
+  description: z.string().optional(),
+  transform: z.string().optional(),
+});
+const dataMappingSchema = z.object({
+  version: z.literal(1),
+  rules: z.array(dataMappingRuleSchema),
+});
+const graphSchema = z.object({
+  nodes: z.array(z.any()),
+  edges: z.array(z.any()),
+  dataMapping: dataMappingSchema.optional(),
+});
 const createJourneySchema = z.object({ name: z.string().min(1), graph: graphSchema });
 const migrationSchema = z.object({
   strategy: z.enum(["strict", "remap", "restart"]).default("strict"),
@@ -137,6 +158,8 @@ journeysRouter.get("/", async (c) => {
 const copilotSchema = z.object({
   /** What the operator wants, in their own words. */
   request: z.string().trim().min(3).max(4000),
+  /** Optional current Builder state for edit-oriented Agent requests. */
+  currentGraph: graphSchema.optional(),
 });
 
 // Journey Copilot: natural language → guarded JourneyGraph. The model
@@ -174,6 +197,7 @@ journeysRouter.post("/copilot", async (c) => {
       templates,
       childJourneys: publishedJourneys,
       events: events.map((e) => e.name),
+      currentGraph: parsed.data.currentGraph as JourneyGraph | undefined,
     });
     // validateGraph already ran inside the guard; the echo is for the UI's
     // issue list and to fail loudly if the two layers ever drift apart.
@@ -244,6 +268,49 @@ journeysRouter.get("/:id", async (c) => {
     runCounts: detail.runCounts,
     validation: detail.graph ? validateGraph(detail.graph) : null,
   });
+});
+
+journeysRouter.post("/:id/explain", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = z
+    .object({ graph: graphSchema.optional(), language: z.string().trim().max(32).optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const detail = await getJourneyDetail(db, workspaceId, journeyId);
+  if (!detail) return c.json({ error: "not_found" }, 404);
+  const graph = parsed.data.graph ?? detail.graph;
+  if (!graph) return c.json({ error: "no_graph" }, 400);
+
+  try {
+    const result = await generateJourneyExplanation({
+      journeyName: detail.journey.name,
+      graph: graph as JourneyGraph,
+      language: parsed.data.language,
+    });
+    return c.json({
+      ...result.result,
+      model: result.model,
+      attempts: result.attempts,
+      usage: result.usage,
+    });
+  } catch (error) {
+    if (error instanceof AiConfigError) {
+      return c.json({ error: "ai_not_configured", message: error.message }, 503);
+    }
+    if (error instanceof JourneyExplanationError) {
+      return c.json(
+        { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+        502,
+      );
+    }
+    return c.json(
+      { error: "ai_unavailable", message: error instanceof Error ? error.message : String(error) },
+      500,
+    );
+  }
 });
 
 journeysRouter.put("/:id/draft", async (c) => {

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type PlayActionDto, type PlayDto, type PlayTriggerDto } from "@/lib/api";
 
@@ -56,6 +57,7 @@ function describeAction(a: PlayActionDto): string {
 }
 
 export function PlaysPanel() {
+  const { confirm } = useModal();
   const [plays, setPlays] = useState<PlayDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +128,15 @@ export function PlaysPanel() {
   };
 
   const remove = async (play: PlayDto) => {
-    if (!confirm(`Delete play "${play.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete play?",
+        description: `Delete play "${play.name}"?`,
+        confirmLabel: "Delete play",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deletePlay(play.id);
       toast.success("Play deleted");

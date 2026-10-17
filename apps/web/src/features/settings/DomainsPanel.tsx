@@ -14,12 +14,14 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type DnsRecordDto, type SendingDomainDto } from "@/lib/api";
 
 import { CopyField } from "./CopyField";
 
 export function DomainsPanel() {
+  const { confirm } = useModal();
   const [domains, setDomains] = useState<SendingDomainDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +87,15 @@ export function DomainsPanel() {
   };
 
   const remove = async (row: SendingDomainDto) => {
-    if (!confirm(`Delete sending domain ${row.domain}?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete sending domain?",
+        description: `Delete sending domain ${row.domain}?`,
+        confirmLabel: "Delete domain",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteDomain(row.id);
       toast.success("Domain deleted");

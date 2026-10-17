@@ -41,12 +41,12 @@ const PRIMARY_NAV: PrimaryNav[] = [
 const COLLAPSED_STORAGE_KEY = "lk-sidebar-collapsed";
 
 const navLinkClass =
-  "flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent/60 hover:text-foreground active:bg-accent";
+  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-[background-color,color,transform] duration-200 hover:bg-accent/60 hover:text-foreground active:translate-y-px active:bg-accent";
 
 function navLinkStyles(active: boolean, collapsed: boolean) {
   return cn(
     navLinkClass,
-    active && "bg-accent font-medium text-foreground",
+    active && "bg-accent font-medium text-accent-foreground shadow-sm shadow-primary/5",
     // Collapsed rail: square, icon-only hit target.
     collapsed && "justify-center gap-0 px-0",
   );

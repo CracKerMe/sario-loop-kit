@@ -2,11 +2,18 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { cn } from "@loopkit/ui/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, LayoutTemplateIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  LayoutTemplateIcon,
+  Loader2Icon,
+  RocketIcon,
+} from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Dialog } from "@/components/dialog";
-import { JourneyBuilder } from "@/features/journey-builder/JourneyBuilder";
+import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import {
   JOURNEY_TEMPLATES,
   journeyTemplateById,
@@ -119,6 +126,11 @@ function NewJourneyPage() {
   const [name, setName] = useState(template.name);
   /** Whether the graph should reset to the newly applied template on next render. */
   const [appliedTemplateId, setAppliedTemplateId] = useState<JourneyTemplateId>(templateId);
+  const [builderMeta, setBuilderMeta] = useState<BuilderMeta | null>(null);
+  const controlsRef = useRef<{
+    saveDraft: () => Promise<void>;
+    publish: () => Promise<void>;
+  } | null>(null);
 
   const selectTemplate = (id: JourneyTemplateId) => {
     setTemplateId(id);
@@ -164,15 +176,36 @@ function NewJourneyPage() {
           <LayoutTemplateIcon data-icon="inline-start" />
           {template.name}
         </Button>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
             <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
-            New draft
+            {builderMeta?.saving ? "Saving…" : "New draft"}
           </span>
-          <span className="hidden items-center gap-1 sm:inline-flex">
-            <CheckIcon className="size-3" aria-hidden="true" />
-            Save or publish from the builder toolbar
-          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            disabled={!builderMeta || builderMeta.saving || !builderMeta.dirty}
+            onClick={() => void controlsRef.current?.saveDraft()}
+          >
+            {builderMeta?.saving && (
+              <Loader2Icon data-icon="inline-start" className="animate-spin" />
+            )}
+            Save draft
+          </Button>
+          <Button
+            size="sm"
+            className="h-8"
+            disabled={!builderMeta || builderMeta.saving || !builderMeta.validation.valid}
+            onClick={() => void controlsRef.current?.publish()}
+          >
+            {builderMeta?.saving ? (
+              <Loader2Icon data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <RocketIcon data-icon="inline-start" />
+            )}
+            Publish
+          </Button>
         </div>
       </div>
 
@@ -186,6 +219,10 @@ function NewJourneyPage() {
           initialGraph={template.build()}
           onNameChange={setName}
           onSaved={onSaved}
+          onMetaChange={setBuilderMeta}
+          registerControls={(controls) => {
+            controlsRef.current = controls;
+          }}
         />
       </div>
 

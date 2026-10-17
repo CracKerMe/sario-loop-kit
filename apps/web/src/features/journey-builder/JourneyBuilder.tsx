@@ -16,7 +16,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { CheckCircle2Icon, Loader2Icon, Trash2Icon } from "lucide-react";
+import { BotIcon, CheckCircle2Icon, DatabaseIcon, Loader2Icon, Trash2Icon } from "lucide-react";
 import { validateGraph } from "@loopkit/journey/validate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -32,6 +32,8 @@ import {
   type ValidationResult,
 } from "@/lib/api";
 import { CopilotDialog } from "./CopilotDialog";
+import { DataMappingPanel } from "./DataMappingPanel";
+import { JourneyAgentPanel } from "./JourneyAgentPanel";
 import {
   NODE_META,
   emptyWelcomeGraph,
@@ -117,11 +119,16 @@ export function JourneyBuilder({
   const [newTemplateSubject, setNewTemplateSubject] = useState("");
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [agentPrompt, setAgentPrompt] = useState("");
 
   const {
     nodes,
     setNodes,
     edges,
+    dataMapping,
+    setDataMapping,
     setEdges,
     selected,
     setSelected,
@@ -200,7 +207,8 @@ export function JourneyBuilder({
         const nextNodes = prefillTemplateId(flow.nodes);
         setNodes(nextNodes);
         setEdges(flow.edges);
-        setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+        setDataMapping(flow.dataMapping);
+        setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges, flow.dataMapping)));
         setLoading(false);
         return;
       }
@@ -213,13 +221,15 @@ export function JourneyBuilder({
           const nextNodes = prefillTemplateId(flow.nodes);
           setNodes(nextNodes);
           setEdges(flow.edges);
-          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+          setDataMapping(flow.dataMapping);
+          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges, flow.dataMapping)));
         } else {
           const flow = graphToFlow(emptyWelcomeGraph());
           const nextNodes = prefillTemplateId(flow.nodes);
           setNodes(nextNodes);
           setEdges(flow.edges);
-          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges)));
+          setDataMapping(flow.dataMapping);
+          setBaseline(JSON.stringify(flowToGraph(nextNodes, flow.edges, flow.dataMapping)));
         }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to load journey");
@@ -281,9 +291,17 @@ export function JourneyBuilder({
       replaceGraphFromCopilot(result.graph);
       setCopilotOpen(false);
       fitViewToGraph();
-      toast.success(`Copilot 旅程已套用（${result.graph.nodes.length} 个节点，记得保存草稿）`);
+      toast.success(`AI 旅程已套用（${result.graph.nodes.length} 个节点，记得保存草稿）`);
     },
     [templates, fitViewToGraph, replaceGraphFromCopilot],
+  );
+
+  const applyAgentResult = useCallback(
+    (result: CopilotResultDto) => {
+      applyCopilotResult(result.graph, result);
+      setAgentOpen(false);
+    },
+    [applyCopilotResult],
   );
 
   const nodeTypes = useMemo(() => createNodeTypes(deleteNode), [deleteNode]);
@@ -446,6 +464,35 @@ export function JourneyBuilder({
           onDrop={onDrop}
           onDragOver={onDragOver}
         >
+          <div className="pointer-events-none absolute top-3 right-3 z-10">
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8 gap-1.5 border border-sky-500/25 bg-card/90 px-2.5 text-[11px] shadow-sm backdrop-blur hover:bg-sky-500/10"
+                onClick={() => setMappingOpen(true)}
+              >
+                <DatabaseIcon className="size-3.5 text-sky-600" aria-hidden="true" />
+                数据映射
+                {dataMapping?.rules.length ? (
+                  <span className="rounded bg-sky-500/10 px-1 text-[10px] tabular-nums text-sky-700">
+                    {dataMapping.rules.length}
+                  </span>
+                ) : null}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8 gap-1.5 border border-amber-500/25 bg-card/90 px-2.5 text-[11px] shadow-sm backdrop-blur hover:bg-amber-500/10"
+                onClick={() => setAgentOpen(true)}
+              >
+                <BotIcon className="size-3.5 text-amber-600" aria-hidden="true" />
+                Journey Agent
+              </Button>
+            </div>
+          </div>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -754,6 +801,25 @@ export function JourneyBuilder({
         open={copilotOpen}
         onClose={() => setCopilotOpen(false)}
         onApply={applyCopilotResult}
+      />
+      <JourneyAgentPanel
+        open={agentOpen}
+        journeyId={journeyId}
+        graph={graph}
+        onClose={() => setAgentOpen(false)}
+        onApply={applyAgentResult}
+        initialRequest={agentPrompt}
+      />
+      <DataMappingPanel
+        open={mappingOpen}
+        value={dataMapping}
+        onClose={() => setMappingOpen(false)}
+        onChange={setDataMapping}
+        onAskAgent={(prompt) => {
+          setAgentPrompt(prompt);
+          setMappingOpen(false);
+          setAgentOpen(true);
+        }}
       />
     </div>
   );

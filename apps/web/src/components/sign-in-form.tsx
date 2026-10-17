@@ -11,7 +11,13 @@ import { authClient } from "@/lib/auth-client";
 
 import Loader from "./loader";
 
-export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => void }) {
+export default function SignInForm({
+  onSwitchToSignUp,
+  redirectTo,
+}: {
+  onSwitchToSignUp: () => void;
+  redirectTo?: string;
+}) {
   const navigate = useNavigate({
     from: "/",
   });
@@ -30,9 +36,8 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
         },
         {
           onSuccess: () => {
-            navigate({
-              to: "/dashboard",
-            });
+            if (redirectTo) window.location.assign(redirectTo);
+            else navigate({ to: "/dashboard" });
             toast.success("Sign in successful");
           },
           onError: (error) => {

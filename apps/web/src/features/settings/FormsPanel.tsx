@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type FormDto, type PreferenceTopicDto } from "@/lib/api";
 
@@ -54,6 +55,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 export function FormsPanel() {
+  const { confirm } = useModal();
   const [forms, setForms] = useState<FormDto[]>([]);
   const [topics, setTopics] = useState<PreferenceTopicDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,15 @@ export function FormsPanel() {
   };
 
   const remove = async (form: FormDto) => {
-    if (!confirm(`Delete form "${form.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete form?",
+        description: `Delete form "${form.name}"?`,
+        confirmLabel: "Delete form",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteForm(form.id);
       toast.success("Form deleted");

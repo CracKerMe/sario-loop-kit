@@ -19,6 +19,7 @@ import type {
   ContactEventDto,
   CopilotEmailResultDto,
   CopilotResultDto,
+  JourneyExplanationDto,
   EmailEngagementDto,
   EmailPreviewDto,
   EmailTemplateDto,
@@ -106,10 +107,18 @@ export const api = {
 
   /* Journeys ---------------------------------------------------------- */
   journeys: () => request<{ journeys: JourneyDto[] }>("/v1/journeys"),
-  copilotGenerate: (requestText: string) =>
+  copilotGenerate: (requestText: string, currentGraph?: JourneyGraphDto) =>
     request<CopilotResultDto>("/v1/journeys/copilot", {
       method: "POST",
-      body: JSON.stringify({ request: requestText }),
+      body: JSON.stringify({ request: requestText, ...(currentGraph ? { currentGraph } : {}) }),
+    }),
+  journeyExplain: (id: string, graph?: JourneyGraphDto, language?: string) =>
+    request<JourneyExplanationDto>(`/v1/journeys/${id}/explain`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...(graph ? { graph } : {}),
+        ...(language ? { language } : {}),
+      }),
     }),
   journey: (id: string) =>
     request<{

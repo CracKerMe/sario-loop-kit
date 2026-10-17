@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import {
   api,
@@ -51,6 +52,7 @@ const DEFAULT_DRAFT: LeadScoreRuleInputDto = {
 };
 
 export function ScoringPanel() {
+  const { confirm } = useModal();
   const [rules, setRules] = useState<LeadScoreRuleDto[]>([]);
   const [dist, setDist] = useState<{
     hot: number;
@@ -110,7 +112,15 @@ export function ScoringPanel() {
   };
 
   const remove = async (rule: LeadScoreRuleDto) => {
-    if (!confirm(`Delete rule "${rule.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete scoring rule?",
+        description: `Delete rule "${rule.name}"?`,
+        confirmLabel: "Delete rule",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteScoreRule(rule.id);
       toast.success("Rule deleted");

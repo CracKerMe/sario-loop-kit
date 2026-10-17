@@ -1,24 +1,24 @@
 import { cn } from "@loopkit/ui/lib/utils";
 
 const STATUS_STYLES: Record<string, string> = {
-  published: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-  draft: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  paused: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  running: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-  failed: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300",
-  cancelled: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  published: "border-success/30 bg-success/10 text-success",
+  draft: "border-warning/30 bg-warning/10 text-warning",
+  paused: "border-info/30 bg-info/10 text-info",
+  running: "border-info/30 bg-info/10 text-info",
+  completed: "border-success/30 bg-success/10 text-success",
+  failed: "border-destructive/30 bg-destructive/10 text-destructive",
+  cancelled: "border-neutral/30 bg-neutral/10 text-neutral",
   // Campaign-specific states. `queued` and `sending` both animate: the
   // difference between "waiting" and "in flight" matters operationally, but
   // both mean "not finished", which is what the pulse communicates.
-  queued: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  sending: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-  pending: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
-  skipped: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  queued: "border-warning/30 bg-warning/10 text-warning",
+  sending: "border-info/30 bg-info/10 text-info",
+  sent: "border-success/30 bg-success/10 text-success",
+  pending: "border-neutral/30 bg-neutral/10 text-neutral",
+  skipped: "border-neutral/30 bg-neutral/10 text-neutral",
   // Journey run lifecycle: the contact left the journey early (goal met /
   // branch exit). Neutral like cancelled, but distinct from it.
-  exited: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  exited: "border-neutral/30 bg-neutral/10 text-neutral",
 };
 
 const PULSING = new Set(["running", "queued", "sending"]);

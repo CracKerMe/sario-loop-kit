@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 export function LogoMark({ className = "size-6" }: { className?: string }) {
   return (
     <span
-      className={`grid ${className} shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-[color-mix(in_oklab,var(--primary),var(--chart-2))] text-primary-foreground shadow-sm`}
+      className={`grid ${className} shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-md shadow-primary/20`}
     >
       <svg viewBox="0 0 24 24" fill="none" className="size-[62%]" aria-hidden="true">
         <path

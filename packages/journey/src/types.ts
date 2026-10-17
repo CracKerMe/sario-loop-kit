@@ -161,6 +161,26 @@ export interface JourneyNotifyData {
   payload?: Record<string, unknown>;
 }
 
+export type JourneyDataMappingType = "string" | "number" | "boolean" | "datetime" | "json";
+
+/** A business-facing data contract shared by operators and Journey Agent. */
+export interface JourneyDataMappingRule {
+  id: string;
+  label: string;
+  sourcePath: string;
+  targetPath: string;
+  type: JourneyDataMappingType;
+  required?: boolean;
+  persist?: "run" | "contact" | "external";
+  description?: string;
+  transform?: string;
+}
+
+export interface JourneyDataMapping {
+  version: 1;
+  rules: JourneyDataMappingRule[];
+}
+
 /** No per-node config — branches are simply the node's outgoing edges. */
 export interface JourneyParallelData {
   label?: string;
@@ -216,6 +236,8 @@ export interface JourneyEdge {
 export interface JourneyGraph {
   nodes: JourneyNode[];
   edges: JourneyEdge[];
+  /** Optional, backwards-compatible business data contract. */
+  dataMapping?: JourneyDataMapping;
 }
 
 /** Context shape available to compile-time action closures at run time. */

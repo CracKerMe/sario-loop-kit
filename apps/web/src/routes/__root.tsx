@@ -4,6 +4,7 @@ import { createMiddleware } from "@tanstack/react-start";
 import { evlogErrorHandler } from "evlog/nitro/v3";
 import { ThemeProvider } from "next-themes";
 
+import { ModalProvider } from "../components/modal";
 import { AppQueryProvider } from "../lib/api/provider";
 import appCss from "../index.css?url";
 
@@ -34,12 +35,12 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       {
         name: "theme-color",
         media: "(prefers-color-scheme: light)",
-        content: "#f7f6f3",
+        content: "#f3f0e8",
       },
       {
         name: "theme-color",
         media: "(prefers-color-scheme: dark)",
-        content: "#12131a",
+        content: "#161923",
       },
     ],
     links: [
@@ -58,13 +59,13 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap",
       },
       {
         rel: "icon",
         type: "image/svg+xml",
         href: `data:image/svg+xml,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7cf8"/><stop offset="1" stop-color="#5b5bd6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#g)"/><path d="M21.5 10.5a7.8 7.8 0 1 0 2 5.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="23.5" cy="15.7" r="2" fill="#fff"/></svg>`,
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6655b8"/><path d="M21.5 10.5a7.8 7.8 0 1 0 2 5.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="23.5" cy="15.7" r="2" fill="#fff"/></svg>`,
         )}`,
       },
     ],
@@ -86,9 +87,11 @@ function RootDocument() {
           enableSystem
           disableTransitionOnChange
         >
-          <AppQueryProvider>
-            <Outlet />
-          </AppQueryProvider>
+          <ModalProvider>
+            <AppQueryProvider>
+              <Outlet />
+            </AppQueryProvider>
+          </ModalProvider>
           <Toaster richColors />
         </ThemeProvider>
         <Scripts />

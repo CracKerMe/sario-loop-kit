@@ -86,10 +86,11 @@ export function useJourneyGraph(opts: UseJourneyGraphOptions) {
   const seed = opts.initialGraph ? graphToFlow(opts.initialGraph) : null;
   const [nodes, setNodes] = useState<Node[]>(seed?.nodes ?? []);
   const [edges, setEdges] = useState<Edge[]>(seed?.edges ?? []);
+  const [dataMapping, setDataMapping] = useState<JourneyGraphDto["dataMapping"]>(seed?.dataMapping);
   const [selected, setSelected] = useState<Node | null>(null);
   const [validation, setValidation] = useState<ValidationResult>({ valid: true, issues: [] });
 
-  const graph = useMemo(() => flowToGraph(nodes, edges), [nodes, edges]);
+  const graph = useMemo(() => flowToGraph(nodes, edges, dataMapping), [nodes, edges, dataMapping]);
 
   const dirty = useMemo(() => {
     if (!journeyId) return true;
@@ -238,6 +239,7 @@ export function useJourneyGraph(opts: UseJourneyGraphOptions) {
     const rf = graphToFlow(next);
     setNodes(rf.nodes);
     setEdges(rf.edges);
+    setDataMapping(rf.dataMapping);
     setSelected(null);
     setValidation({ valid: true, issues: [] });
   }, []);
@@ -260,15 +262,17 @@ export function useJourneyGraph(opts: UseJourneyGraphOptions) {
         }
       }
       setSaving(true);
+      let createdId: string | undefined;
       try {
         let id = journeyId;
         if (!id) {
-          const created = await api.createJourney(name, graph);
+          const created = await api.createJourney(name.trim() || "Untitled automation", graph);
           id = created.journeyId;
+          createdId = id;
           setBaseline(JSON.stringify(graph));
-          onSaved?.(id);
           if (!publish) {
             toast.success("Draft created");
+            onSaved?.(id);
             return;
           }
         } else {
@@ -286,6 +290,11 @@ export function useJourneyGraph(opts: UseJourneyGraphOptions) {
         toast.success("Journey published");
         onSaved?.(id);
       } catch (error) {
+        // A new journey is created before publish can compile/register it. If
+        // that second step fails, take the user to the recoverable draft
+        // instead of leaving them on a form that would create a duplicate on
+        // the next click.
+        if (!journeyId && createdId) onSaved?.(createdId);
         const message =
           error && typeof error === "object" && "body" in error
             ? JSON.stringify((error as { body: unknown }).body)
@@ -304,6 +313,8 @@ export function useJourneyGraph(opts: UseJourneyGraphOptions) {
     nodes,
     setNodes,
     edges,
+    dataMapping,
+    setDataMapping,
     setEdges,
     selected,
     setSelected,

@@ -75,6 +75,7 @@ function JourneysPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pausingId, setPausingId] = useState<string | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
 
   const load = async () => {
@@ -141,6 +142,19 @@ function JourneysPage() {
       toast.error(e instanceof Error ? e.message : "Archive failed");
     } finally {
       setMutatingId(null);
+    }
+  };
+
+  const resume = async (journey: JourneyDto) => {
+    setResumingId(journey.id);
+    try {
+      await api.publishJourney(journey.id);
+      toast.success(`“${journey.name}” resumed`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Resume failed");
+    } finally {
+      setResumingId(null);
     }
   };
 
@@ -370,6 +384,14 @@ function JourneysPage() {
                     {j.status === "published" && (
                       <DropdownMenuItem disabled={pausingId === j.id} onClick={() => void pause(j)}>
                         Pause journey
+                      </DropdownMenuItem>
+                    )}
+                    {j.status === "paused" && (
+                      <DropdownMenuItem
+                        disabled={resumingId === j.id}
+                        onClick={() => void resume(j)}
+                      >
+                        Resume journey
                       </DropdownMenuItem>
                     )}
                     {(j.status === "draft" || j.status === "paused") && (

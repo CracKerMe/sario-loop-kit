@@ -12,7 +12,7 @@ import type { EmailDocJson } from "@loopkit/email-doc";
  * package types may carry `Date`, the wire does not.
  */
 
-import type { SegmentFilter, ValidationResult } from "@loopkit/journey";
+import type { JourneyDataMapping, SegmentFilter, ValidationResult } from "@loopkit/journey";
 
 export type {
   SegmentCondition,
@@ -53,7 +53,11 @@ export type JourneyEdgeDto = {
   sourceHandle?: string;
 };
 
-export type JourneyGraphDto = { nodes: JourneyNodeDto[]; edges: JourneyEdgeDto[] };
+export type JourneyGraphDto = {
+  nodes: JourneyNodeDto[];
+  edges: JourneyEdgeDto[];
+  dataMapping?: JourneyDataMapping;
+};
 
 export type JourneyDto = {
   id: string;
@@ -72,6 +76,17 @@ export type JourneyDto = {
 export type CopilotResultDto = {
   graph: JourneyGraphDto;
   validation: ValidationResult;
+  model: string;
+  attempts: number;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+export type JourneyExplanationDto = {
+  headline: string;
+  summary: string;
+  steps: { nodeId: string; title: string; explanation: string }[];
+  branches: { nodeId: string; explanation: string }[];
+  notes: string[];
   model: string;
   attempts: number;
   usage: { inputTokens: number; outputTokens: number };

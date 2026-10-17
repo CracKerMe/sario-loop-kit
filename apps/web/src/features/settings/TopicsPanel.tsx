@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type PreferenceTopicDto } from "@/lib/api";
 
@@ -39,6 +40,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 export function TopicsPanel() {
+  const { confirm } = useModal();
   const [topics, setTopics] = useState<PreferenceTopicDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +117,15 @@ export function TopicsPanel() {
   };
 
   const remove = async (topic: PreferenceTopicDto) => {
-    if (!confirm(`Delete topic "${topic.name}"? Contact subscriptions will be removed.`)) return;
+    if (
+      !(await confirm({
+        title: "Delete topic?",
+        description: `Delete topic "${topic.name}"? Contact subscriptions will be removed.`,
+        confirmLabel: "Delete topic",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteTopic(topic.id);
       toast.success("Topic deleted");

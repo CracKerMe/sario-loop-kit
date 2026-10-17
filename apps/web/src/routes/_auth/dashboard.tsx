@@ -63,15 +63,15 @@ function Stat({
 }
 
 const DISTRIBUTION_STYLES: Record<string, string> = {
-  published: "bg-emerald-500",
-  draft: "bg-amber-500",
-  paused: "bg-sky-500",
-  running: "bg-sky-500",
-  completed: "bg-emerald-500",
-  failed: "bg-rose-500",
-  cancelled: "bg-zinc-400",
-  sent: "bg-violet-500",
-  delivered: "bg-emerald-500",
+  published: "bg-success",
+  draft: "bg-warning",
+  paused: "bg-info",
+  running: "bg-info",
+  completed: "bg-success",
+  failed: "bg-destructive",
+  cancelled: "bg-neutral",
+  sent: "bg-primary",
+  delivered: "bg-success",
 };
 
 function Distribution({ title, counts }: { title: string; counts: Record<string, number> }) {
@@ -127,8 +127,8 @@ function EngagementRates({
   delivered: number;
 }) {
   const rows = [
-    { label: "Open rate", value: openRate, style: "bg-emerald-500" },
-    { label: "Click rate", value: clickRate, style: "bg-sky-500" },
+    { label: "Open rate", value: openRate, style: "bg-success" },
+    { label: "Click rate", value: clickRate, style: "bg-info" },
   ];
   return (
     <div>
@@ -266,21 +266,21 @@ function DashboardPage() {
           label="Contacts"
           value={Number(stats?.contacts ?? 0)}
           icon={UsersIcon}
-          tone="bg-violet-500/10 text-violet-500 dark:text-violet-300"
+          tone="bg-primary/10 text-primary"
           onClick={() => void navigate({ to: "/contacts" })}
         />
         <Stat
           label="Active automations"
           value={activeAutomations}
           icon={RouteIcon}
-          tone="bg-emerald-500/10 text-emerald-500 dark:text-emerald-300"
+          tone="bg-success/10 text-success"
           onClick={() => void navigate({ to: "/journeys" })}
         />
         <Stat
           label="Emails sent"
           value={emailTotal}
           icon={MailIcon}
-          tone="bg-amber-500/10 text-amber-500 dark:text-amber-300"
+          tone="bg-warning/10 text-warning"
           onClick={() => void navigate({ to: "/templates" })}
         />
         <Stat
@@ -295,7 +295,7 @@ function DashboardPage() {
               : "$0"
           }
           icon={BadgeDollarSignIcon}
-          tone="bg-rose-500/10 text-rose-500 dark:text-rose-300"
+          tone="bg-destructive/10 text-destructive"
           onClick={() => void navigate({ to: "/settings/$tab", params: { tab: "revenue" } })}
         />
       </div>
@@ -305,8 +305,8 @@ function DashboardPage() {
           className={cn(
             "mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border px-3 py-2 text-xs",
             opsHealth.healthy
-              ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200"
-              : "border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-100",
+              ? "border-success/25 bg-success/5 text-success"
+              : "border-warning/30 bg-warning/5 text-warning",
           )}
         >
           <span className="font-medium">

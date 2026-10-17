@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { JourneyBuilder, type BuilderMeta } from "@/features/journey-builder/JourneyBuilder";
 import { DryRunDialog } from "@/features/journey-builder/DryRunDialog";
+import { JourneyOverview } from "@/features/journey-builder/JourneyOverview";
 import { LiftPanel } from "@/features/journey-builder/LiftPanel";
 import { MigrateRunsDialog } from "@/features/journey-builder/MigrateRunsDialog";
 import { NODE_META } from "@/features/journey-builder/graph";
@@ -328,6 +329,7 @@ function JourneyEditorPage() {
   const [canaryBusy, setCanaryBusy] = useState(false);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
   const [funnelLoading, setFunnelLoading] = useState(false);
   const [runQuery, setRunQuery] = useState("");
@@ -421,6 +423,19 @@ function JourneyEditorPage() {
       toast.error(e instanceof Error ? e.message : "Pause failed");
     } finally {
       setPausing(false);
+    }
+  };
+
+  const resume = async () => {
+    setResuming(true);
+    try {
+      await api.publishJourney(journeyId);
+      toast.success("Journey resumed");
+      await loadRuns();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Resume failed");
+    } finally {
+      setResuming(false);
     }
   };
 
@@ -533,6 +548,21 @@ function JourneyEditorPage() {
                   <PauseIcon data-icon="inline-start" />
                 )}
                 Pause
+              </Button>
+            )}
+            {status === "paused" && (
+              <Button
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={resuming}
+                onClick={() => void resume()}
+              >
+                {resuming ? (
+                  <Loader2Icon data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <PlayIcon data-icon="inline-start" />
+                )}
+                Resume
               </Button>
             )}
             <DropdownMenu>
@@ -665,6 +695,17 @@ function JourneyEditorPage() {
             )}
           </div>
         )}
+
+        <JourneyOverview
+          graph={graph}
+          status={status}
+          runCounts={runCounts}
+          validation={builderMeta?.validation}
+          onOpenActivity={() => {
+            setTab("activity");
+            setActivityView("runs");
+          }}
+        />
 
         {/* Primary tabs — Lab/ops live in ···, not here. */}
         <div className="flex items-center gap-1 px-2 pb-1.5">

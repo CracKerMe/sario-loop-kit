@@ -266,6 +266,7 @@ export function defaultNodeData(type: BuilderNodeType): Record<string, unknown> 
 export function graphToFlow(graph: JourneyGraphDto | JourneyGraph): {
   nodes: Node[];
   edges: Edge[];
+  dataMapping?: JourneyGraphDto["dataMapping"];
 } {
   const nodes: Node[] = graph.nodes.map((n: JourneyNodeDto | JourneyNode) => ({
     id: n.id,
@@ -280,10 +281,14 @@ export function graphToFlow(graph: JourneyGraphDto | JourneyGraph): {
     sourceHandle: e.sourceHandle ?? undefined,
     type: "insert",
   }));
-  return { nodes, edges };
+  return { nodes, edges, dataMapping: graph.dataMapping };
 }
 
-export function flowToGraph(nodes: Node[], edges: Edge[]): JourneyGraphDto {
+export function flowToGraph(
+  nodes: Node[],
+  edges: Edge[],
+  dataMapping?: JourneyGraphDto["dataMapping"],
+): JourneyGraphDto {
   return {
     nodes: nodes.map((n) => ({
       id: n.id,
@@ -297,6 +302,7 @@ export function flowToGraph(nodes: Node[], edges: Edge[]): JourneyGraphDto {
       target: e.target,
       sourceHandle: e.sourceHandle ?? undefined,
     })),
+    ...(dataMapping ? { dataMapping } : {}),
   };
 }
 

@@ -6,16 +6,21 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { cn } from "@loopkit/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { EyeIcon, PencilIcon, PlusIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import { EyeIcon, InfoIcon, PencilIcon, PlusIcon, SquareArrowOutUpRightIcon } from "lucide-react";
 import type { Node } from "@xyflow/react";
 
 import type { CampaignDto, EmailTemplateDto, JourneyDto } from "@/lib/api";
-import { ConditionExpressionField } from "./ConditionExpressionField";
+import {
+  ConditionExpressionField,
+  describeCondition,
+  parseConditionExpression,
+} from "./ConditionExpressionField";
 import {
   AbVariantsEditor,
   EmailAdvancedSettings,
   InspectorField,
   InputWithVariables,
+  PropertyAssignmentsEditor,
   SplitRoutesEditor,
   TextareaWithVariables,
   TriggerEntryFilter,
@@ -46,6 +51,248 @@ function dataOf(selected: Node): NodeData {
   return selected.data as NodeData;
 }
 
+const NODE_GUIDANCE: Record<string, { purpose: string; useWhen: string; result: string }> = {
+  trigger: {
+    purpose: "Decides which contacts enter this automation.",
+    useWhen: "Choose the real business event that should start the journey.",
+    result: "Only contacts matching this trigger and entry filter can enter.",
+  },
+  email: {
+    purpose: "Sends a customer-facing email.",
+    useWhen: "You need to educate, remind, or move a contact to the next step.",
+    result: "The selected template is sent when the contact reaches this node.",
+  },
+  sendCampaign: {
+    purpose: "Sends an existing campaign to one contact inside this journey.",
+    useWhen: "Reuse a campaign’s approved content instead of creating another email step.",
+    result: "The campaign content is snapshotted when you publish this automation.",
+  },
+  delay: {
+    purpose: "Controls when the next step happens.",
+    useWhen: "Give the contact time to read, respond, or complete the previous action.",
+    result: "The contact waits for the configured duration or time rule before continuing.",
+  },
+  branch: {
+    purpose: "Routes contacts based on their profile or behavior.",
+    useWhen: "Different customer states need different follow-up.",
+    result: "True follows the matching path; false follows the other path.",
+  },
+  filter: {
+    purpose: "Allows only contacts matching a condition to continue.",
+    useWhen: "Contacts who do not qualify should stop or take a fallback path.",
+    result: "The condition is evaluated at runtime using the contact’s current data.",
+  },
+  abSplit: {
+    purpose: "Compares multiple versions of a path.",
+    useWhen: "You want to test content or timing while keeping the audience allocation controlled.",
+    result:
+      "Each contact is assigned once using a stable contact-id bucket; the same contact stays on the same path.",
+  },
+  split: {
+    purpose: "Routes contacts into named business segments.",
+    useWhen: "You have more than two rule-based paths, such as plan tiers or regions.",
+    result: "The first matching route wins; the default route catches everyone else.",
+  },
+  timeWindow: {
+    purpose: "Allows a path to continue only during selected hours.",
+    useWhen: "Messages or handoffs should happen during business hours.",
+    result: "True continues inside the window; false should lead to a delay or fallback path.",
+  },
+  waitEvent: {
+    purpose: "Waits for a real event from the contact.",
+    useWhen: "The next step depends on an action such as order.placed or demo.booked.",
+    result: "The contact resumes when the matching event arrives or the timeout path is reached.",
+  },
+  score: {
+    purpose: "Changes a contact score used for qualification.",
+    useWhen: "You want behavior in this journey to influence sales or lifecycle priority.",
+    result: "The score is added or set on the contact and can be used by later conditions.",
+  },
+  goal: {
+    purpose: "Records the business outcome this journey is trying to create.",
+    useWhen: "You need a conversion signal such as activated, upgraded, or booked.",
+    result: "Activity can count this goal as a conversion when the contact reaches the node.",
+  },
+  updateContact: {
+    purpose: "Writes lifecycle data back to the contact.",
+    useWhen: "The journey should change tags or properties for future targeting.",
+    result: "The contact record is updated and later automations can use the new values.",
+  },
+  notify: {
+    purpose: "Alerts an internal team or system.",
+    useWhen: "A contact becomes sales-ready or needs a human follow-up.",
+    result: "The configured webhook receives the message when this node runs.",
+  },
+  webhook: {
+    purpose: "Sends structured data to another system.",
+    useWhen: "A CRM, data warehouse, or internal service needs the journey event.",
+    result: "The endpoint receives the configured request and can continue work outside Loop Kit.",
+  },
+  exit: {
+    purpose: "Marks the contact’s path as complete.",
+    useWhen: "There is no more work to do on this path.",
+    result: "The run stops here and its completion can be measured in Activity.",
+  },
+  parallel: {
+    purpose: "Starts multiple paths at the same time.",
+    useWhen: "Independent actions should happen concurrently.",
+    result: "Every outgoing path starts; use Join if the paths need to converge later.",
+  },
+  join: {
+    purpose: "Waits for parallel paths to come back together.",
+    useWhen: "A later action should happen after one or all parallel paths finish.",
+    result: "The journey continues according to the selected all/any mode.",
+  },
+  subJourney: {
+    purpose: "Hands the contact to another published automation.",
+    useWhen: "A reusable sequence should be shared across multiple journeys.",
+    result: "The child automation starts as its own run for this contact.",
+  },
+};
+
+function configuredSummary(type: string, d: NodeData): string | null {
+  switch (type) {
+    case "trigger": {
+      const trigger = (d.trigger as Record<string, unknown>) ?? {};
+      if (trigger.kind === "event")
+        return `Starts when the event “${String(trigger.name || "event")}” is received.`;
+      if (trigger.kind === "property_changed") {
+        return `Starts when the contact property “${String(trigger.property || "property")}” changes.`;
+      }
+      if (trigger.kind === "manual")
+        return "Starts only when a teammate or API adds a contact manually.";
+      return "Starts when a new contact is created.";
+    }
+    case "email":
+      return d.templateId
+        ? `Sends the selected email${d.subject ? ` with subject “${String(d.subject)}”` : ""}.`
+        : "Choose an email template before publishing.";
+    case "sendCampaign":
+      return d.campaignId
+        ? "Sends the selected campaign to this contact."
+        : "Choose a campaign before publishing.";
+    case "delay": {
+      if (d.mode === "until")
+        return `Holds the contact until ${String(d.iso || "the configured date")}.`;
+      if (d.mode === "weekly") return "Releases the contact at the selected weekly time slot.";
+      if (d.mode === "bestTime")
+        return `Waits up to ${Number(d.maxWaitHours ?? 48)} hours for the best engagement time.`;
+      return `Waits ${Number(d.value ?? 0)} ${String(d.unit || "minutes")} before continuing.`;
+    }
+    case "branch":
+    case "filter": {
+      const expression = String(d.expression || "");
+      const parsed = parseConditionExpression(expression);
+      const rule = parsed ? describeCondition(parsed) : expression || "a custom condition";
+      return type === "filter"
+        ? `Only contacts where ${rule} continue; everyone else takes the fallback path.`
+        : `Contacts where ${rule} follow True; everyone else follows False.`;
+    }
+    case "abSplit": {
+      const variants = (d.variants as { name?: string; weight?: number }[] | undefined) ?? [];
+      const total = variants.reduce((sum, item) => sum + Math.max(0, Number(item.weight) || 0), 0);
+      if (!total) return "Add a positive weight to each path.";
+      const allocation = variants
+        .map(
+          (item) =>
+            `${item.name || "Path"} ${Math.round((Math.max(0, Number(item.weight) || 0) / total) * 100)}%`,
+        )
+        .join(" · ");
+      return `${allocation}. Assignment uses a stable contact-id bucket; no contact property is used.`;
+    }
+    case "split": {
+      const routes = (d.routes as { name?: string }[] | undefined) ?? [];
+      const namedRoutes = routes.filter((route) => route.name).map((route) => String(route.name));
+      return namedRoutes.length
+        ? `Checks routes in order: ${namedRoutes.join(", ")}; the first matching route wins and the default catches the rest.`
+        : "Add named business segments and connect each route on the canvas.";
+    }
+    case "timeWindow": {
+      const days = (d.days as number[] | undefined) ?? [];
+      return `True during ${days.length === 5 ? "weekdays" : days.length === 7 ? "every day" : "the selected days"}, ${Number(d.startHour ?? 9)}:00–${Number(d.endHour ?? 18)}:00 server time.`;
+    }
+    case "waitEvent":
+      return `Waits for “${String(d.eventName || "an event")}”${Number(d.timeoutMs ?? 0) > 0 ? ` for up to ${Math.round(Number(d.timeoutMs) / 86400000)} days` : ""}.`;
+    case "score": {
+      const property = String(d.property || "score");
+      const value = Number(d.value ?? 0);
+      return d.op === "set"
+        ? `Sets ${property} to ${value} points.`
+        : `Adds ${value >= 0 ? "+" : ""}${value} points to ${property}.`;
+    }
+    case "subJourney":
+      return d.journeyId
+        ? "Starts the selected published automation for this contact."
+        : "Choose a published automation before publishing.";
+    case "parallel":
+      return "Starts every connected path at the same time; use Join when a later step must wait for them.";
+    case "join":
+      return d.mode === "any"
+        ? "Continues as soon as the first parallel path arrives."
+        : "Continues only after every parallel path arrives.";
+    case "webhook":
+      return d.url
+        ? `Sends a ${String(d.method || "POST")} request to the configured system.`
+        : "Add an endpoint URL before publishing.";
+    case "goal": {
+      const name = String(d.name || "conversion");
+      return `Records “${name}” as a conversion${typeof d.value === "number" ? ` with value ${d.value}` : ""}.`;
+    }
+    case "updateContact": {
+      const set = (d.set as Record<string, unknown> | undefined) ?? {};
+      const keys = Object.keys(set);
+      const tags = (d.addTags as string[] | undefined) ?? [];
+      const changes = [
+        ...keys.map((key) => `sets ${key}`),
+        ...(tags.length ? [`adds ${tags.join(", ")} tag${tags.length > 1 ? "s" : ""}`] : []),
+      ];
+      return changes.length
+        ? `When reached, this step ${changes.join(" and ")}.`
+        : "Add a property or tag change.";
+    }
+    case "notify":
+      return d.url
+        ? `Sends “${String(d.subject || "a notification")}” to the configured team webhook.`
+        : "Add a webhook URL before publishing.";
+    case "exit":
+      return `Ends this path${d.reason ? ` as “${String(d.reason)}”` : ""}.`;
+    default:
+      return null;
+  }
+}
+
+function NodeGuide({ type, d }: { type: string; d: NodeData }) {
+  const guide = NODE_GUIDANCE[type];
+  if (!guide) return null;
+  const configured = configuredSummary(type, d);
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+        <InfoIcon className="size-3" aria-hidden="true" />
+        What this step does
+      </div>
+      <p className="mt-1 text-[11px] font-medium leading-relaxed text-foreground">
+        {guide.purpose}
+      </p>
+      {configured && (
+        <p className="mt-1.5 rounded-md bg-background/60 px-2 py-1.5 text-[11px] font-medium leading-relaxed text-foreground">
+          <span className="text-primary">In this journey:</span> {configured}
+        </p>
+      )}
+      <div className="mt-2 grid gap-1.5 border-t border-primary/15 pt-2 text-[10px] leading-relaxed">
+        <p>
+          <span className="font-medium text-foreground">Use it when:</span>{" "}
+          <span className="text-muted-foreground">{guide.useWhen}</span>
+        </p>
+        <p>
+          <span className="font-medium text-foreground">After it runs:</span>{" "}
+          <span className="text-muted-foreground">{guide.result}</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function NodeInspector(props: NodeInspectorProps) {
   const {
     selected,
@@ -64,6 +311,7 @@ export function NodeInspector(props: NodeInspectorProps) {
 
   return (
     <div className="grid gap-3">
+      <NodeGuide type={type} d={d} />
       <VariablesReference variables={nodeVariables} />
 
       {type === "email" && (
@@ -107,7 +355,7 @@ export function NodeInspector(props: NodeInspectorProps) {
         <SplitRoutesEditor
           routes={(d.routes as { name: string; expression: string }[]) ?? []}
           onChange={(routes) => updateSelectedData({ routes })}
-          variables={nodeVariables}
+          propertyKeys={contactPropertyKeys}
         />
       )}
       {type === "abSplit" && (
@@ -227,11 +475,12 @@ function SendCampaignPanel({
   update: UpdateData;
   campaigns: CampaignDto[];
 }) {
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === d.campaignId);
   return (
     <>
       <InspectorField
-        label="Campaign"
-        hint="Sends that campaign's current template/subject to this contact. Republish after editing the campaign to pick up changes."
+        label="Message campaign"
+        hint="Reuse an approved campaign inside this journey. The campaign content is captured when you publish."
       >
         <select
           className={selectClass}
@@ -246,6 +495,16 @@ function SendCampaignPanel({
           ))}
         </select>
       </InspectorField>
+      {selectedCampaign && (
+        <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+          <div className="font-medium text-foreground">What this sends</div>
+          <p className="mt-1 text-muted-foreground">
+            Every contact reaching this node receives{" "}
+            <span className="font-medium text-foreground">{selectedCampaign.name}</span> once in
+            this journey.
+          </p>
+        </div>
+      )}
       {campaigns.length === 0 && (
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           No campaigns yet.{" "}
@@ -271,11 +530,13 @@ function SubJourneyPanel({
   journeyId?: string;
 }) {
   const others = journeys.filter((j) => j.id !== journeyId);
+  const publishedJourneys = others.filter((j) => j.status === "published");
+  const selectedJourney = publishedJourneys.find((journey) => journey.id === d.journeyId);
   return (
     <>
       <InspectorField
-        label="Journey to run"
-        hint="Runs as its own engine instance with this contact; the sequence advances independently while this journey continues."
+        label="Automation to hand off to"
+        hint="Starts another published automation for this contact. This parent journey continues independently."
       >
         <select
           className={selectClass}
@@ -283,20 +544,33 @@ function SubJourneyPanel({
           onChange={(e) => update({ journeyId: e.target.value })}
         >
           <option value="">Select journey…</option>
-          {others
-            .filter((j) => j.status === "published")
-            .map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.name}
-                {j.publishedVersion == null ? " (unpublished)" : ""}
-              </option>
-            ))}
+          {publishedJourneys.map((j) => (
+            <option key={j.id} value={j.id}>
+              {j.name}
+            </option>
+          ))}
         </select>
       </InspectorField>
+      {selectedJourney && (
+        <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+          <div className="font-medium text-foreground">Business result</div>
+          <p className="mt-1 text-muted-foreground">
+            This contact starts{" "}
+            <span className="font-medium text-foreground">{selectedJourney.name}</span> as a
+            separate run, while this journey moves to its next node.
+          </p>
+        </div>
+      )}
       {others.length === 0 && (
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           No other journeys yet — publish one (e.g. the “Standard welcome sequence” template) first,
           then reference it here.
+        </p>
+      )}
+      {others.length > 0 && publishedJourneys.length === 0 && (
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          Other journeys exist, but none are published yet. Publish the reusable sequence before
+          selecting it here.
         </p>
       )}
     </>
@@ -304,25 +578,34 @@ function SubJourneyPanel({
 }
 
 function JoinPanel({ d, update }: { d: NodeData; update: UpdateData }) {
+  const mode = String(d.mode ?? "all");
   return (
     <>
       <InspectorField
-        label="Mode"
-        hint="all: continue once every branch has arrived. any: continue as soon as the first branch arrives."
+        label="When should the journey continue?"
+        hint="Choose whether the next action waits for every parallel path or only the first one."
       >
         <select
           className={selectClass}
-          value={String(d.mode ?? "all")}
+          value={mode}
           onChange={(e) => update({ mode: e.target.value === "any" ? "any" : "all" })}
         >
-          <option value="all">all — wait for every branch</option>
-          <option value="any">any — first branch wins</option>
+          <option value="all">Wait for every path</option>
+          <option value="any">Continue after the first path</option>
         </select>
       </InspectorField>
-      <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Connect the last node of each parallel branch into this node. With mode “all”, every branch
-        path must reach the join — an early exit would deadlock it.
-      </p>
+      <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+        <div className="font-medium text-foreground">Business result</div>
+        <p className="mt-1 text-muted-foreground">
+          {mode === "any"
+            ? "The next step starts as soon as one concurrent action finishes. Use this for race-style follow-ups."
+            : "The next step starts only after every concurrent action finishes. Use this when all work is required."}
+        </p>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Connect the last node of each parallel path here. With “every path”, an early Exit can
+          leave the join waiting forever.
+        </p>
+      </div>
     </>
   );
 }
@@ -330,18 +613,27 @@ function JoinPanel({ d, update }: { d: NodeData; update: UpdateData }) {
 function ParallelPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   return (
     <>
-      <InspectorField label="Label">
+      <InspectorField
+        label="What are these paths for?"
+        hint="Use a short label so teammates understand why these actions run together."
+      >
         <Input
           value={String(d.label ?? "")}
           onChange={(e) => update({ label: e.target.value })}
           placeholder="Optional"
         />
       </InspectorField>
-      <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Every edge out of this node starts a branch. Reconnect the branches’ last nodes into a Join
-        node to continue after convergence. Note: a branch that waits (Delay / Wait Event) postpones
-        its sibling branches until it wakes.
-      </p>
+      <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+        <div className="font-medium text-foreground">Business result</div>
+        <p className="mt-1 text-muted-foreground">
+          Every path connected to this node starts for the same contact. For example: send an email
+          and notify sales at the same time.
+        </p>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Add a Join node when a later step should wait for these paths to converge. A delay on one
+          path does not pause the others.
+        </p>
+      </div>
     </>
   );
 }
@@ -527,16 +819,31 @@ function BranchFilterPanel({
 
 function TimeWindowPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   const days = (d.days as number[]) ?? [];
+  const startHour = Number(d.startHour ?? 9);
+  const endHour = Number(d.endHour ?? 18);
+  const dayLabel =
+    days.length === 7
+      ? "every day"
+      : days.length === 5 && days.every((day) => day >= 1 && day <= 5)
+        ? "weekdays"
+        : days.length
+          ? "the selected days"
+          : "no days";
+  const setWindow = (nextDays: number[], nextStart: number, nextEnd: number, label: string) =>
+    update({ days: nextDays, startHour: nextStart, endHour: nextEnd, label });
   return (
     <>
-      <InspectorField label="Label">
+      <InspectorField
+        label="Window name"
+        hint="Name the business rule, such as business hours or support coverage."
+      >
         <Input
           value={String(d.label ?? "")}
           onChange={(e) => update({ label: e.target.value })}
           placeholder="Business hours"
         />
       </InspectorField>
-      <InspectorField label="Open days">
+      <InspectorField label="When is this path allowed?">
         <div className="flex flex-wrap gap-1">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
             const on = days.includes(i);
@@ -563,30 +870,58 @@ function TimeWindowPanel({ d, update }: { d: NodeData; update: UpdateData }) {
           })}
         </div>
       </InspectorField>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">Quick setup</span>
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => setWindow([1, 2, 3, 4, 5], 9, 18, "Business hours")}
+        >
+          Weekdays 09:00–18:00
+        </Button>
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => setWindow([0, 1, 2, 3, 4, 5, 6], 0, 24, "Always open")}
+        >
+          Every day
+        </Button>
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <InspectorField label="Start hour">
+        <InspectorField label="From (hour)">
           <Input
             type="number"
             min={0}
             max={23}
-            value={Number(d.startHour ?? 9)}
+            value={startHour}
             onChange={(e) => update({ startHour: Number(e.target.value) })}
           />
         </InspectorField>
-        <InspectorField label="End hour">
+        <InspectorField label="Until (hour)">
           <Input
             type="number"
             min={1}
             max={24}
-            value={Number(d.endHour ?? 18)}
+            value={endHour}
             onChange={(e) => update({ endHour: Number(e.target.value) })}
           />
         </InspectorField>
       </div>
+      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-2.5 text-[11px] leading-relaxed text-cyan-900 dark:text-cyan-100">
+        <div className="font-medium">Business result</div>
+        <p className="mt-1 opacity-85">
+          The True path is open on <span className="font-medium">{dayLabel}</span>,{" "}
+          {String(startHour).padStart(2, "0")}:00–{String(endHour).padStart(2, "0")}:00 in server
+          local time.
+        </p>
+        <p className="mt-1 text-[10px] opacity-75">
+          Connect False to a delay or wait loop if contacts should be held until the window opens.
+        </p>
+      </div>
       <div className="rounded-lg border border-border bg-card/60 p-2 text-[10px] leading-relaxed text-muted-foreground">
-        <span className="text-emerald-500">true</span> = inside window ·{" "}
-        <span className="text-rose-500">false</span> = outside (route to delay/exit). Evaluated at
-        run time in server local time.
+        <span className="text-emerald-500">True</span> = inside the window ·{" "}
+        <span className="text-rose-500">False</span> = outside the window. The check happens when
+        the contact reaches this node.
       </div>
     </>
   );
@@ -594,23 +929,45 @@ function TimeWindowPanel({ d, update }: { d: NodeData; update: UpdateData }) {
 
 function WaitEventPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   const eventFilter = (d.eventFilter as { property?: string; op?: string; value?: unknown }) ?? {};
+  const eventName = String(d.eventName ?? "");
+  const timeoutDays = Math.round(Number(d.timeoutMs ?? 0) / 86400000);
+  const setEvent = (name: string, filter?: { property: string; op: string; value: string }) =>
+    update({ eventName: name, ...(filter ? { eventFilter: filter } : {}) });
   return (
     <>
-      <InspectorField label="Event name" hint="e.g. order.placed">
+      <InspectorField
+        label="Event to wait for"
+        hint="Enter the exact event name your product sends, such as order.placed or demo.booked."
+      >
         <Input
-          value={String(d.eventName ?? "")}
+          value={eventName}
           onChange={(e) => update({ eventName: e.target.value })}
+          placeholder="order.placed"
         />
       </InspectorField>
-      <InspectorField label="Timeout (days)">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">Common events</span>
+        {["order.placed", "demo.booked", "subscription.started"].map((name) => (
+          <Button key={name} variant="outline" size="xs" onClick={() => setEvent(name)}>
+            {name}
+          </Button>
+        ))}
+      </div>
+      <InspectorField
+        label="Stop waiting after"
+        hint="When the timer expires, the contact takes the timeout path."
+      >
         <Input
           type="number"
           min={0}
-          value={Math.round(Number(d.timeoutMs ?? 0) / 86400000)}
+          value={timeoutDays}
           onChange={(e) => update({ timeoutMs: Number(e.target.value) * 86400000 })}
         />
       </InspectorField>
-      <InspectorField label="Event property filter (optional)">
+      <InspectorField
+        label="Only accept matching events (optional)"
+        hint="Use this when the same event name can carry different products, plans, or orders."
+      >
         <div className="grid gap-1.5">
           <Input
             value={String(eventFilter.property ?? "")}
@@ -659,9 +1016,21 @@ function WaitEventPanel({ d, update }: { d: NodeData; update: UpdateData }) {
           </div>
         </div>
       </InspectorField>
+      <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-2.5 text-[11px] leading-relaxed text-sky-900 dark:text-sky-100">
+        <div className="font-medium">Business result</div>
+        <p className="mt-1 opacity-85">
+          {eventName
+            ? `This contact waits for “${eventName}”${eventFilter.property && eventFilter.value !== undefined ? ` where ${eventFilter.property} ${eventFilter.op ?? "equals"} ${String(eventFilter.value)}` : ""}.`
+            : "Choose an event before publishing."}
+        </p>
+        <p className="mt-1 text-[10px] opacity-75">
+          The event handle continues immediately when received; the timeout handle is the fallback
+          when no matching event arrives.
+        </p>
+      </div>
       <div className="rounded-lg border border-border bg-card/60 p-2 text-[10px] leading-relaxed text-muted-foreground">
-        <span className="text-sky-500">Blue handle</span> = event received ·{" "}
-        <span className="text-amber-500">amber</span> = timeout
+        <span className="text-sky-500">Event received</span> = contact did the thing ·{" "}
+        <span className="text-amber-500">Timeout</span> = no matching event in time
       </div>
     </>
   );
@@ -676,9 +1045,21 @@ function WebhookPanel({
   update: UpdateData;
   variables: JourneyVariable[];
 }) {
+  const method = String(d.method ?? "GET");
+  const hasBody = Object.keys((d.body as Record<string, unknown>) ?? {}).length > 0;
   return (
     <>
-      <InspectorField label="URL">
+      <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-2.5 text-[11px] leading-relaxed text-orange-900 dark:text-orange-100">
+        <div className="font-medium">Send a signal to another system</div>
+        <p className="mt-1 opacity-85">
+          Use this when the journey should create work in a CRM, data warehouse, internal service,
+          or other tool.
+        </p>
+      </div>
+      <InspectorField
+        label="Destination URL"
+        hint="The endpoint that receives the request when this contact reaches the node."
+      >
         <InputWithVariables
           variables={variables}
           value={String(d.url ?? "")}
@@ -686,7 +1067,7 @@ function WebhookPanel({
           placeholder="https://…"
         />
       </InspectorField>
-      <InspectorField label="Method">
+      <InspectorField label="Request type">
         <select
           className={selectClass}
           value={String(d.method ?? "GET")}
@@ -699,34 +1080,51 @@ function WebhookPanel({
           ))}
         </select>
       </InspectorField>
-      <InspectorField label="Body (JSON)" hint="Values may be {{ variable }} placeholders">
-        <TextareaWithVariables
-          variables={variables}
-          value={JSON.stringify(d.body ?? {}, null, 2)}
-          onChange={(v) => {
-            try {
-              update({ body: JSON.parse(v || "{}") });
-            } catch {
-              /* keep typing */
-            }
-          }}
-        />
-      </InspectorField>
-      <InspectorField label="Headers (JSON)">
-        <TextareaWithVariables
-          variables={variables}
-          value={JSON.stringify(d.headers ?? {}, null, 2)}
-          onChange={(v) => {
-            try {
-              update({ headers: JSON.parse(v || "{}") });
-            } catch {
-              /* keep typing */
-            }
-          }}
-        />
-      </InspectorField>
+      <details open={hasBody} className="rounded-lg border border-border bg-card/40">
+        <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-muted-foreground">
+          Request payload and headers{" "}
+          <span className="font-normal text-muted-foreground/70">· advanced</span>
+        </summary>
+        <div className="grid gap-3 border-t border-border/70 p-3">
+          <InspectorField
+            label="Body (JSON)"
+            hint="Values may include {{ variable }} placeholders."
+          >
+            <TextareaWithVariables
+              variables={variables}
+              value={JSON.stringify(d.body ?? {}, null, 2)}
+              onChange={(v) => {
+                try {
+                  update({ body: JSON.parse(v || "{}") });
+                } catch {
+                  /* keep typing */
+                }
+              }}
+            />
+          </InspectorField>
+          <InspectorField
+            label="Headers (JSON)"
+            hint="Only add headers required by the destination service."
+          >
+            <TextareaWithVariables
+              variables={variables}
+              value={JSON.stringify(d.headers ?? {}, null, 2)}
+              onChange={(v) => {
+                try {
+                  update({ headers: JSON.parse(v || "{}") });
+                } catch {
+                  /* keep typing */
+                }
+              }}
+            />
+          </InspectorField>
+        </div>
+      </details>
       <div className="grid grid-cols-2 gap-2">
-        <InspectorField label="Timeout (ms)">
+        <InspectorField
+          label="Timeout (ms)"
+          hint="How long to wait for the destination to respond."
+        >
           <Input
             type="number"
             min={0}
@@ -734,7 +1132,7 @@ function WebhookPanel({
             onChange={(e) => update({ timeoutMs: Number(e.target.value) })}
           />
         </InspectorField>
-        <InspectorField label="Max retries">
+        <InspectorField label="Retry attempts" hint="How many times to retry a failed request.">
           <Input
             type="number"
             min={0}
@@ -742,6 +1140,14 @@ function WebhookPanel({
             onChange={(e) => update({ maxRetries: Number(e.target.value) })}
           />
         </InspectorField>
+      </div>
+      <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+        <div className="font-medium text-foreground">Business result</div>
+        <p className="mt-1 text-muted-foreground">
+          {d.url
+            ? `When reached, the journey sends a ${method} request to the configured endpoint${hasBody ? " with the payload above" : ""}.`
+            : "Add a destination URL before publishing."}
+        </p>
       </div>
     </>
   );
@@ -758,8 +1164,15 @@ function NotifyPanel({
 }) {
   return (
     <>
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100">
+        <div className="font-medium">Create an internal handoff</div>
+        <p className="mt-1 opacity-85">
+          Use this when a teammate should act on the contact, such as calling a high-intent lead or
+          reviewing an account.
+        </p>
+      </div>
       <InspectorField
-        label="Webhook URL"
+        label="Team destination"
         hint="Slack / Discord / 飞书 incoming webhook, Zapier, or internal API"
       >
         <Input
@@ -768,20 +1181,30 @@ function NotifyPanel({
           placeholder="https://hooks.slack.com/…"
         />
       </InspectorField>
-      <InspectorField label="Subject">
+      <InspectorField label="Alert title">
         <InputWithVariables
           variables={variables}
           value={String(d.subject ?? "")}
           onChange={(v) => update({ subject: v })}
         />
       </InspectorField>
-      <InspectorField label="Message" hint="Supports {{ contact.email }} style placeholders">
+      <InspectorField
+        label="What should the team know?"
+        hint="Supports {{ contact.email }} style placeholders"
+      >
         <TextareaWithVariables
           variables={variables}
           value={String(d.message ?? "")}
           onChange={(v) => update({ message: v })}
         />
       </InspectorField>
+      <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+        <div className="font-medium text-foreground">Business result</div>
+        <p className="mt-1 text-muted-foreground">
+          When this contact reaches the node, the team receives the configured alert with the
+          contact context.
+        </p>
+      </div>
     </>
   );
 }
@@ -856,19 +1279,13 @@ function UpdateContactPanel({
   return (
     <>
       <InspectorField
-        label="Set properties (JSON)"
-        hint='Values may be literals or single placeholders like "{{ contact.plan }}"'
+        label="Set contact properties"
+        hint="Use the fields your next audience or sales handoff will look at."
       >
-        <TextareaWithVariables
+        <PropertyAssignmentsEditor
           variables={variables}
-          value={JSON.stringify(d.set ?? {}, null, 2)}
-          onChange={(v) => {
-            try {
-              update({ set: JSON.parse(v || "{}") });
-            } catch {
-              /* keep typing */
-            }
-          }}
+          value={(d.set as Record<string, unknown>) ?? {}}
+          onChange={(set) => update({ set })}
         />
       </InspectorField>
       <InspectorField label="Add tags (comma-separated)">
@@ -904,48 +1321,83 @@ function UpdateContactPanel({
 }
 
 function ScorePanel({ d, update }: { d: NodeData; update: UpdateData }) {
+  const property = String(d.property ?? "score");
+  const value = Number(d.value ?? 0);
+  const op = d.op === "set" ? "set" : "add";
   return (
     <>
-      <InspectorField label="Property" hint='Defaults to "score"'>
-        <Input
-          value={String(d.property ?? "score")}
-          onChange={(e) => update({ property: e.target.value })}
-        />
+      <InspectorField
+        label="Score field"
+        hint="Use “score” for a journey-specific score, or “leadScore” when this should be visible as the contact lead score."
+      >
+        <Input value={property} onChange={(e) => update({ property: e.target.value })} />
       </InspectorField>
       <div className="grid grid-cols-2 gap-2">
-        <InspectorField label="Op">
+        <InspectorField label="Change">
           <select
             className={selectClass}
-            value={String(d.op ?? "add")}
+            value={op}
             onChange={(e) => update({ op: e.target.value as "add" | "set" })}
           >
-            <option value="add">add</option>
-            <option value="set">set</option>
+            <option value="add">Add points</option>
+            <option value="set">Set total</option>
           </select>
         </InspectorField>
-        <InspectorField label="Value">
+        <InspectorField label="Points">
           <Input
             type="number"
-            value={Number(d.value ?? 0)}
+            value={value}
             onChange={(e) => update({ value: Number(e.target.value) })}
           />
         </InspectorField>
+      </div>
+      <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
+        <div className="font-medium text-foreground">Business result</div>
+        <p className="mt-1 text-muted-foreground">
+          {op === "set"
+            ? `When this step runs, ${property} becomes ${value}.`
+            : `When this step runs, ${property} changes by ${value >= 0 ? "+" : ""}${value} points.`}
+        </p>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Use a later Branch or Filter when you want to hand off contacts above a threshold, for
+          example <code>{property} &gt;= 50</code>.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">Common point changes</span>
+        {[5, 10, 20].map((points) => (
+          <Button
+            key={points}
+            variant="outline"
+            size="xs"
+            onClick={() => update({ op: "add", value: points })}
+          >
+            +{points}
+          </Button>
+        ))}
       </div>
     </>
   );
 }
 
 function GoalPanel({ d, update }: { d: NodeData; update: UpdateData }) {
+  const name = String(d.name ?? "");
   return (
     <>
-      <InspectorField label="Goal name" hint="Recorded as goal.<name> contact event">
+      <InspectorField
+        label="Conversion name"
+        hint="Use the business outcome you report on, such as activated, booked_demo, or upgraded."
+      >
         <Input
-          value={String(d.name ?? "")}
+          value={name}
           onChange={(e) => update({ name: e.target.value })}
           placeholder="activated"
         />
       </InspectorField>
-      <InspectorField label="Value (optional)">
+      <InspectorField
+        label="Conversion value (optional)"
+        hint="A numeric value stored with the conversion, such as order value or expected revenue. It does not change the contact score."
+      >
         <Input
           type="number"
           value={String(d.value ?? "")}
@@ -954,6 +1406,14 @@ function GoalPanel({ d, update }: { d: NodeData; update: UpdateData }) {
           }
         />
       </InspectorField>
+      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] leading-relaxed text-emerald-900 dark:text-emerald-100">
+        <div className="font-medium">Business result</div>
+        <p className="mt-1 opacity-85">
+          {name
+            ? `When a contact reaches this step, Activity records “${name}” as a conversion${typeof d.value === "number" ? ` with value ${d.value}` : ""}.`
+            : "Name the outcome you want to measure when a contact reaches this step."}
+        </p>
+      </div>
       <InspectorField label="Extra properties (JSON)">
         <textarea
           className={textareaClass}

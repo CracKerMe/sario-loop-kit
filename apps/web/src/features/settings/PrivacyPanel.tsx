@@ -14,10 +14,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type PrivacyJobDto } from "@/lib/api";
 
 export function PrivacyPanel() {
+  const { confirm } = useModal();
   const [jobs, setJobs] = useState<PrivacyJobDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +47,14 @@ export function PrivacyPanel() {
     if (!email.trim()) return;
     if (
       kind === "erasure" &&
-      !confirm(`Erase all data for ${email.trim()}? This cannot be undone.`)
-    ) {
+      !(await confirm({
+        title: "Erase all data?",
+        description: `Erase all data for ${email.trim()}? This cannot be undone.`,
+        confirmLabel: "Erase data",
+        destructive: true,
+      }))
+    )
       return;
-    }
     setBusy(true);
     try {
       await api.createPrivacyJob({ email: email.trim().toLowerCase(), kind });

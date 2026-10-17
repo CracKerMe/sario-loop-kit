@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
+import { useModal } from "@/components/modal";
 import {
   api,
   type BillingSubscriptionDto,
@@ -41,6 +42,7 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
 }
 
 export function BillingPanel() {
+  const { confirm } = useModal();
   const [subscription, setSubscription] = useState<BillingSubscriptionDto | null>(null);
   const [usage, setUsage] = useState<UsageDto | null>(null);
   const [plans, setPlans] = useState<Record<PlanTierDto, PlanQuotaDto> | null>(null);
@@ -68,7 +70,14 @@ export function BillingPanel() {
 
   const switchPlan = async (plan: PlanTierDto) => {
     if (subscription?.plan === plan) return;
-    if (!confirm(`Switch this workspace to the ${plan} plan?`)) return;
+    if (
+      !(await confirm({
+        title: `Switch to ${plan} plan?`,
+        description: `Switch this workspace to the ${plan} plan?`,
+        confirmLabel: "Switch plan",
+      }))
+    )
+      return;
     setBusyPlan(plan);
     try {
       const res = await api.changePlan(plan);

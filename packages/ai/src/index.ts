@@ -14,6 +14,20 @@ export {
   type GenerateJourneyOptions,
 } from "./generateJourney";
 export {
+  generateJourneyExplanation,
+  JOURNEY_EXPLANATION_TOOL_NAME,
+} from "./generateJourneyExplanation";
+export {
+  buildJourneyExplanationSystemPrompt,
+  buildJourneyExplanationUserPrompt,
+  guardJourneyExplanation,
+  journeyExplanationToolParameters,
+  journeyExplanationZod,
+  JourneyExplanationError,
+  type JourneyExplanation,
+  type JourneyExplanationInput,
+} from "./journeyExplanation";
+export {
   GRAPH_TOOL_NAME,
   buildRepairPrompt,
   buildSystemPrompt,

@@ -24,10 +24,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog } from "@/components/dialog";
+import { useModal } from "@/components/modal";
 import { StatusBadge } from "@/components/status-badge";
 import {
   api,
   type MeetingHostDto,
+  type MeetingPrepBriefDto,
   type MeetingSettingsDto,
   type MeetingTypeDto,
   type SlotDto,
@@ -56,6 +58,7 @@ function minuteLabel(minute: number) {
 }
 
 export function MeetingsPanel() {
+  const { confirm } = useModal();
   const [settings, setSettings] = useState<MeetingSettingsDto | null>(null);
   const [types, setTypes] = useState<MeetingTypeDto[]>([]);
   const [slots, setSlots] = useState<SlotDto[]>([]);
@@ -101,6 +104,7 @@ export function MeetingsPanel() {
   const [noShowJourneyId, setNoShowJourneyId] = useState("");
   const [cancellationJourneyId, setCancellationJourneyId] = useState("");
   const [prepBriefHours, setPrepBriefHours] = useState(2);
+  const [brief, setBrief] = useState<{ title: string; data: MeetingPrepBriefDto } | null>(null);
 
   // Hosts
   const [hosts, setHosts] = useState<MeetingHostDto[]>([]);
@@ -242,7 +246,15 @@ export function MeetingsPanel() {
   };
 
   const removeHost = async (host: MeetingHostDto) => {
-    if (!confirm(`Remove host "${host.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Remove meeting host?",
+        description: `Remove host "${host.name}"?`,
+        confirmLabel: "Remove host",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteMeetingHost(host.id);
       toast.success("Host removed");
@@ -255,10 +267,7 @@ export function MeetingsPanel() {
   const openBrief = async (id: string, title: string) => {
     try {
       const { brief } = await api.meetingBrief(id);
-      const points = brief.talkingPoints.map((p) => `• ${p}`).join("\n");
-      const score = `Score ${brief.contact.leadScore} (${brief.contact.leadTier})`;
-      const company = brief.company ? ` · ${brief.company.name}` : "";
-      alert(`Prep: ${title}\n${score}${company}\n\n${points}`);
+      setBrief({ title, data: brief });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Brief failed");
     }
@@ -293,7 +302,15 @@ export function MeetingsPanel() {
   };
 
   const removeType = async (type: MeetingTypeDto) => {
-    if (!confirm(`Delete meeting type "${type.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: "Delete meeting type?",
+        description: `Delete meeting type "${type.name}"?`,
+        confirmLabel: "Delete type",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.deleteMeetingType(type.id);
       toast.success("Deleted");
@@ -505,6 +522,76 @@ export function MeetingsPanel() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={brief !== null}
+        onClose={() => setBrief(null)}
+        title={brief ? `Prep brief · ${brief.title}` : "Prep brief"}
+        description="A concise briefing assembled from contact history, intent signals, and open work."
+      >
+        {brief && (
+          <div className="grid gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+              <span className="font-medium">
+                {brief.data.contact.name || brief.data.contact.email || "Unknown contact"}
+              </span>
+              <StatusBadge
+                status={brief.data.contact.leadTier === "hot" ? "published" : "pending"}
+              />
+              <span className="text-xs text-muted-foreground">
+                Score {brief.data.contact.leadScore}
+                {brief.data.company ? ` · ${brief.data.company.name}` : ""}
+              </span>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Talking points
+              </p>
+              {brief.data.talkingPoints.length > 0 ? (
+                <ul className="grid gap-2 text-sm leading-5">
+                  {brief.data.talkingPoints.map((point) => (
+                    <li key={point} className="flex gap-2">
+                      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">No talking points yet.</p>
+              )}
+            </div>
+            {(brief.data.signals.length > 0 || brief.data.openTasks.length > 0) && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Recent signals
+                  </p>
+                  <div className="grid gap-1 text-xs text-muted-foreground">
+                    {brief.data.signals.slice(0, 4).map((signal) => (
+                      <span key={`${signal.name}-${signal.occurredAt}`}>
+                        {signal.name}
+                        {signal.path ? ` · ${signal.path}` : ""}
+                      </span>
+                    ))}
+                    {brief.data.signals.length === 0 && <span>None recorded</span>}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Open tasks
+                  </p>
+                  <div className="grid gap-1 text-xs text-muted-foreground">
+                    {brief.data.openTasks.slice(0, 4).map((task) => (
+                      <span key={`${task.kind}-${task.title}`}>{task.title}</span>
+                    ))}
+                    {brief.data.openTasks.length === 0 && <span>None</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Dialog>
 
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-3">
