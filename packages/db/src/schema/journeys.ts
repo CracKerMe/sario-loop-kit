@@ -152,7 +152,73 @@ export const journeyRun = pgTable(
 export const journeyRelations = relations(journey, ({ many }) => ({
   versions: many(journeyVersion),
   runs: many(journeyRun),
+  agentMessages: many(journeyAgentMessage),
 }));
+
+/**
+ * Agent-first intent brief — the human side of a journey.
+ *
+ * One row per journey (1:1). `brief` is the operator's request in their own
+ * words; `requirements` is the agent-maintained checklist mapping each stated
+ * need onto graph nodes ("covered" / "partial" / "uncovered" / "needs_input").
+ * `narrative` caches the latest plain-language walkthrough (JourneyExplanation
+ * shape from @loopkit/ai); `narrativeVersion` pins it to the draft version it
+ * describes so the UI can flag it stale once the graph moves on.
+ */
+export type JourneyRequirementStatus = "covered" | "partial" | "uncovered" | "needs_input";
+
+export interface JourneyRequirementRecord {
+  id: string;
+  text: string;
+  status: JourneyRequirementStatus;
+  nodeIds: string[];
+  note?: string;
+}
+
+export const journeyIntent = pgTable("journey_intent", {
+  id: text("id").primaryKey(),
+  journeyId: text("journey_id")
+    .notNull()
+    .unique()
+    .references(() => journey.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  brief: text("brief").notNull().default(""),
+  requirements: jsonb("requirements").$type<JourneyRequirementRecord[]>().notNull().default([]),
+  narrative: jsonb("narrative").$type<Record<string, unknown> | null>(),
+  narrativeVersion: integer("narrative_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+/**
+ * Agent conversation transcript for a journey. `kind` selects how the web
+ * workbench renders the row: plain bubble ("text"), applicable plan card
+ * ("proposal" — payload carries the guarded graph + coverage snapshot), or
+ * quick-reply question ("question" — payload carries clickable options).
+ */
+export const journeyAgentMessage = pgTable(
+  "journey_agent_message",
+  {
+    id: text("id").primaryKey(),
+    journeyId: text("journey_id")
+      .notNull()
+      .references(() => journey.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    role: text("role").$type<"user" | "agent">().notNull(),
+    kind: text("kind").$type<"text" | "proposal" | "question">().notNull().default("text"),
+    content: text("content").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("journey_agent_message_journey_idx").on(t.journeyId, t.createdAt)],
+);
 
 export const journeyVersionRelations = relations(journeyVersion, ({ one }) => ({
   journey: one(journey, {

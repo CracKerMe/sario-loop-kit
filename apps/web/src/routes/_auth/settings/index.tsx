@@ -1,7 +1,12 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+
+import { SettingsWorkbench } from "@/features/settings-agent/SettingsWorkbench";
 
 export const Route = createFileRoute("/_auth/settings/")({
-  beforeLoad: () => {
-    throw redirect({ to: "/settings/$tab", params: { tab: "billing" } });
-  },
+  component: SettingsWorkbenchPage,
 });
+
+/** The settings workbench is the primary settings surface. */
+function SettingsWorkbenchPage() {
+  return <SettingsWorkbench />;
+}

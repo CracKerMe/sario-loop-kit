@@ -14,9 +14,60 @@ export {
   type GenerateJourneyOptions,
 } from "./generateJourney";
 export {
+  AGENT_TURN_TOOL_NAME,
+  REQUIREMENT_STATUSES,
+  agentRepairPrompt,
+  agentTurnToolSchema,
+  buildAgentTurnSystemPrompt,
+  buildAgentTurnUserPrompt,
+  guardJourneyAgentTurn,
+  journeyAgentTurnZod,
+  runJourneyAgentTurn,
+  JourneyAgentError,
+  type JourneyAgentContext,
+  type JourneyAgentOptions,
+  type JourneyAgentResult,
+  type JourneyAgentTurn,
+  type JourneyRequirement,
+  type JourneyRequirementStatus,
+} from "./journeyAgent";
+export {
   generateJourneyExplanation,
   JOURNEY_EXPLANATION_TOOL_NAME,
 } from "./generateJourneyExplanation";
+export { generateSettingsNarrative, SETTINGS_NARRATIVE_TOOL_NAME } from "./settingsNarrative";
+export {
+  buildSettingsNarrativeSystemPrompt,
+  buildSettingsNarrativeUserPrompt,
+  guardSettingsNarrative,
+  settingsNarrativeToolParameters,
+  settingsNarrativeZod,
+  SettingsNarrativeError,
+  type SettingsNarrative,
+  type SettingsNarrativeInput,
+} from "./settingsNarrative";
+export {
+  SETTINGS_AGENT_TOOL_NAME,
+  REQUIREMENT_STATUSES as SETTINGS_REQUIREMENT_STATUSES,
+  buildSettingsAgentSystemPrompt,
+  buildSettingsAgentUserPrompt,
+  guardSettingsAgentTurn,
+  runSettingsAgentTurn,
+  settingsAgentRepairPrompt,
+  settingsAgentToolSchema,
+  settingsAgentTurnZod,
+  SettingsAgentError,
+  type SettingsAgentContext,
+  type SettingsAgentOptions,
+  type SettingsAgentResult,
+  type SettingsAgentTurn,
+  type SettingsChange,
+  type SettingsConfigSnapshot,
+  type SettingsGuardState,
+  type SettingsRequirement,
+  type SettingsRequirementStatus,
+  type SettingsRuleSnapshot,
+} from "./settingsAgent";
 export {
   buildJourneyExplanationSystemPrompt,
   buildJourneyExplanationUserPrompt,

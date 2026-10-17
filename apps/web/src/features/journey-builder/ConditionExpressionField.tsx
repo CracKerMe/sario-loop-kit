@@ -253,7 +253,17 @@ export function ConditionExpressionField({ expression, onChange, propertyKeys, h
     let mergedValue = next.value ?? value;
     if (next.property && next.property !== property) {
       if (fieldKind(next.property) === "boolean") mergedValue = "true";
-      else if (mergedOp === "gt" || mergedOp === "gte" || mergedOp === "lt" || mergedOp === "lte") {
+      else if (
+        fieldKind(next.property) === "date" &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(mergedValue.trim())
+      ) {
+        mergedValue = "";
+      } else if (
+        mergedOp === "gt" ||
+        mergedOp === "gte" ||
+        mergedOp === "lt" ||
+        mergedOp === "lte"
+      ) {
         mergedValue = "";
       }
     }
@@ -325,9 +335,7 @@ export function ConditionExpressionField({ expression, onChange, propertyKeys, h
               </select>
             </div>
             <div className="grid gap-1.5">
-              <Label className="text-[11px] text-muted-foreground">
-                {fieldKind(property) === "boolean" ? "Value" : "Value"}
-              </Label>
+              <Label className="text-[11px] text-muted-foreground">Value</Label>
               {fieldKind(property) === "boolean" ? (
                 <select
                   className="h-8 w-full rounded-md border border-input bg-input/30 px-2 text-xs outline-none focus-visible:border-ring"
@@ -337,11 +345,27 @@ export function ConditionExpressionField({ expression, onChange, propertyKeys, h
                   <option value="true">true</option>
                   <option value="false">false</option>
                 </select>
+              ) : fieldKind(property) === "date" ? (
+                <Input
+                  type="date"
+                  value={/^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : ""}
+                  onChange={(e) => emitForm({ value: e.target.value })}
+                  className="h-8 text-xs"
+                />
+              ) : safeOp === "gt" || safeOp === "gte" || safeOp === "lt" || safeOp === "lte" ? (
+                <Input
+                  type="number"
+                  step="any"
+                  value={value}
+                  onChange={(e) => emitForm({ value: e.target.value })}
+                  placeholder="0"
+                  className="h-8 text-xs"
+                />
               ) : (
                 <Input
                   value={value}
                   onChange={(e) => emitForm({ value: e.target.value })}
-                  placeholder={fieldKind(property) === "date" ? "2024-01-01" : "pro"}
+                  placeholder="pro"
                   className="h-8 text-xs"
                 />
               )}

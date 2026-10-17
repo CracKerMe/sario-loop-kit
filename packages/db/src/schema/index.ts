@@ -11,3 +11,4 @@ export * from "./engine";
 export * from "./platform";
 export * from "./intelligence";
 export * from "./gtm";
+export * from "./settings";

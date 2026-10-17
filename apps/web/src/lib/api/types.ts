@@ -92,6 +92,242 @@ export type JourneyExplanationDto = {
   usage: { inputTokens: number; outputTokens: number };
 };
 
+/* Agent-first workbench (/automations/:id) ---------------------------------- */
+
+export type JourneyRequirementStatusDto = "covered" | "partial" | "uncovered" | "needs_input";
+
+export type JourneyRequirementDto = {
+  id: string;
+  text: string;
+  status: JourneyRequirementStatusDto;
+  nodeIds: string[];
+  note?: string;
+};
+
+export type JourneyNarrativeDto = {
+  headline: string;
+  summary: string;
+  steps: { nodeId: string; title: string; explanation: string }[];
+  branches: { nodeId: string; explanation: string }[];
+  notes: string[];
+};
+
+export type JourneyIntentDto = {
+  brief: string;
+  requirements: JourneyRequirementDto[];
+  narrative: JourneyNarrativeDto | null;
+  narrativeVersion: number | null;
+  updatedAt: string;
+};
+
+export type AgentMessagePayloadDto = {
+  changeSummary?: string;
+  risks?: string[];
+  requirements?: JourneyRequirementDto[];
+  graph?: JourneyGraphDto;
+  nodeCount?: number;
+  edgeCount?: number;
+  question?: string;
+  options?: string[];
+  templateDrafts?: TemplateDraftDto[];
+};
+
+/**
+ * A proposal's template draft. `doc` is the guarded ProseMirror document the
+ * email pipeline generated (render client-side with renderEmailDoc to
+ * preview); `error` means copy generation failed and the card offers
+ * regenerate.
+ */
+export type TemplateDraftDto = {
+  key: string;
+  name: string;
+  purpose: string;
+  subject?: string;
+  doc?: unknown;
+  validation?: unknown;
+  error?: string;
+};
+
+export type AgentMessageDto = {
+  id: string;
+  role: "user" | "agent";
+  kind: "text" | "proposal" | "question";
+  content: string;
+  payload: AgentMessagePayloadDto | null;
+  createdAt: string;
+};
+
+export type AgentSessionDto = {
+  intent: JourneyIntentDto | null;
+  messages: AgentMessageDto[];
+  latestVersion: number | null;
+  validation: ValidationResult | null;
+};
+
+export type AgentTurnResultDto = {
+  userMessage: AgentMessageDto;
+  message: AgentMessageDto;
+  intent: JourneyIntentDto;
+  usage?: { inputTokens: number; outputTokens: number };
+};
+
+export type AgentApplyResultDto = {
+  version: number;
+  validation: ValidationResult;
+  narrative: JourneyNarrativeDto | null;
+  narrativeVersion: number | null;
+  createdTemplates?: { key: string; templateId: string; name: string }[];
+};
+
+/* Agent-first settings workbench (/settings) -------------------------------- */
+
+export type SettingsRequirementDto = {
+  id: string;
+  text: string;
+  status: JourneyRequirementStatusDto;
+  /** Refs of the proposal changes that implement this requirement. */
+  changeRefs: string[];
+  note?: string;
+};
+
+export type SettingsNarrativeDto = {
+  headline: string;
+  summary: string;
+  sections: { title: string; explanation: string }[];
+  notes: string[];
+};
+
+export type SettingsIntentDto = {
+  brief: string;
+  requirements: SettingsRequirementDto[];
+  narrative: SettingsNarrativeDto | null;
+  narrativeFingerprint: string | null;
+  updatedAt: string;
+};
+
+/** One guarded configuration change inside a proposal. */
+export type SettingsChangeDto =
+  | { ref: string; kind: "add_domain"; domain: string; fromName?: string; fromEmail?: string }
+  | {
+      ref: string;
+      kind: "upsert_topic";
+      key: string;
+      name: string;
+      description?: string | null;
+      category: "marketing" | "product" | "transactional";
+      sortOrder: number;
+      active: boolean;
+    }
+  | {
+      ref: string;
+      kind: "upsert_rule";
+      name: string;
+      ruleKind: "property" | "event" | "page";
+      propertyKey?: string;
+      operator?: "eq" | "neq" | "contains" | "gt" | "gte" | "lt" | "lte" | "exists" | "missing";
+      propertyValue?: string;
+      eventName?: string;
+      pathContains?: string;
+      windowHours?: number | null;
+      maxHits?: number | null;
+      points: number;
+      active: boolean;
+    }
+  | { ref: string; kind: "delete_rule"; ruleId: string; reason: string }
+  | {
+      ref: string;
+      kind: "upsert_channel";
+      channel: "email" | "sms" | "whatsapp" | "push" | "inapp";
+      provider?: string;
+      name?: string;
+      status: "disabled" | "enabled";
+      config?: Record<string, unknown>;
+    };
+
+export type SettingsMessagePayloadDto = {
+  changeSummary?: string;
+  risks?: string[];
+  requirements?: SettingsRequirementDto[];
+  changes?: SettingsChangeDto[];
+  changeCount?: number;
+  question?: string;
+  options?: string[];
+};
+
+export type SettingsAgentMessageDto = {
+  id: string;
+  role: "user" | "agent";
+  kind: "text" | "proposal" | "question";
+  content: string;
+  payload: SettingsMessagePayloadDto | null;
+  createdAt: string;
+};
+
+export type SettingsSnapshotDto = {
+  domains: { id: string; domain: string; status: string; fromEmail: string | null }[];
+  topics: {
+    id: string;
+    key: string;
+    name: string;
+    category: string;
+    active: boolean;
+    sortOrder: number;
+  }[];
+  rules: {
+    id: string;
+    name: string;
+    kind: string;
+    propertyKey?: string | null;
+    operator?: string | null;
+    propertyValue?: string | null;
+    eventName?: string | null;
+    pathContains?: string | null;
+    windowHours?: number | null;
+    maxHits?: number | null;
+    points: number;
+    active: boolean;
+  }[];
+  channels: { channel: string; provider: string; status: string; name: string }[];
+};
+
+export type SettingsAgentSessionDto = {
+  intent: SettingsIntentDto | null;
+  messages: SettingsAgentMessageDto[];
+  config: SettingsSnapshotDto;
+  fingerprint: string;
+};
+
+export type SettingsAgentTurnResultDto = {
+  userMessage: SettingsAgentMessageDto;
+  message: SettingsAgentMessageDto;
+  intent: SettingsIntentDto;
+  config: SettingsSnapshotDto;
+  fingerprint: string;
+  usage?: { inputTokens: number; outputTokens: number };
+};
+
+export type SettingsAppliedChangeDto = {
+  ref: string;
+  kind: SettingsChangeDto["kind"];
+  status: "created" | "updated" | "deleted" | "skipped" | "error";
+  target: string;
+  detail?: string;
+};
+
+export type SettingsAgentApplyResultDto = {
+  applied: SettingsAppliedChangeDto[];
+  fingerprint: string;
+  narrative: SettingsNarrativeDto | null;
+  narrativeFingerprint: string | null;
+};
+
+export type SettingsAgentRefreshResultDto = {
+  refreshed: boolean;
+  narrative: SettingsNarrativeDto | null;
+  narrativeFingerprint: string | null;
+  fingerprint: string;
+};
+
 export type JourneyOptimizationAnalysisDto = {
   summary: string;
   diagnosis: {

@@ -4,6 +4,9 @@ import { qs, request } from "./http";
 import type {
   AcceptOptimizationInput,
   AcceptOptimizationResultDto,
+  AgentApplyResultDto,
+  AgentSessionDto,
+  AgentTurnResultDto,
   ApiKeyDto,
   ApiKeyMeta,
   AudienceCopilotResultDto,
@@ -35,6 +38,8 @@ import type {
   JourneyDto,
   JourneyGraphDto,
   JourneyLiftReportDto,
+  JourneyNarrativeDto,
+  TemplateDraftDto,
   JourneyOptimizationDto,
   JourneyOptimizationProposeDto,
   JourneyRunDto,
@@ -46,6 +51,10 @@ import type {
   RunMigrationResultDto,
   SegmentFilterDto,
   AuditLogDto,
+  SettingsAgentApplyResultDto,
+  SettingsAgentRefreshResultDto,
+  SettingsAgentSessionDto,
+  SettingsAgentTurnResultDto,
   BillingSubscriptionDto,
   ChannelConnectionDto,
   ChannelKindDto,
@@ -120,6 +129,35 @@ export const api = {
         ...(language ? { language } : {}),
       }),
     }),
+
+  /* Agent workbench ---------------------------------------------------- */
+  journeyAgentSession: (id: string) => request<AgentSessionDto>(`/v1/journeys/${id}/agent/session`),
+  journeyAgentTurn: (id: string, message: string) =>
+    request<AgentTurnResultDto>(`/v1/journeys/${id}/agent/turn`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+  journeyAgentApply: (id: string, messageId: string) =>
+    request<AgentApplyResultDto>(`/v1/journeys/${id}/agent/apply`, {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    }),
+  journeyAgentRefreshNarrative: (id: string) =>
+    request<{
+      narrative: JourneyNarrativeDto | null;
+      narrativeVersion: number | null;
+      refreshed: boolean;
+    }>(`/v1/journeys/${id}/agent/refresh-narrative`, { method: "POST" }),
+  journeyAgentRegenerateTemplate: (
+    id: string,
+    messageId: string,
+    key: string,
+    instruction?: string,
+  ) =>
+    request<{ draft: TemplateDraftDto }>(`/v1/journeys/${id}/agent/regenerate-template`, {
+      method: "POST",
+      body: JSON.stringify({ messageId, key, ...(instruction ? { instruction } : {}) }),
+    }),
   journey: (id: string) =>
     request<{
       journey: JourneyDto;
@@ -128,6 +166,24 @@ export const api = {
       runCounts: Record<string, number>;
       validation: ValidationResult | null;
     }>(`/v1/journeys/${id}`),
+
+  /* Settings agent workbench ------------------------------------------- */
+  settingsAgentSession: () => request<SettingsAgentSessionDto>("/v1/settings/agent/session"),
+  settingsAgentTurn: (message: string) =>
+    request<SettingsAgentTurnResultDto>("/v1/settings/agent/turn", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+  settingsAgentApply: (messageId: string) =>
+    request<SettingsAgentApplyResultDto>("/v1/settings/agent/apply", {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    }),
+  settingsAgentRefreshNarrative: () =>
+    request<SettingsAgentRefreshResultDto>("/v1/settings/agent/refresh-narrative", {
+      method: "POST",
+    }),
+
   createJourney: (name: string, graph: JourneyGraphDto) =>
     request<{ journeyId: string; validation: ValidationResult }>("/v1/journeys", {
       method: "POST",

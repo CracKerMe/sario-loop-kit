@@ -329,14 +329,12 @@ describe("publishJourney: sendCampaign node snapshotting", () => {
         n.id === "sc" ? { ...n, data: { campaignId: "does-not-exist" } } : n,
       ),
     };
-    await db
-      .insert(journeyVersion)
-      .values({
-        journeyId: "journey-2",
-        version: 1,
-        graph: graphWithMissingCampaign,
-        compiled: {},
-      });
+    await db.insert(journeyVersion).values({
+      journeyId: "journey-2",
+      version: 1,
+      graph: graphWithMissingCampaign,
+      compiled: {},
+    });
 
     await publishJourney(db, ctx.engine, "ws-1", "journey-2");
 

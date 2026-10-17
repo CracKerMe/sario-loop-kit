@@ -4,16 +4,16 @@
 
 Loopkit 引擎能力已经很强，但**产品表面把引擎概念全部平铺了**。对照 Loops.so，复杂度不在「缺功能」，而在「一打开就同时看到所有能力」。
 
-| 维度 | Loopkit 现状 | Loops.so |
-| --- | --- | --- |
-| Journey 节点 | 19 种（trigger/delay/email/sendCampaign/notify/branch/split/abSplit/filter/timeWindow/waitEvent/webhook/updateContact/score/goal/exit/parallel/join/subJourney） | **6 种**：Trigger / Email / Timer / Audience filter / Branch / Experiment |
-| 侧边栏 | 5 组 9 项（Home / Contacts / Audiences / Journeys / Campaigns / Templates / Suppressions / API keys / Logs） | 扁平、少概念：Home / Emails / Loops / Contacts / Forms / Settings |
-| 发送路径 | 首页就展示三路选择器（Lifecycle / Broadcast / Transactional） | 同样三类，但**不教育用户先选路径**，直接从 Emails 或 Loops 进入 |
-| 新建 Journey 默认模板 | 默认选中 **Welcome + A/B + Score + Hours**（实验 + 打分 + 营业时段 + goal） | 从空白或简单模板起步；复杂 playbook 是示例不是默认 |
-| Builder 交互 | 自由画布 + 左侧全量节点面板 + 2200 行 Inspector | 线性路径为主；**悬停箭头点 `+` 插入**；分支自动挂 Audience filter |
-| 条件配置 | 原始表达式 `contact.plan == "pro"` | 属性选择器 + 受众过滤 UI |
-| Journey 详情页 | Builder / **Lab**（Preview→Simulate→Optimize→Canary→Migrate）/ Runs / Funnel | Build / Metrics；测试用 `@example.com` 即可 |
-| 默认模板内容 | score、A/B、timeWindow、notify 一上来就齐 | 触发 → 邮件 → 定时器 → 结束 |
+| 维度                  | Loopkit 现状                                                                                                                                                     | Loops.so                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Journey 节点          | 19 种（trigger/delay/email/sendCampaign/notify/branch/split/abSplit/filter/timeWindow/waitEvent/webhook/updateContact/score/goal/exit/parallel/join/subJourney） | **6 种**：Trigger / Email / Timer / Audience filter / Branch / Experiment |
+| 侧边栏                | 5 组 9 项（Home / Contacts / Audiences / Journeys / Campaigns / Templates / Suppressions / API keys / Logs）                                                     | 扁平、少概念：Home / Emails / Loops / Contacts / Forms / Settings         |
+| 发送路径              | 首页就展示三路选择器（Lifecycle / Broadcast / Transactional）                                                                                                    | 同样三类，但**不教育用户先选路径**，直接从 Emails 或 Loops 进入           |
+| 新建 Journey 默认模板 | 默认选中 **Welcome + A/B + Score + Hours**（实验 + 打分 + 营业时段 + goal）                                                                                      | 从空白或简单模板起步；复杂 playbook 是示例不是默认                        |
+| Builder 交互          | 自由画布 + 左侧全量节点面板 + 2200 行 Inspector                                                                                                                  | 线性路径为主；**悬停箭头点 `+` 插入**；分支自动挂 Audience filter         |
+| 条件配置              | 原始表达式 `contact.plan == "pro"`                                                                                                                               | 属性选择器 + 受众过滤 UI                                                  |
+| Journey 详情页        | Builder / **Lab**（Preview→Simulate→Optimize→Canary→Migrate）/ Runs / Funnel                                                                                     | Build / Metrics；测试用 `@example.com` 即可                               |
+| 默认模板内容          | score、A/B、timeWindow、notify 一上来就齐                                                                                                                        | 触发 → 邮件 → 定时器 → 结束                                               |
 
 **用户要的是灵活性，不是更复杂的表面。** 灵活性应来自：同一套引擎/图/编译，**默认路径短、进阶按需展开**；而不是删掉能力或继续堆面板。
 
@@ -63,12 +63,12 @@ flowchart TB
 
 **术语（建议，可改）：**
 
-| 现状 | 建议 | 理由 |
-| --- | --- | --- |
-| Journeys | Automations / 自动化 | 与 Loops「Loops/Workflows」对齐，比 Journey 更「产品」 |
-| Campaigns | Broadcasts / 群发 | 对比自动化的「一次发送」 |
-| Templates | Emails / 邮件 | 内容资产，不是工程对象 |
-| Suppressions / Logs / API keys | Settings 分区 | 运维与集成，不是日常工作流 |
+| 现状                           | 建议                 | 理由                                                   |
+| ------------------------------ | -------------------- | ------------------------------------------------------ |
+| Journeys                       | Automations / 自动化 | 与 Loops「Loops/Workflows」对齐，比 Journey 更「产品」 |
+| Campaigns                      | Broadcasts / 群发    | 对比自动化的「一次发送」                               |
+| Templates                      | Emails / 邮件        | 内容资产，不是工程对象                                 |
+| Suppressions / Logs / API keys | Settings 分区        | 运维与集成，不是日常工作流                             |
 
 **不改后端 schema/API 命名**（仍可叫 journey/campaign/template），只改界面语言与 IA。
 
@@ -76,14 +76,14 @@ flowchart TB
 
 默认节点面板 **只展示 6 类**（可与 Loops 一一对应）：
 
-| 默认节点 | 对应现状类型 | 说明 |
-| --- | --- | --- |
-| Trigger | trigger | contact_created / event / property_changed / list |
-| Email | email（+ sendCampaign 可折叠为「发送已有邮件」） | 选模板 + 可选覆盖 subject |
-| Delay | delay | 「立即 / N 分钟/小时/天」；until/weekly 进 Advanced |
-| Filter | filter + branch 的条件 UI | 属性条件；「仅下一步 / 后续全部」 |
-| Branch | branch + split + abSplit 的统一入口 | 默认二分（匹配 / 不匹配）；A/B 与多路由是 Branch 的 Advanced 模式 |
-| Experiment | abSplit | 权重 A/B；默认节点可与 Branch 合并入口，画布上仍为独立节点 |
+| 默认节点   | 对应现状类型                                     | 说明                                                              |
+| ---------- | ------------------------------------------------ | ----------------------------------------------------------------- |
+| Trigger    | trigger                                          | contact_created / event / property_changed / list                 |
+| Email      | email（+ sendCampaign 可折叠为「发送已有邮件」） | 选模板 + 可选覆盖 subject                                         |
+| Delay      | delay                                            | 「立即 / N 分钟/小时/天」；until/weekly 进 Advanced               |
+| Filter     | filter + branch 的条件 UI                        | 属性条件；「仅下一步 / 后续全部」                                 |
+| Branch     | branch + split + abSplit 的统一入口              | 默认二分（匹配 / 不匹配）；A/B 与多路由是 Branch 的 Advanced 模式 |
+| Experiment | abSplit                                          | 权重 A/B；默认节点可与 Branch 合并入口，画布上仍为独立节点        |
 
 **Advanced 抽屉（默认折叠，搜索可达）：** waitEvent, timeWindow, updateContact, score, goal, notify, webhook, sendCampaign, parallel, join, subJourney, exit（exit 可自动挂或保留在「结束」隐式语义，不必强推给用户）。
 
@@ -142,17 +142,17 @@ Settings
 
 ## 灵活性「藏在后面、调得出来」
 
-| 能力 | 默认用户是否看见 | 仍如何使用 |
-| --- | --- | --- |
-| 19 种节点 | 否，只见 6 | Advanced 抽屉 / 搜索；旧图全量可编辑 |
-| 表达式 branch/split | 否，属性 UI | Inspector Advanced → Expression |
-| Journey Lab 五段 | 否 | 详情页 overflow / Settings Advanced |
-| Canary / run migrate | 否 | 同上；API 不变 |
+| 能力                        | 默认用户是否看见         | 仍如何使用                                                      |
+| --------------------------- | ------------------------ | --------------------------------------------------------------- |
+| 19 种节点                   | 否，只见 6               | Advanced 抽屉 / 搜索；旧图全量可编辑                            |
+| 表达式 branch/split         | 否，属性 UI              | Inspector Advanced → Expression                                 |
+| Journey Lab 五段            | 否                       | 详情页 overflow / Settings Advanced                             |
+| Canary / run migrate        | 否                       | 同上；API 不变                                                  |
 | Dual compliance Contact 360 | 简化文案，双门控逻辑不改 | Contact 详情默认「可发送/不可发送 + 原因」；抑制列表在 Settings |
-| SegmentFilter AST | 否 | Audiences Advanced 编辑 |
-| Transactional API | 不占主导航 | Settings → API + Templates → Test send |
-| Copilot 多入口 | 收敛为每面一个入口 | Builder / Email / Audience 各保留；去掉 Lab 内重复教育 |
-| 引擎 DLQ / webhook / score… | 否 | 不删除，不进默认 UI |
+| SegmentFilter AST           | 否                       | Audiences Advanced 编辑                                         |
+| Transactional API           | 不占主导航               | Settings → API + Templates → Test send                          |
+| Copilot 多入口              | 收敛为每面一个入口       | Builder / Email / Audience 各保留；去掉 Lab 内重复教育          |
+| 引擎 DLQ / webhook / score… | 否                       | 不删除，不进默认 UI                                             |
 
 **工程约束：**
 
@@ -209,26 +209,26 @@ Settings
 
 ## 关键文件
 
-| 区域 | 路径 |
-| --- | --- |
-| 侧边栏 IA | `apps/web/src/components/app-sidebar.tsx` |
-| 路由壳 | `apps/web/src/routes/_auth/route.tsx`，`routes/_auth/**` |
-| Home / 路径选择 | `apps/web/src/routes/_auth/dashboard.tsx`，`features/messaging/MessagingPathPicker.tsx` |
-| 节点元数据与模板 | `apps/web/src/features/journey-builder/graph.ts`，`packages/journey/src/presets.ts` |
-| Builder | `apps/web/src/features/journey-builder/JourneyBuilder.tsx`（palette/Inspector/边上插入） |
-| 详情页与 Lab | `apps/web/src/routes/_auth/journeys/$journeyId.tsx`，`features/journey-builder/JourneyLab.tsx` |
-| 条件 UI | `features/audiences/AudienceFilterBuilder.tsx`，`features/journey-builder/JourneyBuilder.tsx` 条件字段 |
-| 图类型/编译（只读约束） | `packages/journey/src/types.ts`，`compile.ts`，`validate.ts`，`whitelist.ts` |
+| 区域                    | 路径                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| 侧边栏 IA               | `apps/web/src/components/app-sidebar.tsx`                                                              |
+| 路由壳                  | `apps/web/src/routes/_auth/route.tsx`，`routes/_auth/**`                                               |
+| Home / 路径选择         | `apps/web/src/routes/_auth/dashboard.tsx`，`features/messaging/MessagingPathPicker.tsx`                |
+| 节点元数据与模板        | `apps/web/src/features/journey-builder/graph.ts`，`packages/journey/src/presets.ts`                    |
+| Builder                 | `apps/web/src/features/journey-builder/JourneyBuilder.tsx`（palette/Inspector/边上插入）               |
+| 详情页与 Lab            | `apps/web/src/routes/_auth/journeys/$journeyId.tsx`，`features/journey-builder/JourneyLab.tsx`         |
+| 条件 UI                 | `features/audiences/AudienceFilterBuilder.tsx`，`features/journey-builder/JourneyBuilder.tsx` 条件字段 |
+| 图类型/编译（只读约束） | `packages/journey/src/types.ts`，`compile.ts`，`validate.ts`，`whitelist.ts`                           |
 
 ## 决策摘要（给实现阶段）
 
-| 决策 | 选择 |
-| --- | --- |
-| 复杂功能 | **隐藏，不删除** |
-| 默认节点 | 6 个 core；13 个 advanced 进抽屉 |
-| 默认模板 | Welcome drip；复杂样例降级 |
-| 表达式 | Advanced；主路径属性选择器 |
-| Lab/canary/migrate | 降级入口；能力保留 |
-| 导航 | 收敛 + Settings 托管运维面 |
-| 引擎/API/schema | 原则上不动 |
-| 命名 | UI 文案向 Automations/Broadcasts/Emails 靠拢，API 名可暂留 |
+| 决策               | 选择                                                       |
+| ------------------ | ---------------------------------------------------------- |
+| 复杂功能           | **隐藏，不删除**                                           |
+| 默认节点           | 6 个 core；13 个 advanced 进抽屉                           |
+| 默认模板           | Welcome drip；复杂样例降级                                 |
+| 表达式             | Advanced；主路径属性选择器                                 |
+| Lab/canary/migrate | 降级入口；能力保留                                         |
+| 导航               | 收敛 + Settings 托管运维面                                 |
+| 引擎/API/schema    | 原则上不动                                                 |
+| 命名               | UI 文案向 Automations/Broadcasts/Emails 靠拢，API 名可暂留 |

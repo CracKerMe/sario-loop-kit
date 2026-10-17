@@ -91,8 +91,10 @@ A JourneyGraph is \`{ nodes, edges }\`:
 Node types and their data (only these types are allowed):
 ${NODE_TYPE_REFERENCE}
 
-Hard rules:
-- Exactly one trigger node; it is the only entry point. Every other node must be reachable from it.
+${GRAPH_HARD_RULES}`;
+}
+
+export const GRAPH_HARD_RULES = `- Exactly one trigger node; it is the only entry point. Every other node must be reachable from it.
 - Every node except exit must have at least one outgoing edge (or, for branch/timeWindow, one per handle).
 - branch edges use sourceHandle "true"/"false"; timeWindow uses "true" (in window) / "false"; split edges use each route's name as sourceHandle; abSplit edges use each variant's name.
 - parallel must have ≥2 outgoing edges; join needs ≥2 incoming and exactly 1 outgoing edge; the branches feeding a mode-"all" join must all originate from one parallel node and reach the join.
@@ -101,15 +103,14 @@ Hard rules:
 - subJourney nodes MUST reference ids from the provided journey list when one is given.
 - Prefer simple, linear flows. Use delay between sends. Do not use nodes the request does not call for.
 - Lay nodes out left-to-right with sensible position spacing (x: 0, 260, 520, …).`;
-}
 
-const NODE_TYPE_REFERENCE = `- trigger: data { trigger: { kind: "contact_created" | "event" | "property_changed" | "manual", ... } }. event kind carries { name, filter? }; property_changed carries { property, from?, to? }. Trigger filter is the audience SegmentFilter AST: { kind: "condition", field, operator, value? } | { kind: "event", name, occurred, withinDays?, minCount? } | { op: "and"|"or", children: [...] } | { op: "not", child }. Use field "property.<key>" for contact properties.
+export const NODE_TYPE_REFERENCE = `- trigger: data { trigger: { kind: "contact_created" | "event" | "property_changed" | "manual", ... } }. event kind carries { name, filter? }; property_changed carries { property, from?, to? }. Trigger filter is the audience SegmentFilter AST: { kind: "condition", field, operator, value? } | { kind: "event", name, occurred, withinDays?, minCount? } | { op: "and"|"or", children: [...] } | { op: "not", child }. Use field "property.<key>" for contact properties.
 - delay: data { mode: "duration", ms, value?, unit: "minutes"|"hours"|"days"|"weeks" } or { mode: "until", iso } or { mode: "weekly", dayOfWeek (0-6), hour (0-23), minute? }. Always set ms consistently with value/unit (minutes=60000, hours=3600000, days=86400000, weeks=604800000).
 - email: data { templateId, subject?, preheader?, fromName?, replyTo?, utm? }.
 - branch: data { expression } — a JS-like boolean expression over contact properties.
 - split: data { routes: [{ name, expression }] } — routes evaluated in order, first match wins.
 - filter: data { expression } — contacts failing the expression stop here.
-- waitEvent: data { eventName, timeoutMs?, eventFilter? }.
+- waitEvent: data { eventName, timeoutMs?, eventFilter? }. When timeoutMs is set, give the node TWO outgoing edges: one with sourceHandle "event" (event arrived in time) and one with sourceHandle "timeout" (the wait ran out). This is the standard way to express "if the event never happens within N ms, do X instead" — e.g. wait for an order event with timeout, timeout edge leads to the win-back email, event edge leads past it.
 - exit: data { reason? } — terminal, no outgoing edges.
 - abSplit: data { variants: [{ name, weight }] }.
 - timeWindow: data { days: number[] (0=Sun..6=Sat), startHour (0-23), endHour (0-24), label? }.

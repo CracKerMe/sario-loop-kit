@@ -47,6 +47,12 @@ export interface GenerationSpec<T> {
   guard: (input: unknown) => T;
   /** Appended to the repair-round tool result. */
   repairPrompt: string;
+  /**
+   * Prior conversation turns (multi-turn agents). Prepended before the
+   * final user message; each turn is a plain user/assistant text pair so
+   * stale graphs or tool payloads never leak into context.
+   */
+  history?: MessageParam[];
 }
 
 export interface Generated<T> {
@@ -132,7 +138,10 @@ export async function runGuardedGeneration<T>(
             toolParameters: spec.toolParameters,
           });
 
-  const messages: MessageParam[] = [{ role: "user", content: spec.userPrompt }];
+  const messages: MessageParam[] = [
+    ...(spec.history ?? []),
+    { role: "user", content: spec.userPrompt },
+  ];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let lastError: unknown;
 

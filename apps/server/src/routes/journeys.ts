@@ -19,6 +19,7 @@ import {
   evaluateJourneyCanary,
   graphNodeRefsForOptimization,
   listDeadLetters,
+  listContactPropertyKeys,
   listJourneyOptimizations,
   listJourneyRuns,
   listNodeFunnel,
@@ -42,6 +43,8 @@ import {
   contactEvent,
   emailTemplate,
   journey,
+  journeyAgentMessage,
+  journeyIntent,
   journeyRun,
   journeyVersion,
 } from "@loopkit/db/schema";
@@ -49,12 +52,23 @@ import { renderTemplate } from "@loopkit/email";
 import {
   AiConfigError,
   AiGraphError,
+  generateEmailContent,
   generateJourneyGraph,
   generateJourneyExplanation,
   JourneyExplanationError,
   generateJourneyOptimization,
   generateSimulationInsight,
+  guardEmailContent,
+  runJourneyAgentTurn,
+  JourneyAgentError,
+  type JourneyRequirement,
 } from "@loopkit/ai";
+import {
+  MERGE_TAG_SUGGESTIONS,
+  emailDocToPlainText,
+  renderEmailDoc,
+  validateEmailDoc,
+} from "@loopkit/email-doc";
 import {
   aggregateDryRuns,
   describeGraphForSimulation,
@@ -313,6 +327,608 @@ journeysRouter.post("/:id/explain", async (c) => {
   }
 });
 
+/* Agent-first workbench -----------------------------------------------------
+ * Conversation state for /automations/:id. The intent row (brief + coverage
+ * checklist + cached narrative) is created lazily on the first turn; the
+ * transcript lives in journey_agent_message. */
+
+async function loadAgentWorkspaceContext(workspaceId: string) {
+  const [templates, publishedJourneys, events, propertyKeys] = await Promise.all([
+    db
+      .select({ id: emailTemplate.id, name: emailTemplate.name })
+      .from(emailTemplate)
+      .where(eq(emailTemplate.workspaceId, workspaceId))
+      .limit(100),
+    db
+      .select({ id: journey.id, name: journey.name })
+      .from(journey)
+      .where(and(eq(journey.workspaceId, workspaceId), eq(journey.status, "published")))
+      .limit(50),
+    db
+      .selectDistinct({ name: contactEvent.name })
+      .from(contactEvent)
+      .where(eq(contactEvent.workspaceId, workspaceId))
+      .limit(50),
+    listContactPropertyKeys(db, workspaceId).catch(() => [] as string[]),
+  ]);
+  return {
+    templates,
+    childJourneys: publishedJourneys,
+    events: events.map((e) => e.name),
+    contactPropertyKeys: propertyKeys,
+  };
+}
+
+async function latestJourneyGraph(journeyId: string) {
+  const [row] = await db
+    .select({ version: journeyVersion.version, graph: journeyVersion.graph })
+    .from(journeyVersion)
+    .where(eq(journeyVersion.journeyId, journeyId))
+    .orderBy(desc(journeyVersion.version))
+    .limit(1);
+  return row ? { version: row.version as number, graph: row.graph as JourneyGraph } : null;
+}
+
+/** Maps AI pipeline failures onto the same HTTP semantics as /copilot. */
+function agentAiErrorStatus(error: unknown): { status: ContentfulStatusCode; body: object } {
+  if (error instanceof AiConfigError) {
+    return { status: 503, body: { error: "ai_not_configured", message: error.message } };
+  }
+  if (error instanceof JourneyAgentError || error instanceof AiGraphError) {
+    const issues =
+      error instanceof JourneyAgentError ? error.issues : (error as AiGraphError).issues;
+    return {
+      status: 502,
+      body: { error: "ai_guard_rejected", issues, message: error.message },
+    };
+  }
+  if (error instanceof JourneyExplanationError) {
+    return {
+      status: 502,
+      body: { error: "ai_guard_rejected", issues: error.issues, message: error.message },
+    };
+  }
+  return {
+    status: 500,
+    body: {
+      error: "ai_unavailable",
+      message: error instanceof Error ? error.message : String(error),
+    },
+  };
+}
+
+/** Get (or lazily create) the intent brief for a journey. */
+async function ensureJourneyIntent(journeyId: string, workspaceId: string, initialBrief = "") {
+  const [existing] = await db
+    .select()
+    .from(journeyIntent)
+    .where(eq(journeyIntent.journeyId, journeyId));
+  if (existing) return existing;
+  const [created] = await db
+    .insert(journeyIntent)
+    .values({
+      id: crypto.randomUUID(),
+      journeyId,
+      workspaceId,
+      brief: initialBrief,
+      requirements: [],
+    })
+    .returning();
+  return created!;
+}
+
+function intentDto(row: typeof journeyIntent.$inferSelect) {
+  return {
+    brief: row.brief,
+    requirements: (row.requirements ?? []) as JourneyRequirement[],
+    narrative: row.narrative ?? null,
+    narrativeVersion: row.narrativeVersion ?? null,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** A proposal's template draft: intent from the agent, copy from the email pipeline. */
+interface TemplateDraftContent {
+  key: string;
+  name: string;
+  purpose: string;
+  /** Present when copy generation succeeded (guarded ProseMirror doc). */
+  subject?: string;
+  doc?: unknown;
+  validation?: unknown;
+  /** Present when copy generation failed — the card offers regenerate. */
+  error?: string;
+}
+
+const MERGE_TAG_PATH_LIMIT = 60;
+
+/**
+ * Turn each proposal draft intent into real, guarded email copy. Parallel;
+ * one failure never sinks the others — the failed draft carries `error`
+ * and the workbench offers per-draft regeneration.
+ */
+async function generateTemplateDraftContents(
+  workspaceId: string,
+  brief: string,
+  drafts: { key: string; name: string; purpose: string }[],
+): Promise<TemplateDraftContent[]> {
+  const propertyKeys = await listContactPropertyKeys(db, workspaceId).catch(() => [] as string[]);
+  const mergeTagPaths = [
+    ...new Set([...MERGE_TAG_SUGGESTIONS, ...propertyKeys.map((key) => `contact.${key}`)]),
+  ].slice(0, MERGE_TAG_PATH_LIMIT);
+
+  return Promise.all(
+    drafts.map(async (draft): Promise<TemplateDraftContent> => {
+      try {
+        const result = await generateEmailContent({
+          request: `${draft.purpose}\n\n自动化背景：${brief}`.slice(0, 2000),
+          mergeTagPaths,
+        });
+        return {
+          key: draft.key,
+          name: draft.name,
+          purpose: draft.purpose,
+          subject: result.subject,
+          doc: result.doc,
+          validation: validateEmailDoc(result.doc),
+        };
+      } catch (error) {
+        return {
+          key: draft.key,
+          name: draft.name,
+          purpose: draft.purpose,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
+  );
+}
+
+journeysRouter.get("/:id/agent/session", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const [j] = await db
+    .select({ id: journey.id })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const [intent] = await db
+    .select()
+    .from(journeyIntent)
+    .where(eq(journeyIntent.journeyId, journeyId));
+  const messages = await db
+    .select()
+    .from(journeyAgentMessage)
+    .where(eq(journeyAgentMessage.journeyId, journeyId))
+    .orderBy(journeyAgentMessage.createdAt)
+    .limit(200);
+  const latest = await latestJourneyGraph(journeyId);
+
+  return c.json({
+    intent: intent ? intentDto(intent) : null,
+    messages: messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      kind: m.kind,
+      content: m.content,
+      payload: m.payload ?? null,
+      createdAt: m.createdAt,
+    })),
+    latestVersion: latest?.version ?? null,
+    validation: latest ? validateGraph(latest.graph) : null,
+  });
+});
+
+const agentTurnSchema = z.object({ message: z.string().trim().min(1).max(4000) });
+const AGENT_HISTORY_LIMIT = 20;
+
+journeysRouter.post("/:id/agent/turn", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = agentTurnSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [j] = await db
+    .select({ id: journey.id, name: journey.name })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const intent = await ensureJourneyIntent(journeyId, workspaceId, parsed.data.message);
+  const history = (
+    await db
+      .select({ role: journeyAgentMessage.role, content: journeyAgentMessage.content })
+      .from(journeyAgentMessage)
+      .where(eq(journeyAgentMessage.journeyId, journeyId))
+      .orderBy(desc(journeyAgentMessage.createdAt))
+      .limit(AGENT_HISTORY_LIMIT)
+  ).reverse();
+  const latest = await latestJourneyGraph(journeyId);
+  const workspace = await loadAgentWorkspaceContext(workspaceId);
+  const graph = latest?.graph ?? null;
+
+  try {
+    const result = await runJourneyAgentTurn({
+      journeyName: j.name,
+      brief: intent.brief,
+      requirements: (intent.requirements ?? []) as JourneyRequirement[],
+      currentGraph: graph,
+      userMessage: parsed.data.message,
+      history,
+      ...workspace,
+      knownTemplateIds: workspace.templates.map((t) => t.id),
+      dataMapping: graph?.dataMapping ?? null,
+    });
+    const turn = result.turn;
+
+    // Draft templates declared by the proposal get real copy right away —
+    // the dedicated email pipeline writes each one (guarded docs), so the
+    // proposal card can preview and the operator decides at apply time.
+    const templateDrafts =
+      turn.action === "propose" && (turn.templateDrafts?.length ?? 0) > 0
+        ? await generateTemplateDraftContents(workspaceId, intent.brief, turn.templateDrafts!)
+        : [];
+
+    const [userMessage] = await db
+      .insert(journeyAgentMessage)
+      .values({
+        id: crypto.randomUUID(),
+        journeyId,
+        workspaceId,
+        role: "user",
+        kind: "text",
+        content: parsed.data.message,
+        payload: null,
+      })
+      .returning();
+
+    const payload =
+      turn.action === "propose"
+        ? {
+            changeSummary: turn.changeSummary,
+            risks: turn.risks,
+            requirements: turn.requirements,
+            graph: turn.graph,
+            nodeCount: turn.graph?.nodes.length ?? 0,
+            edgeCount: turn.graph?.edges.length ?? 0,
+            ...(templateDrafts.length > 0 ? { templateDrafts } : {}),
+          }
+        : turn.question
+          ? { question: turn.question.text, options: turn.question.options }
+          : null;
+    const [agentMessage] = await db
+      .insert(journeyAgentMessage)
+      .values({
+        id: crypto.randomUUID(),
+        journeyId,
+        workspaceId,
+        role: "agent",
+        kind: turn.action === "propose" ? "proposal" : turn.question ? "question" : "text",
+        content: turn.message,
+        payload: payload as Record<string, unknown> | null,
+      })
+      .returning();
+
+    if (turn.requirements.length > 0) {
+      await db
+        .update(journeyIntent)
+        .set({ requirements: turn.requirements })
+        .where(eq(journeyIntent.journeyId, journeyId));
+    }
+
+    return c.json({
+      userMessage: {
+        id: userMessage!.id,
+        role: "user",
+        kind: "text",
+        content: userMessage!.content,
+        payload: null,
+        createdAt: userMessage!.createdAt,
+      },
+      message: {
+        id: agentMessage!.id,
+        role: "agent",
+        kind: agentMessage!.kind,
+        content: agentMessage!.content,
+        payload: agentMessage!.payload ?? null,
+        createdAt: agentMessage!.createdAt,
+      },
+      intent: intentDto({
+        ...intent,
+        requirements:
+          turn.requirements.length > 0
+            ? (turn.requirements as unknown as JourneyRequirement[])
+            : ((intent.requirements ?? []) as JourneyRequirement[]),
+      }),
+      usage: result.usage,
+    });
+  } catch (error) {
+    const { status, body } = agentAiErrorStatus(error);
+    return c.json(body, status);
+  }
+});
+
+journeysRouter.post("/:id/agent/apply", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = z
+    .object({ messageId: z.string().trim().min(1) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [j] = await db
+    .select({ id: journey.id, name: journey.name })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const [proposal] = await db
+    .select()
+    .from(journeyAgentMessage)
+    .where(
+      and(
+        eq(journeyAgentMessage.id, parsed.data.messageId),
+        eq(journeyAgentMessage.journeyId, journeyId),
+        eq(journeyAgentMessage.role, "agent"),
+        eq(journeyAgentMessage.kind, "proposal"),
+      ),
+    );
+  if (!proposal) return c.json({ error: "proposal_not_found" }, 404);
+
+  const payload = (proposal.payload ?? {}) as {
+    graph?: JourneyGraph;
+    requirements?: JourneyRequirement[];
+    templateDrafts?: TemplateDraftContent[];
+  };
+  if (!payload.graph) return c.json({ error: "proposal_has_no_graph" }, 400);
+
+  // Materialize the proposal's template drafts as real email templates and
+  // remap the graph's draft keys onto the created ids. Draft docs are
+  // re-validated here — payload jsonb is untrusted storage.
+  const createdTemplates: { key: string; templateId: string; name: string }[] = [];
+  let graph = payload.graph;
+  const draftsWithDoc = (payload.templateDrafts ?? []).filter((d) => d.doc);
+  if (draftsWithDoc.length > 0) {
+    const keyToId = new Map<string, string>();
+    for (const draft of draftsWithDoc) {
+      let guarded;
+      try {
+        guarded = guardEmailContent({ subject: draft.subject, doc: draft.doc });
+      } catch (error) {
+        return c.json(
+          {
+            error: "draft_template_invalid",
+            message: `模板草稿「${draft.name}」校验失败，请重新生成后再应用`,
+            issues: [error instanceof Error ? error.message : String(error)],
+          },
+          400,
+        );
+      }
+      const templateId = `tpl-${crypto.randomUUID()}`;
+      await db.insert(emailTemplate).values({
+        id: templateId,
+        workspaceId,
+        name: draft.name,
+        subject: guarded.subject,
+        html: renderEmailDoc(guarded.doc),
+        textBody: emailDocToPlainText(guarded.doc),
+        source: "tiptap",
+        doc: guarded.doc,
+      });
+      keyToId.set(draft.key, templateId);
+      createdTemplates.push({ key: draft.key, templateId, name: draft.name });
+    }
+    graph = {
+      ...payload.graph,
+      nodes: payload.graph.nodes.map((node) => {
+        if (node.type !== "email") return node;
+        const templateId = (node.data as { templateId?: unknown }).templateId;
+        const mapped = typeof templateId === "string" ? keyToId.get(templateId) : undefined;
+        return mapped ? { ...node, data: { ...node.data, templateId: mapped } } : node;
+      }),
+    } as JourneyGraph;
+  }
+
+  const { version, validation } = await writeDraftVersion(journeyId, graph);
+
+  // Refresh the plain-language narrative so the workbench never shows a
+  // walkthrough that disagrees with the template it describes.
+  let narrative: Record<string, unknown> | null = null;
+  try {
+    const explanation = await generateJourneyExplanation({
+      journeyName: j.name,
+      graph,
+      language: "简体中文",
+    });
+    narrative = {
+      headline: explanation.result.headline,
+      summary: explanation.result.summary,
+      steps: explanation.result.steps,
+      branches: explanation.result.branches,
+      notes: explanation.result.notes,
+    };
+  } catch {
+    // Narrative is a cache, not a gate — the apply itself already succeeded.
+  }
+
+  await ensureJourneyIntent(journeyId, workspaceId);
+  await db
+    .update(journeyIntent)
+    .set({
+      narrative,
+      narrativeVersion: narrative ? version : null,
+      ...(payload.requirements ? { requirements: payload.requirements } : {}),
+    })
+    .where(eq(journeyIntent.journeyId, journeyId));
+
+  return c.json({
+    version,
+    validation,
+    narrative,
+    narrativeVersion: narrative ? version : null,
+    ...(createdTemplates.length > 0 ? { createdTemplates } : {}),
+  });
+});
+
+/**
+ * Regenerate one template draft's copy in place (still just a proposal
+ * attachment — nothing is created until apply). Optional free-text
+ * instruction steers the rewrite ("更正式一点", "突出 7 天限时").
+ */
+journeysRouter.post("/:id/agent/regenerate-template", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+  const parsed = z
+    .object({
+      messageId: z.string().trim().min(1),
+      key: z.string().trim().min(1).max(64),
+      instruction: z.string().trim().max(500).optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    return c.json({ error: "invalid_request", details: parsed.error.issues }, 400);
+
+  const [j] = await db
+    .select({ id: journey.id })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const [proposal] = await db
+    .select()
+    .from(journeyAgentMessage)
+    .where(
+      and(
+        eq(journeyAgentMessage.id, parsed.data.messageId),
+        eq(journeyAgentMessage.journeyId, journeyId),
+        eq(journeyAgentMessage.role, "agent"),
+        eq(journeyAgentMessage.kind, "proposal"),
+      ),
+    );
+  if (!proposal) return c.json({ error: "proposal_not_found" }, 404);
+
+  const payload = (proposal.payload ?? {}) as {
+    templateDrafts?: TemplateDraftContent[];
+  };
+  const drafts = payload.templateDrafts ?? [];
+  const index = drafts.findIndex((d) => d.key === parsed.data.key);
+  if (index === -1) return c.json({ error: "draft_not_found" }, 404);
+  const draft = drafts[index]!;
+
+  const [intent] = await db
+    .select({ brief: journeyIntent.brief })
+    .from(journeyIntent)
+    .where(eq(journeyIntent.journeyId, journeyId));
+
+  try {
+    const propertyKeys = await listContactPropertyKeys(db, workspaceId).catch(() => [] as string[]);
+    const mergeTagPaths = [
+      ...new Set([...MERGE_TAG_SUGGESTIONS, ...propertyKeys.map((key) => `contact.${key}`)]),
+    ].slice(0, MERGE_TAG_PATH_LIMIT);
+    const result = await generateEmailContent({
+      request: `${draft.purpose}\n\n自动化背景：${intent?.brief ?? ""}${
+        parsed.data.instruction ? `\n\n改写要求：${parsed.data.instruction}` : ""
+      }`.slice(0, 2000),
+      mergeTagPaths,
+    });
+    const updated: TemplateDraftContent = {
+      ...draft,
+      subject: result.subject,
+      doc: result.doc,
+      validation: validateEmailDoc(result.doc),
+    };
+    const nextDrafts = [...drafts];
+    nextDrafts[index] = updated;
+    await db
+      .update(journeyAgentMessage)
+      .set({ payload: { ...payload, templateDrafts: nextDrafts } })
+      .where(eq(journeyAgentMessage.id, proposal.id));
+    return c.json({ draft: updated });
+  } catch (error) {
+    const { status, body } = agentAiErrorStatus(error);
+    return c.json(body, status);
+  }
+});
+
+journeysRouter.post("/:id/agent/refresh-narrative", async (c) => {
+  const { workspaceId } = c.get("auth");
+  const journeyId = c.req.param("id");
+
+  const [j] = await db
+    .select({ id: journey.id, name: journey.name })
+    .from(journey)
+    .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
+  if (!j) return c.json({ error: "not_found" }, 404);
+
+  const latest = await latestJourneyGraph(journeyId);
+  if (!latest) return c.json({ error: "no_graph" }, 400);
+  const intent = await ensureJourneyIntent(journeyId, workspaceId);
+  if (intent.narrativeVersion === latest.version && intent.narrative) {
+    return c.json({
+      narrative: intent.narrative,
+      narrativeVersion: intent.narrativeVersion,
+      refreshed: false,
+    });
+  }
+
+  try {
+    const explanation = await generateJourneyExplanation({
+      journeyName: j.name,
+      graph: latest.graph,
+      language: "简体中文",
+    });
+    const narrative = {
+      headline: explanation.result.headline,
+      summary: explanation.result.summary,
+      steps: explanation.result.steps,
+      branches: explanation.result.branches,
+      notes: explanation.result.notes,
+    };
+    await db
+      .update(journeyIntent)
+      .set({ narrative, narrativeVersion: latest.version })
+      .where(eq(journeyIntent.journeyId, journeyId));
+    return c.json({ narrative, narrativeVersion: latest.version, refreshed: true });
+  } catch (error) {
+    const { status, body } = agentAiErrorStatus(error);
+    return c.json(body, status);
+  }
+});
+
+/**
+ * Persist `graph` as the journey's latest draft version and keep the
+ * journey's trigger column in sync with the graph's trigger node. Shared by
+ * the manual builder (PUT /:id/draft) and the agent apply flow.
+ */
+async function writeDraftVersion(journeyId: string, graph: JourneyGraph) {
+  const validation = validateGraph(graph);
+
+  const [latest] = await db
+    .select({ version: journeyVersion.version })
+    .from(journeyVersion)
+    .where(eq(journeyVersion.journeyId, journeyId))
+    .orderBy(desc(journeyVersion.version))
+    .limit(1);
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  await db.insert(journeyVersion).values({ journeyId, version: nextVersion, graph, compiled: {} });
+
+  const triggerNode = graph.nodes?.find((n: { type?: string }) => n.type === "trigger") as
+    | { data?: { trigger?: unknown } }
+    | undefined;
+  if (triggerNode?.data?.trigger) {
+    await db
+      .update(journey)
+      .set({ trigger: triggerNode.data.trigger, updatedAt: new Date() })
+      .where(eq(journey.id, journeyId));
+  }
+
+  return { version: nextVersion, validation };
+}
+
 journeysRouter.put("/:id/draft", async (c) => {
   const { workspaceId } = c.get("auth");
   const journeyId = c.req.param("id");
@@ -326,32 +942,11 @@ journeysRouter.put("/:id/draft", async (c) => {
     .where(and(eq(journey.id, journeyId), eq(journey.workspaceId, workspaceId)));
   if (!j) return c.json({ error: "not_found" }, 404);
 
-  const validation = validateGraph(parsed.data.graph as JourneyGraph);
-
-  const [latest] = await db
-    .select({ version: journeyVersion.version })
-    .from(journeyVersion)
-    .where(eq(journeyVersion.journeyId, journeyId))
-    .orderBy(desc(journeyVersion.version))
-    .limit(1);
-  const nextVersion = (latest?.version ?? 0) + 1;
-
-  await db
-    .insert(journeyVersion)
-    .values({ journeyId, version: nextVersion, graph: parsed.data.graph, compiled: {} });
-
-  // Keep trigger/reentry in sync with the graph's trigger node.
-  const triggerNode = parsed.data.graph.nodes?.find(
-    (n: { type?: string }) => n.type === "trigger",
-  ) as { data?: { trigger?: unknown } } | undefined;
-  if (triggerNode?.data?.trigger) {
-    await db
-      .update(journey)
-      .set({ trigger: triggerNode.data.trigger, updatedAt: new Date() })
-      .where(eq(journey.id, journeyId));
-  }
-
-  return c.json({ version: nextVersion, validation });
+  const { version, validation } = await writeDraftVersion(
+    journeyId,
+    parsed.data.graph as JourneyGraph,
+  );
+  return c.json({ version, validation });
 });
 
 journeysRouter.post("/:id/dry-run", async (c) => {

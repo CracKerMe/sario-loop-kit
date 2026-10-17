@@ -23,7 +23,7 @@ import { ThemeToggle } from "./theme-toggle";
 import UserMenu from "./user-menu";
 
 type PrimaryNav = {
-  to: "/dashboard" | "/contacts" | "/journeys" | "/campaigns" | "/templates" | "/settings";
+  to: "/dashboard" | "/contacts" | "/automations" | "/campaigns" | "/templates" | "/settings";
   label: string;
   icon: LucideIcon;
 };
@@ -32,7 +32,7 @@ type PrimaryNav = {
 const PRIMARY_NAV: PrimaryNav[] = [
   { to: "/dashboard", label: "Home", icon: HomeIcon },
   { to: "/contacts", label: "Contacts", icon: UsersIcon },
-  { to: "/journeys", label: "Automations", icon: RouteIcon },
+  { to: "/automations", label: "Automations", icon: RouteIcon },
   { to: "/campaigns", label: "Campaigns", icon: SendIcon },
   { to: "/templates", label: "Emails", icon: MailIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
@@ -266,7 +266,7 @@ export function MobileTopBar() {
             variant="ghost"
             size="icon-sm"
             aria-label="New"
-            onClick={() => void navigate({ to: "/journeys/new" })}
+            onClick={() => void navigate({ to: "/automations/new" })}
           >
             <PlusIcon className="size-4" />
           </Button>

@@ -6,10 +6,26 @@ import { Button } from "@loopkit/ui/components/button";
 import { Input } from "@loopkit/ui/components/input";
 import { cn } from "@loopkit/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { EyeIcon, InfoIcon, PencilIcon, PlusIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  EyeIcon,
+  InfoIcon,
+  PencilIcon,
+  PlusIcon,
+  SquareArrowOutUpRightIcon,
+  XIcon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import type { Node } from "@xyflow/react";
 
-import type { CampaignDto, EmailTemplateDto, JourneyDto } from "@/lib/api";
+import {
+  api,
+  type CampaignDto,
+  type EmailTemplateDto,
+  type FullEmailTemplateDto,
+  type JourneyDto,
+} from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import {
   ConditionExpressionField,
   describeCondition,
@@ -17,16 +33,19 @@ import {
 } from "./ConditionExpressionField";
 import {
   AbVariantsEditor,
-  EmailAdvancedSettings,
+  CampaignPicker,
   InspectorField,
   InputWithVariables,
+  JsonField,
+  JourneyPicker,
   PropertyAssignmentsEditor,
   SplitRoutesEditor,
+  TagInput,
+  TemplatePicker,
   TextareaWithVariables,
   TriggerEntryFilter,
   VariablesReference,
   selectClass,
-  textareaClass,
   unitToMs,
 } from "./fields";
 import type { JourneyVariable } from "./variables";
@@ -45,6 +64,7 @@ export type NodeInspectorProps = {
   contactPropertyKeys: string[];
   onPreviewTemplate: (templateId: string) => void;
   onCreateTemplate: () => void;
+  onEditTemplate: (templateId: string) => void;
 };
 
 function dataOf(selected: Node): NodeData {
@@ -172,8 +192,11 @@ function configuredSummary(type: string, d: NodeData): string | null {
         ? "Sends the selected campaign to this contact."
         : "Choose a campaign before publishing.";
     case "delay": {
-      if (d.mode === "until")
-        return `Holds the contact until ${String(d.iso || "the configured date")}.`;
+      if (d.mode === "until") {
+        const iso = String(d.iso ?? "");
+        const when = iso && !Number.isNaN(new Date(iso).getTime()) ? formatDateTime(iso) : null;
+        return `Holds the contact until ${when ?? "the configured date"}.`;
+      }
       if (d.mode === "weekly") return "Releases the contact at the selected weekly time slot.";
       if (d.mode === "bestTime")
         return `Waits up to ${Number(d.maxWaitHours ?? 48)} hours for the best engagement time.`;
@@ -305,6 +328,7 @@ export function NodeInspector(props: NodeInspectorProps) {
     contactPropertyKeys,
     onPreviewTemplate,
     onCreateTemplate,
+    onEditTemplate,
   } = props;
   const d = dataOf(selected);
   const type = selected.type ?? "";
@@ -316,19 +340,27 @@ export function NodeInspector(props: NodeInspectorProps) {
 
       {type === "email" && (
         <EmailPanel
+          key={selected.id}
           d={d}
           update={updateSelectedData}
           templates={templates}
           variables={nodeVariables}
           onPreviewTemplate={onPreviewTemplate}
           onCreateTemplate={onCreateTemplate}
+          onEditTemplate={onEditTemplate}
         />
       )}
       {type === "sendCampaign" && (
-        <SendCampaignPanel d={d} update={updateSelectedData} campaigns={campaigns} />
+        <SendCampaignPanel
+          key={selected.id}
+          d={d}
+          update={updateSelectedData}
+          campaigns={campaigns}
+        />
       )}
       {type === "subJourney" && (
         <SubJourneyPanel
+          key={selected.id}
           d={d}
           update={updateSelectedData}
           journeys={journeys}
@@ -342,14 +374,28 @@ export function NodeInspector(props: NodeInspectorProps) {
         <BranchFilterPanel d={d} update={updateSelectedData} propertyKeys={contactPropertyKeys} />
       )}
       {type === "timeWindow" && <TimeWindowPanel d={d} update={updateSelectedData} />}
-      {type === "waitEvent" && <WaitEventPanel d={d} update={updateSelectedData} />}
+      {type === "waitEvent" && (
+        <WaitEventPanel key={selected.id} d={d} update={updateSelectedData} />
+      )}
       {type === "webhook" && (
-        <WebhookPanel d={d} update={updateSelectedData} variables={nodeVariables} />
+        <WebhookPanel
+          key={selected.id}
+          d={d}
+          update={updateSelectedData}
+          variables={nodeVariables}
+        />
       )}
       {type === "notify" && (
         <NotifyPanel d={d} update={updateSelectedData} variables={nodeVariables} />
       )}
-      {type === "trigger" && <TriggerPanel d={d} update={updateSelectedData} />}
+      {type === "trigger" && (
+        <TriggerPanel
+          key={selected.id}
+          d={d}
+          update={updateSelectedData}
+          propertyKeys={contactPropertyKeys}
+        />
+      )}
       {type === "exit" && <ExitPanel d={d} update={updateSelectedData} />}
       {type === "split" && (
         <SplitRoutesEditor
@@ -368,11 +414,25 @@ export function NodeInspector(props: NodeInspectorProps) {
         <UpdateContactPanel d={d} update={updateSelectedData} variables={nodeVariables} />
       )}
       {type === "score" && <ScorePanel d={d} update={updateSelectedData} />}
-      {type === "goal" && <GoalPanel d={d} update={updateSelectedData} />}
+      {type === "goal" && <GoalPanel key={selected.id} d={d} update={updateSelectedData} />}
     </div>
   );
 }
 
+type EmailOverrideField = {
+  key: "subject" | "preheader" | "fromName" | "replyTo";
+  label: string;
+  /** Value the template/workspace falls back to when the override is empty. */
+  defaultValue: string | null;
+  fallbackNote: string;
+};
+
+/**
+ * Email node panel. The template picker carries the informed choice (search +
+ * subject + freshness), the action row keeps preview/create/edit one click
+ * away, and every per-node field lives in one overrides card that shows what
+ * the default actually is instead of asking users to override blind.
+ */
 function EmailPanel({
   d,
   update,
@@ -380,6 +440,7 @@ function EmailPanel({
   variables,
   onPreviewTemplate,
   onCreateTemplate,
+  onEditTemplate,
 }: {
   d: NodeData;
   update: UpdateData;
@@ -387,82 +448,216 @@ function EmailPanel({
   variables: JourneyVariable[];
   onPreviewTemplate: (id: string) => void;
   onCreateTemplate: () => void;
+  onEditTemplate: (id: string) => void;
 }) {
   const templateId = String(d.templateId ?? "");
+  const template = templates.find((t) => t.id === templateId) ?? null;
+  const isVisual = template?.source !== "html";
+
+  // fromName / replyTo defaults only exist on the full template DTO; load them
+  // for the selected template so overrides display what they replace.
+  const [full, setFull] = useState<FullEmailTemplateDto | null>(null);
+  useEffect(() => {
+    // Drop the previous template's defaults immediately so override hints never
+    // show stale values while the next fetch is in flight.
+    setFull(null);
+    if (!templateId) return;
+    let cancelled = false;
+    api
+      .getTemplate(templateId)
+      .then((res) => {
+        if (!cancelled) setFull(res.template);
+      })
+      .catch(() => {
+        /* defaults stay hidden; overrides still work */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
+  const overrideFields: EmailOverrideField[] = [
+    {
+      key: "subject",
+      label: "Subject",
+      defaultValue: template?.subject ?? null,
+      fallbackNote: "Uses the template subject when empty.",
+    },
+    {
+      key: "preheader",
+      label: "Preheader",
+      defaultValue: null,
+      fallbackNote: "Optional inbox preview text after the subject.",
+    },
+    {
+      key: "fromName",
+      label: "From name",
+      defaultValue: full?.fromName ?? null,
+      fallbackNote: "Uses the template or workspace sender name when empty.",
+    },
+    {
+      key: "replyTo",
+      label: "Reply-To",
+      defaultValue: full?.replyTo ?? null,
+      fallbackNote: "Uses the workspace reply address when empty.",
+    },
+  ];
+  const activeCount = overrideFields.filter((f) => String(d[f.key] ?? "") !== "").length;
+
   return (
     <>
       <InspectorField label="Template">
-        <div className="flex items-center gap-1.5">
-          <select
-            className={selectClass}
-            value={templateId}
-            onChange={(e) => update({ templateId: e.target.value })}
-          >
-            <option value="">Select template…</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+        <TemplatePicker
+          value={templateId}
+          templates={templates}
+          onChange={(id) => update({ templateId: id })}
+        />
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
-            className="shrink-0"
-            aria-label="Preview email template"
+            size="xs"
             disabled={!templateId}
             onClick={() => onPreviewTemplate(templateId)}
           >
-            <EyeIcon className="size-3.5" />
+            <EyeIcon data-icon="inline-start" />
+            Preview
           </Button>
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
-            className="shrink-0"
-            aria-label="Create new template"
-            onClick={onCreateTemplate}
+            size="xs"
+            disabled={!templateId || !isVisual}
+            title={
+              isVisual
+                ? "Edit this template without leaving the builder"
+                : "Raw HTML templates are edited on the templates page"
+            }
+            onClick={() => onEditTemplate(templateId)}
           >
-            <PlusIcon className="size-3.5" />
+            <PencilIcon data-icon="inline-start" />
+            Edit content
+          </Button>
+          <Button type="button" variant="outline" size="xs" onClick={onCreateTemplate}>
+            <PlusIcon data-icon="inline-start" />
+            New
           </Button>
         </div>
-        {templateId && (
-          <Link
-            to="/templates/$templateId"
-            params={{ templateId }}
-            target="_blank"
-            className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-          >
-            <PencilIcon className="size-3" aria-hidden="true" />
-            Edit HTML / content
-            <SquareArrowOutUpRightIcon className="size-2.5" aria-hidden="true" />
-          </Link>
-        )}
+        {template &&
+          (isVisual ? (
+            <Link
+              to="/templates/$templateId"
+              params={{ templateId: template.id }}
+              target="_blank"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+            >
+              <SquareArrowOutUpRightIcon className="size-2.5" aria-hidden="true" />
+              Open full editor
+            </Link>
+          ) : (
+            <Link
+              to="/templates"
+              search={{ edit: template.id }}
+              target="_blank"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+            >
+              <SquareArrowOutUpRightIcon className="size-2.5" aria-hidden="true" />
+              Edit raw HTML
+            </Link>
+          ))}
       </InspectorField>
-      <InspectorField label="Subject override" hint="Leave empty to use the template subject.">
-        <InputWithVariables
-          variables={variables}
-          value={String(d.subject ?? "")}
-          onChange={(v) => update({ subject: v })}
-          placeholder="Optional"
-        />
-      </InspectorField>
-      <InspectorField label="Preheader">
-        <InputWithVariables
-          variables={variables}
-          value={String(d.preheader ?? "")}
-          onChange={(v) => update({ preheader: v })}
-          placeholder="Inbox preview text"
-        />
-      </InspectorField>
-      <EmailAdvancedSettings
+      <EmailOverridesCard
+        d={d}
+        update={update}
         variables={variables}
-        fromName={String(d.fromName ?? "")}
-        replyTo={String(d.replyTo ?? "")}
-        onChange={update}
+        fields={overrideFields}
+        activeCount={activeCount}
       />
     </>
+  );
+}
+
+function EmailOverridesCard({
+  d,
+  update,
+  variables,
+  fields,
+  activeCount,
+}: {
+  d: NodeData;
+  update: UpdateData;
+  variables: JourneyVariable[];
+  fields: EmailOverrideField[];
+  activeCount: number;
+}) {
+  const [open, setOpen] = useState(activeCount > 0);
+
+  return (
+    <section className="rounded-lg border border-border bg-card/40">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span>
+          Message overrides{" "}
+          <span className="font-normal text-muted-foreground/70">
+            · {activeCount > 0 ? `${activeCount} active` : "using template defaults"}
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          {activeCount > 0 && (
+            <span className="rounded-full bg-primary/12 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+              {activeCount}
+            </span>
+          )}
+          <ChevronDownIcon
+            className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-180")}
+            aria-hidden="true"
+          />
+        </span>
+      </button>
+      {open && (
+        <div className="grid gap-3 border-t border-border/70 p-3">
+          {fields.map((field) => {
+            const value = String(d[field.key] ?? "");
+            return (
+              <InspectorField key={field.key} label={field.label} hint={field.fallbackNote}>
+                <div className="flex items-center gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <InputWithVariables
+                      variables={variables}
+                      value={value}
+                      onChange={(v) => update({ [field.key]: v })}
+                      placeholder={
+                        field.defaultValue ? `Default: ${field.defaultValue}` : "Optional"
+                      }
+                    />
+                  </div>
+                  {value && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Clear ${field.label} override`}
+                      onClick={() => update({ [field.key]: "" })}
+                    >
+                      <XIcon className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </InspectorField>
+            );
+          })}
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Empty fields inherit the template or workspace default. Changes apply to every contact
+            that reaches this step.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -482,18 +677,11 @@ function SendCampaignPanel({
         label="Message campaign"
         hint="Reuse an approved campaign inside this journey. The campaign content is captured when you publish."
       >
-        <select
-          className={selectClass}
+        <CampaignPicker
           value={String(d.campaignId ?? "")}
-          onChange={(e) => update({ campaignId: e.target.value })}
-        >
-          <option value="">Select campaign…</option>
-          {campaigns.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          campaigns={campaigns}
+          onChange={(id) => update({ campaignId: id })}
+        />
       </InspectorField>
       {selectedCampaign && (
         <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
@@ -501,7 +689,7 @@ function SendCampaignPanel({
           <p className="mt-1 text-muted-foreground">
             Every contact reaching this node receives{" "}
             <span className="font-medium text-foreground">{selectedCampaign.name}</span> once in
-            this journey.
+            this journey{selectedCampaign.subject ? ` — “${selectedCampaign.subject}”` : ""}.
           </p>
         </div>
       )}
@@ -538,18 +726,11 @@ function SubJourneyPanel({
         label="Automation to hand off to"
         hint="Starts another published automation for this contact. This parent journey continues independently."
       >
-        <select
-          className={selectClass}
+        <JourneyPicker
           value={String(d.journeyId ?? "")}
-          onChange={(e) => update({ journeyId: e.target.value })}
-        >
-          <option value="">Select journey…</option>
-          {publishedJourneys.map((j) => (
-            <option key={j.id} value={j.id}>
-              {j.name}
-            </option>
-          ))}
-        </select>
+          journeys={publishedJourneys}
+          onChange={(id) => update({ journeyId: id })}
+        />
       </InspectorField>
       {selectedJourney && (
         <div className="rounded-lg border border-border bg-card/60 p-2.5 text-[11px] leading-relaxed">
@@ -638,6 +819,22 @@ function ParallelPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   );
 }
 
+/** `<input type="datetime-local">` value for an absolute ISO instant. */
+function isoToLocalInput(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** UTC rendering of an absolute ISO instant, shown as read-only confirmation. */
+function isoToUtcLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
+}
+
 function DelayPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   const mode = String(d.mode ?? "duration");
   return (
@@ -708,12 +905,23 @@ function DelayPanel({ d, update }: { d: NodeData; update: UpdateData }) {
         </>
       )}
       {mode === "until" && (
-        <InspectorField label="Until (ISO)">
+        <InspectorField
+          label="Until (date and time)"
+          hint="Pick a moment; it is stored as an absolute timestamp."
+        >
           <Input
-            value={String(d.iso ?? "")}
-            onChange={(e) => update({ mode: "until", iso: e.target.value })}
-            placeholder="2026-01-15T10:00:00.000Z"
+            type="datetime-local"
+            value={isoToLocalInput(String(d.iso ?? ""))}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              const next = new Date(e.target.value);
+              if (Number.isNaN(next.getTime())) return;
+              update({ mode: "until", iso: next.toISOString() });
+            }}
           />
+          {typeof d.iso === "string" && isoToUtcLabel(d.iso) && (
+            <p className="text-[10px] text-muted-foreground">Resolves to {isoToUtcLabel(d.iso)}</p>
+          )}
         </InspectorField>
       )}
       {mode === "weekly" && (
@@ -733,26 +941,27 @@ function DelayPanel({ d, update }: { d: NodeData; update: UpdateData }) {
               )}
             </select>
           </InspectorField>
-          <div className="grid grid-cols-2 gap-2">
-            <InspectorField label="Hour">
-              <Input
-                type="number"
-                min={0}
-                max={23}
-                value={Number(d.hour ?? 10)}
-                onChange={(e) => update({ hour: Number(e.target.value) })}
-              />
-            </InspectorField>
-            <InspectorField label="Minute">
-              <Input
-                type="number"
-                min={0}
-                max={59}
-                value={Number(d.minute ?? 0)}
-                onChange={(e) => update({ minute: Number(e.target.value) })}
-              />
-            </InspectorField>
-          </div>
+          <InspectorField
+            label="Time"
+            hint="Server-time slot. Pair with a Time Window for precision."
+          >
+            <Input
+              type="time"
+              value={`${String(Number(d.hour ?? 10)).padStart(2, "0")}:${String(Number(d.minute ?? 0)).padStart(2, "0")}`}
+              onChange={(e) => {
+                const [h, m] = e.target.value.split(":");
+                const hour = Number(h);
+                const minute = Number(m);
+                if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
+                update({
+                  mode: "weekly",
+                  dayOfWeek: Number(d.dayOfWeek ?? 1),
+                  hour: Math.max(0, Math.min(23, hour)),
+                  minute: Math.max(0, Math.min(59, minute)),
+                });
+              }}
+            />
+          </InspectorField>
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
             Engine waits have no native weekly cron. This compiles to a 7-day upper bound — add a{" "}
             <strong>Time Window</strong> on the next step (false → loop back to a short delay) for
@@ -889,24 +1098,38 @@ function TimeWindowPanel({ d, update }: { d: NodeData; update: UpdateData }) {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <InspectorField label="From (hour)">
-          <Input
-            type="number"
-            min={0}
-            max={23}
+          <select
+            className={selectClass}
             value={startHour}
             onChange={(e) => update({ startHour: Number(e.target.value) })}
-          />
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, "0")}:00
+              </option>
+            ))}
+          </select>
         </InspectorField>
         <InspectorField label="Until (hour)">
-          <Input
-            type="number"
-            min={1}
-            max={24}
+          <select
+            className={selectClass}
             value={endHour}
             onChange={(e) => update({ endHour: Number(e.target.value) })}
-          />
+          >
+            {Array.from({ length: 24 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {String(i + 1).padStart(2, "0")}:00
+              </option>
+            ))}
+          </select>
         </InspectorField>
       </div>
+      {startHour >= endHour && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
+          The window closes before it opens, so the True path would never continue. Adjust the
+          hours.
+        </p>
+      )}
       <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-2.5 text-[11px] leading-relaxed text-cyan-900 dark:text-cyan-100">
         <div className="font-medium">Business result</div>
         <p className="mt-1 opacity-85">
@@ -933,21 +1156,33 @@ function WaitEventPanel({ d, update }: { d: NodeData; update: UpdateData }) {
   const timeoutDays = Math.round(Number(d.timeoutMs ?? 0) / 86400000);
   const setEvent = (name: string, filter?: { property: string; op: string; value: string }) =>
     update({ eventName: name, ...(filter ? { eventFilter: filter } : {}) });
+  const COMMON_EVENTS = ["order.placed", "demo.booked", "subscription.started"];
+  const filterActive = Boolean(eventFilter.property || eventFilter.value);
+  const [filterOpen, setFilterOpen] = useState(filterActive);
+  const eventIdList = "wait-event-name-options";
   return (
     <>
       <InspectorField
         label="Event to wait for"
         hint="Enter the exact event name your product sends, such as order.placed or demo.booked."
       >
-        <Input
-          value={eventName}
-          onChange={(e) => update({ eventName: e.target.value })}
-          placeholder="order.placed"
-        />
+        <>
+          <Input
+            value={eventName}
+            onChange={(e) => update({ eventName: e.target.value })}
+            placeholder="order.placed"
+            list={eventIdList}
+          />
+          <datalist id={eventIdList}>
+            {COMMON_EVENTS.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </>
       </InspectorField>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[10px] text-muted-foreground">Common events</span>
-        {["order.placed", "demo.booked", "subscription.started"].map((name) => (
+        {COMMON_EVENTS.map((name) => (
           <Button key={name} variant="outline" size="xs" onClick={() => setEvent(name)}>
             {name}
           </Button>
@@ -964,58 +1199,80 @@ function WaitEventPanel({ d, update }: { d: NodeData; update: UpdateData }) {
           onChange={(e) => update({ timeoutMs: Number(e.target.value) * 86400000 })}
         />
       </InspectorField>
-      <InspectorField
-        label="Only accept matching events (optional)"
-        hint="Use this when the same event name can carry different products, plans, or orders."
-      >
-        <div className="grid gap-1.5">
-          <Input
-            value={String(eventFilter.property ?? "")}
-            onChange={(e) =>
-              update({
-                eventFilter: {
-                  property: e.target.value,
-                  op: eventFilter.op ?? "eq",
-                  value: eventFilter.value ?? "",
-                },
-              })
-            }
-            placeholder="property, e.g. sku"
+      <section className="rounded-lg border border-border bg-card/40">
+        <button
+          type="button"
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((value) => !value)}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span>
+            Only accept matching events{" "}
+            <span className="font-normal text-muted-foreground/70">
+              · {filterActive ? "filter active" : "optional"}
+            </span>
+          </span>
+          <ChevronDownIcon
+            className={cn("size-3.5 shrink-0 transition-transform", filterOpen && "rotate-180")}
+            aria-hidden="true"
           />
-          <div className="grid grid-cols-2 gap-1.5">
-            <select
-              className={selectClass}
-              value={String(eventFilter.op ?? "eq")}
+        </button>
+        {filterOpen && (
+          <div className="grid gap-1.5 border-t border-border/70 p-3">
+            <Input
+              value={String(eventFilter.property ?? "")}
               onChange={(e) =>
                 update({
                   eventFilter: {
-                    property: eventFilter.property ?? "",
-                    op: e.target.value,
+                    property: e.target.value,
+                    op: eventFilter.op ?? "eq",
                     value: eventFilter.value ?? "",
                   },
                 })
               }
-            >
-              <option value="eq">equals</option>
-              <option value="neq">not equals</option>
-              <option value="contains">contains</option>
-            </select>
-            <Input
-              value={String(eventFilter.value ?? "")}
-              onChange={(e) =>
-                update({
-                  eventFilter: {
-                    property: eventFilter.property ?? "",
-                    op: eventFilter.op ?? "eq",
-                    value: e.target.value,
-                  },
-                })
-              }
-              placeholder="value"
+              placeholder="property, e.g. sku"
+              aria-label="Filter event property"
             />
+            <div className="grid grid-cols-2 gap-1.5">
+              <select
+                className={selectClass}
+                value={String(eventFilter.op ?? "eq")}
+                onChange={(e) =>
+                  update({
+                    eventFilter: {
+                      property: eventFilter.property ?? "",
+                      op: e.target.value,
+                      value: eventFilter.value ?? "",
+                    },
+                  })
+                }
+                aria-label="Filter comparison"
+              >
+                <option value="eq">equals</option>
+                <option value="neq">not equals</option>
+                <option value="contains">contains</option>
+              </select>
+              <Input
+                value={String(eventFilter.value ?? "")}
+                onChange={(e) =>
+                  update({
+                    eventFilter: {
+                      property: eventFilter.property ?? "",
+                      op: eventFilter.op ?? "eq",
+                      value: e.target.value,
+                    },
+                  })
+                }
+                placeholder="value"
+                aria-label="Filter value"
+              />
+            </div>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              Use this when the same event name can carry different products, plans, or orders.
+            </p>
           </div>
-        </div>
-      </InspectorField>
+        )}
+      </section>
       <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-2.5 text-[11px] leading-relaxed text-sky-900 dark:text-sky-100">
         <div className="font-medium">Business result</div>
         <p className="mt-1 opacity-85">
@@ -1090,32 +1347,22 @@ function WebhookPanel({
             label="Body (JSON)"
             hint="Values may include {{ variable }} placeholders."
           >
-            <TextareaWithVariables
+            <JsonField
+              label="Request body JSON"
               variables={variables}
-              value={JSON.stringify(d.body ?? {}, null, 2)}
-              onChange={(v) => {
-                try {
-                  update({ body: JSON.parse(v || "{}") });
-                } catch {
-                  /* keep typing */
-                }
-              }}
+              value={(d.body as Record<string, unknown>) ?? {}}
+              onChange={(body) => update({ body })}
             />
           </InspectorField>
           <InspectorField
             label="Headers (JSON)"
             hint="Only add headers required by the destination service."
           >
-            <TextareaWithVariables
+            <JsonField
+              label="Request headers JSON"
               variables={variables}
-              value={JSON.stringify(d.headers ?? {}, null, 2)}
-              onChange={(v) => {
-                try {
-                  update({ headers: JSON.parse(v || "{}") });
-                } catch {
-                  /* keep typing */
-                }
-              }}
+              value={(d.headers as Record<string, unknown>) ?? {}}
+              onChange={(headers) => update({ headers })}
             />
           </InspectorField>
         </div>
@@ -1209,12 +1456,41 @@ function NotifyPanel({
   );
 }
 
-function TriggerPanel({ d, update }: { d: NodeData; update: UpdateData }) {
+const TRIGGER_KIND_META: Record<string, { label: string; hint: string }> = {
+  contact_created: {
+    label: "New contact created",
+    hint: "Runs for every contact that enters the workspace.",
+  },
+  event: {
+    label: "Product event received",
+    hint: "Runs when your product sends a named event, such as order.placed.",
+  },
+  property_changed: {
+    label: "Contact property changes",
+    hint: "Runs when a tracked contact field is updated.",
+  },
+  manual: {
+    label: "Added manually by team or API",
+    hint: "Only contacts added on purpose enter the journey.",
+  },
+};
+
+function TriggerPanel({
+  d,
+  update,
+  propertyKeys,
+}: {
+  d: NodeData;
+  update: UpdateData;
+  propertyKeys: string[];
+}) {
   const trigger = (d.trigger as Record<string, unknown>) ?? {};
   const kind = String(trigger.kind ?? "contact_created");
+  const kindMeta = TRIGGER_KIND_META[kind];
+  const propertyListId = `trigger-property-options`;
   return (
     <>
-      <InspectorField label="Trigger kind">
+      <InspectorField label="Trigger kind" hint={kindMeta?.hint}>
         <select
           className={selectClass}
           value={kind}
@@ -1230,28 +1506,45 @@ function TriggerPanel({ d, update }: { d: NodeData; update: UpdateData }) {
             });
           }}
         >
-          <option value="contact_created">contact_created</option>
-          <option value="event">event</option>
-          <option value="property_changed">property_changed</option>
-          <option value="manual">manual</option>
+          {Object.entries(TRIGGER_KIND_META).map(([value, meta]) => (
+            <option key={value} value={value}>
+              {meta.label}
+            </option>
+          ))}
         </select>
       </InspectorField>
       {kind === "event" && (
-        <InspectorField label="Event name">
+        <InspectorField
+          label="Event name"
+          hint="The exact event name your product sends, such as order.placed or demo.booked."
+        >
           <Input
             value={String(trigger.name ?? "")}
             onChange={(e) => update({ trigger: { kind: "event", name: e.target.value } })}
+            placeholder="order.placed"
           />
         </InspectorField>
       )}
       {kind === "property_changed" && (
-        <InspectorField label="Property name">
-          <Input
-            value={String(trigger.property ?? "")}
-            onChange={(e) =>
-              update({ trigger: { kind: "property_changed", property: e.target.value } })
-            }
-          />
+        <InspectorField
+          label="Property to watch"
+          hint="Pick a known contact property or type any key."
+        >
+          <>
+            <Input
+              value={String(trigger.property ?? "")}
+              onChange={(e) =>
+                update({ trigger: { kind: "property_changed", property: e.target.value } })
+              }
+              list={propertyListId}
+              placeholder="plan"
+            />
+            <datalist id={propertyListId}>
+              {propertyKeys.map((key) => (
+                <option key={key} value={key} />
+              ))}
+            </datalist>
+          </>
         </InspectorField>
       )}
       <TriggerEntryFilter trigger={trigger} onChange={(next) => update({ trigger: next })} />
@@ -1260,9 +1553,24 @@ function TriggerPanel({ d, update }: { d: NodeData; update: UpdateData }) {
 }
 
 function ExitPanel({ d, update }: { d: NodeData; update: UpdateData }) {
+  const COMMON_REASONS = ["converted", "not-interested", "unqualified"];
   return (
-    <InspectorField label="Reason">
-      <Input value={String(d.reason ?? "")} onChange={(e) => update({ reason: e.target.value })} />
+    <InspectorField label="Reason" hint="Shown in Activity when the contact's path ends here.">
+      <>
+        <Input
+          value={String(d.reason ?? "")}
+          onChange={(e) => update({ reason: e.target.value })}
+          placeholder="converted"
+        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">Common</span>
+          {COMMON_REASONS.map((reason) => (
+            <Button key={reason} variant="outline" size="xs" onClick={() => update({ reason })}>
+              {reason}
+            </Button>
+          ))}
+        </div>
+      </>
     </InspectorField>
   );
 }
@@ -1288,32 +1596,25 @@ function UpdateContactPanel({
           onChange={(set) => update({ set })}
         />
       </InspectorField>
-      <InspectorField label="Add tags (comma-separated)">
-        <Input
-          value={((d.addTags as string[]) ?? []).join(", ")}
-          onChange={(e) =>
-            update({
-              addTags: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="vip, trial"
+      <InspectorField
+        label="Add tags"
+        hint="Enter or comma adds a tag; tags written here appear on the contact."
+      >
+        <TagInput
+          value={(d.addTags as string[]) ?? []}
+          onChange={(addTags) => update({ addTags })}
+          placeholder="Add tag, e.g. vip"
         />
       </InspectorField>
-      <InspectorField label="Remove tags (comma-separated)">
-        <Input
-          value={((d.removeTags as string[]) ?? []).join(", ")}
-          onChange={(e) =>
-            update({
-              removeTags: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="lead"
+      <InspectorField
+        label="Remove tags"
+        hint="Tags listed here are taken off the contact when this step runs."
+      >
+        <TagInput
+          destructive
+          value={(d.removeTags as string[]) ?? []}
+          onChange={(removeTags) => update({ removeTags })}
+          placeholder="Remove tag, e.g. lead"
         />
       </InspectorField>
     </>
@@ -1324,13 +1625,24 @@ function ScorePanel({ d, update }: { d: NodeData; update: UpdateData }) {
   const property = String(d.property ?? "score");
   const value = Number(d.value ?? 0);
   const op = d.op === "set" ? "set" : "add";
+  const scoreFieldList = "score-field-options";
   return (
     <>
       <InspectorField
         label="Score field"
         hint="Use “score” for a journey-specific score, or “leadScore” when this should be visible as the contact lead score."
       >
-        <Input value={property} onChange={(e) => update({ property: e.target.value })} />
+        <>
+          <Input
+            value={property}
+            onChange={(e) => update({ property: e.target.value })}
+            list={scoreFieldList}
+          />
+          <datalist id={scoreFieldList}>
+            <option value="score" />
+            <option value="leadScore" />
+          </datalist>
+        </>
       </InspectorField>
       <div className="grid grid-cols-2 gap-2">
         <InspectorField label="Change">
@@ -1415,16 +1727,10 @@ function GoalPanel({ d, update }: { d: NodeData; update: UpdateData }) {
         </p>
       </div>
       <InspectorField label="Extra properties (JSON)">
-        <textarea
-          className={textareaClass}
-          value={JSON.stringify(d.properties ?? {}, null, 2)}
-          onChange={(e) => {
-            try {
-              update({ properties: JSON.parse(e.target.value || "{}") });
-            } catch {
-              /* keep typing */
-            }
-          }}
+        <JsonField
+          label="Extra conversion properties JSON"
+          value={(d.properties as Record<string, unknown>) ?? {}}
+          onChange={(properties) => update({ properties })}
         />
       </InspectorField>
     </>

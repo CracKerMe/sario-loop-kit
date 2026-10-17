@@ -13,6 +13,7 @@ import { campaignsRouter } from "./routes/campaigns";
 import { contactsRouter, eventsRouter } from "./routes/contacts";
 import { emailTemplatesRouter } from "./routes/emailTemplates";
 import { journeysRouter, opsRouter, runsRouter } from "./routes/journeys";
+import { settingsAgentRouter } from "./routes/settingsAgent";
 import { publicRouter } from "./routes/public";
 import { suppressionsRouter } from "./routes/suppressions";
 import { transactionalRouter } from "./routes/transactional";
@@ -152,6 +153,12 @@ app.route("/v1/transactional", transactionalRouter);
 // Dashboard-only.
 app.use("/v1/journeys/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/journeys", journeysRouter);
+// Agent-first settings workbench — session-only (config changes are not
+// something an ingestion key should trigger).
+for (const path of ["/v1/settings/agent", "/v1/settings/agent/*"] as const) {
+  app.use(path, requireAuth({ allow: ["session"] }));
+}
+app.route("/v1/settings/agent", settingsAgentRouter);
 app.use("/v1/runs", requireAuth({ allow: ["session"] }));
 app.use("/v1/runs/*", requireAuth({ allow: ["session"] }));
 app.route("/v1/runs", runsRouter);

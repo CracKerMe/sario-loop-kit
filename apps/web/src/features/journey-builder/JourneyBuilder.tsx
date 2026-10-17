@@ -33,6 +33,7 @@ import {
 } from "@/lib/api";
 import { CopilotDialog } from "./CopilotDialog";
 import { DataMappingPanel } from "./DataMappingPanel";
+import { EmailContentEditorDialog } from "./EmailContentEditorDialog";
 import { JourneyAgentPanel } from "./JourneyAgentPanel";
 import {
   NODE_META,
@@ -118,6 +119,7 @@ export function JourneyBuilder({
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateSubject, setNewTemplateSubject] = useState("");
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
@@ -345,6 +347,11 @@ export function JourneyBuilder({
     }
   };
 
+  const refreshTemplates = useCallback(async () => {
+    const { templates: refreshed } = await api.templates();
+    setTemplates(refreshed);
+  }, []);
+
   const createTemplateForSelected = async () => {
     if (!newTemplateName.trim()) return;
     setCreatingTemplate(true);
@@ -354,8 +361,7 @@ export function JourneyBuilder({
         subject: newTemplateSubject.trim() || newTemplateName.trim(),
         doc: emptyEmailDoc(),
       });
-      const { templates: refreshed } = await api.templates();
-      setTemplates(refreshed);
+      await refreshTemplates();
       updateSelectedData({ templateId: template.id });
       setNewTemplateOpen(false);
       setNewTemplateName("");
@@ -674,6 +680,7 @@ export function JourneyBuilder({
                 void openTemplatePreview(id);
               }}
               onCreateTemplate={() => setNewTemplateOpen(true)}
+              onEditTemplate={(id) => setEditingTemplateId(id)}
             />
           ) : (
             <div className="grid gap-3">
@@ -796,6 +803,15 @@ export function JourneyBuilder({
           </Button>
         </form>
       </Dialog>
+
+      <EmailContentEditorDialog
+        templateId={editingTemplateId}
+        open={editingTemplateId !== null}
+        onClose={() => setEditingTemplateId(null)}
+        onSaved={() => {
+          void refreshTemplates();
+        }}
+      />
 
       <CopilotDialog
         open={copilotOpen}
